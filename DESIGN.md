@@ -321,8 +321,11 @@ Later: `product-docs`, `product-guide`, `spry-web` plugin.
   Not yet: `find`, `tests --slowest`, `install`, `codeowners`, the AC-edit warning.
 - 2026-10-08 — `falsify suggest` / `falsify run` (serial; worktree parallelism not built).
 - 2026-10-08 — skills: `init`, `adopt`, `milestone`, `epic`, `feature`, `story`, `slice`,
-  `slice-open`, `slice-close`, `status`, `tone`, `update`, `contribute`. Not yet: `bug`, `task`,
-  `test-scenarios`, `record`, `security-audit`, `prelaunch`, `process-change`.
+  `slice-open`, `slice-close`, `status`, `tone`, `update`, `contribute`.
+- 2026-10-08 — the rest of §18: `bug`, `task`, `test-scenarios`, `record`, `security-audit`,
+  `prelaunch`, `process-change`; their procedures `qa.md`, `recording.md`, `audits.md`,
+  `changing.md`, and *Bugs and tasks* in `planning.md`. Audit reports live in
+  `spry/knowledge/audits/` (index → item); `new` also makes `checks`, `convention`, `external`, `audit`.
 - **Update / contribute mechanics:** `plugins/spry/CHANGELOG.md` holds one `CH-n` entry per change a
   project may want (why · touches · adapt · migrate). A project's config holds `spry_baseline` — the
   last entry it considered — and `spry/knowledge/process-changes.md` logs its local changes and

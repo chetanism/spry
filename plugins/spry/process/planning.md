@@ -56,3 +56,19 @@ instead: read it, then interview only for its empty sections.
 `interview.md` → *Finishing*: conflict check, summary, `ready`, `spry check`, commit. Then offer the
 next step in one line: the level below (`/spry:epic`, `/spry:feature`, `/spry:story`), or for a
 ready story, `/spry:slice`.
+
+## Bugs and tasks
+
+Run by `bug` and `task`. Same interview rules; neither counts toward its parent's progress.
+
+| | Bug | Task |
+|---|---|---|
+| Parent | the feature or story it breaks (`bugs/`) | the milestone or epic it serves (`tasks/`) |
+| Tone | the template's: 4 | the template's: 7 |
+| Settles | what happens, what should, steps, where, impact, severity, `breaks` | why, what changes, done-when, risks |
+| Before `ready` | reproduced by the reporter or the agent; a conflict check for duplicates among open bugs | a conflict check |
+
+- **A bug that breaks an acceptance criterion** names it in `breaks: [S-1/AC-2]`. If QA saw it on a
+  build, add a `fail` row to the story's `checks.md` — that is what un-proves the criterion.
+- **Severity:** `blocker` (stops a release), `major` (a criterion or rule fails), `minor` (anything else).
+- **Finish** as `interview.md` → *Finishing*, then offer `/spry:slice <ID>`.

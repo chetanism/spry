@@ -476,6 +476,10 @@ class Project:
         if not os.path.isfile(path):
             return {}
         text = read(path)
+        for _level, title, at, _end in sections(text):
+            m = re.match(r"^(AC-\d+)\b", title)
+            if m and m.group(1) not in story.acs:
+                self.problem(path, at + 1, f"scenario for {m.group(1)}, which {story.id} does not have")
         latest = {}
         for i, cells in table_rows(section_lines(text, "Check log") or []):
             if len(cells) < 5 or not DATE.match(cells[0]):
@@ -1000,11 +1004,64 @@ def fill_template(template: str, kind: str, ident: str, title: str, owner: str |
     return "\n".join(lines)
 
 
+DOCUMENT_KINDS = ("checks", "convention", "external", "audit")
+
+
+def ensure_index(project: Project, folder: str, name: str):
+    """An INDEX.md for a knowledge folder, from the template, when there is none yet."""
+    path = os.path.join(folder, "INDEX.md")
+    if not os.path.exists(path):
+        template = read(os.path.join(project.spry, "process", "templates", "index.md"))
+        write(path, template.replace("<folder> index", f"{name} index").replace("# <folder>", f"# {name}"))
+
+
+def new_document(project: Project, kind: str, parent_id: str | None, title: str,
+                 dependency: str | None, today: str) -> str:
+    """Create a knowledge or QA document — no ID of its own — from its template."""
+    template = read(os.path.join(project.spry, "process", "templates", f"{kind}.md"))
+    knowledge = os.path.join(project.spry, "knowledge")
+    if kind == "checks":
+        story = project.items.get(parent_id or "")
+        if story is None or story.type != "story":
+            raise SystemExit("checks need --parent: a story")
+        path = os.path.join(story.folder, "checks.md")
+        text = template.replace("S-<n>", story.id).replace("<story title>", story.title)
+    elif kind == "convention":
+        folder = os.path.join(knowledge, "conventions")
+        os.makedirs(folder, exist_ok=True)
+        ensure_index(project, folder, "Conventions")
+        path = os.path.join(folder, f"{slugify(title)}.md")
+        text = template.replace("<area>", title)
+    elif kind == "external":
+        if not dependency:
+            raise SystemExit("an external behaviour needs --dependency: the service it is about")
+        folder = os.path.join(knowledge, "external", slugify(dependency))
+        os.makedirs(folder, exist_ok=True)
+        ensure_index(project, folder, dependency)
+        path = os.path.join(folder, f"{slugify(title)}.md")
+        text = (template.replace("<dependency>", dependency).replace("<behaviour, as a statement>", title)
+                .replace("<behaviour>", title).replace("observed: <YYYY-MM-DD>", f"observed: {today}")
+                .replace("dependency: <name>", f"dependency: {dependency}").replace("affects: [<IDs>]", "affects: []"))
+    else:
+        folder = os.path.join(knowledge, "audits")
+        os.makedirs(folder, exist_ok=True)
+        ensure_index(project, folder, "Audits")
+        path = os.path.join(folder, f"{today}-{slugify(title)}.md")
+        text = re.sub(r"(?m)^title: .*$", f"title: {title}", template, count=1)
+        text = text.replace("date: <YYYY-MM-DD>", f"date: {today}").replace("# <title>", f"# {title}")
+    if os.path.exists(path):
+        raise SystemExit(f"{project.rel(path)} already exists — edit it instead")
+    write(path, text)
+    return path
+
+
 def new_item(project: Project, kind: str, parent_id: str | None, title: str,
-             owner: str | None = None, today: str | None = None) -> str:
+             owner: str | None = None, today: str | None = None, dependency: str | None = None) -> str:
     """Create an item from its template at the right place with the next ID. Returns the path."""
+    if kind in DOCUMENT_KINDS:
+        return new_document(project, kind, parent_id, title, dependency, today or date.today().isoformat())
     if kind not in project.ids:
-        raise SystemExit(f"unknown type `{kind}` — one of {', '.join(project.ids)}")
+        raise SystemExit(f"unknown type `{kind}` — one of {', '.join([*project.ids, *DOCUMENT_KINDS])}")
     template = os.path.join(project.spry, "process", "templates", f"{kind}.md")
     if not os.path.isfile(template):
         raise SystemExit(f"no template {project.rel(template)} — bring the process in with `vendor`")
@@ -1454,6 +1511,7 @@ def main(argv=None) -> int:
     p.add_argument("--parent")
     p.add_argument("--title", required=True)
     p.add_argument("--owner")
+    p.add_argument("--dependency", help="external: the service the behaviour belongs to")
     p = sub.add_parser("pr-body", help="a slice's work order and close summary, for its pull request")
     p.add_argument("slice")
     p = sub.add_parser("vendor", help="copy process/ and the tool into a project (run the plugin's copy)")
@@ -1518,7 +1576,7 @@ def main(argv=None) -> int:
         print(next_id(project, args.type))
         return 0
     if args.command == "new":
-        print(project.rel(new_item(project, args.type, args.parent, args.title, args.owner)))
+        print(project.rel(new_item(project, args.type, args.parent, args.title, args.owner, dependency=args.dependency)))
         return 0
     if args.command == "falsify":
         try:

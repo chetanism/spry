@@ -329,6 +329,38 @@ class New(Base):
         self.assertIn("# S-2 · Refuse at the limit", text)
         self.assertEqual(t.problems(), [], "a fresh draft and a planned slice pass check")
 
+    def test_documents_without_ids(self):
+        t = self.tree_with_process()
+        p = t.project()
+        checks = spry.new_item(p, "checks", "S-1", "x")
+        self.assertEqual(os.path.relpath(checks, t.root), f"{S}/checks.md")
+        with open(checks) as handle:
+            self.assertIn("# Checks · S-1 · Title of S-1", handle.read())
+        conv = spry.new_item(p, "convention", None, "Domain code")
+        self.assertEqual(os.path.relpath(conv, t.root), "spry/knowledge/conventions/domain-code.md")
+        self.assertTrue(os.path.isfile(os.path.join(t.root, "spry/knowledge/conventions/INDEX.md")))
+        ext = spry.new_item(p, "external", None, "Lookups are rate-limited", dependency="Open Library", today="2026-10-08")
+        self.assertEqual(os.path.relpath(ext, t.root), "spry/knowledge/external/open-library/lookups-are-rate-limited.md")
+        with open(ext) as handle:
+            text = handle.read()
+        self.assertIn("dependency: Open Library", text)
+        self.assertIn("observed: 2026-10-08", text)
+        with open(os.path.join(t.root, "spry/knowledge/external/open-library/INDEX.md")) as handle:
+            self.assertIn("# Open Library", handle.read())
+        audit = spry.new_item(p, "audit", None, "Security audit — M-1", today="2026-10-08")
+        self.assertEqual(os.path.relpath(audit, t.root), "spry/knowledge/audits/2026-10-08-security-audit-m-1.md")
+        with self.assertRaises(SystemExit):
+            spry.new_item(p, "external", None, "x")
+        with self.assertRaises(SystemExit):
+            spry.new_item(p, "checks", "F-1", "x")
+
+    def test_scenario_for_a_missing_criterion(self):
+        checks = "---\ntitle: c\naudience: 4\n---\n# c\n\n## Scenarios\n\n### AC-1 · fine\n\n### AC-5 · gone\n"
+        t = self.tree(**{f"{S}/checks.md".replace("/", "__"): checks})
+        problems = t.problems()
+        self.assertTrue(any("scenario for AC-5" in p for p in problems), problems)
+        self.assertFalse(any("AC-1" in p for p in problems), problems)
+
     def test_refuses_wrong_parent(self):
         t = self.tree_with_process()
         with self.assertRaises(SystemExit):
