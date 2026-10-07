@@ -16,7 +16,9 @@ python3 <plugin>/tool/spry.py vendor --root .
 ```
 
 Copies `process/` and the tool into `spry/process/` and `spry/tool/`. From then on, every agent
-uses `python3 spry/tool/spry.py`.
+uses `python3 spry/tool/spry.py`. Team members on another agent run
+`python3 <plugin>/tool/spry.py install --agent <generic|claude|cursor|gemini>` — `generic` writes
+the skills to `spry/skills/` and lists them in `AGENTS.md`, which any agent reads.
 
 ## 1. The starting point
 
@@ -52,7 +54,7 @@ document both work. Everything after is drafted from it, so read it twice.
 | `.gitignore` | add `.spry/` |
 | deploy exclusion | `spry/` in `.dockerignore`, or the stack's build ignore — `stacks/<stack>.md` |
 | `.github/workflows/spry.yml` | `templates/ci-github.yml`, commands filled in |
-| `.github/CODEOWNERS` | one line per `team.review` glob, owners by role; skip when solo |
+| `.github/CODEOWNERS` | `python3 spry/tool/spry.py codeowners`; skip when solo |
 
 ## 4. Finish
 

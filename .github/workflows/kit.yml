@@ -11,3 +11,4 @@ jobs:
       - run: python3 tests/test_spry.py
       - run: python3 plugins/spry/tool/spry.py --root docs/example check
       - run: python3 plugins/spry/tool/spry.py --root docs/example index --check
+      - run: python3 plugins/spry/tool/spry.py --root docs/example codeowners --check

@@ -38,9 +38,13 @@ docs/                             # how to use spry; docs/example/ is a worked p
 ## 3. Install
 
 - **Claude Code (default):** `claude plugin marketplace add <repo>` → `claude plugin install spry`.
-- **Any other agent:** `python3 spry.py install --agent <codex|cursor|gemini|generic>` copies the
-  skills into that agent's skill/command directory and wires `AGENTS.md`. `generic` writes them to
-  `spry/skills/` with a pointer from `AGENTS.md`.
+- **Any other agent:** `python3 spry.py install --agent <generic|claude|cursor|gemini>`.
+  `generic` writes the skills to `spry/skills/` and lists them in a generated block of `AGENTS.md`,
+  so any agent that reads `AGENTS.md` (Codex among them) can run them. `claude` writes project
+  skills (`.claude/skills/spry-*`, for people not using the plugin), `cursor` writes
+  `.cursor/commands/spry-*.md`, `gemini` writes `.gemini/commands/spry/*.toml` (`/spry:<name>`).
+  Skills that need the plugin itself (`init`, `adopt`, `update`, `contribute`) point at the path
+  `install` ran from.
 - **`process/` and the tool are vendored into the project** (`spry/process/`, `spry/tool/spry.py`)
   so any agent reads the same rules and CI runs without any agent. `/spry:update` keeps them current.
 
@@ -130,8 +134,8 @@ spry/
 - `spry status` prints, at every level, total vs completed, grouped by parent:
   milestones · epics by milestone · features by epic · stories by feature · slices by story.
 - **Editing a story after slicing has started is allowed** — git history is the record. `spry check`
-  will warn when a change edits the text of an AC that a test already cites (not built yet: it
-  needs a git base to compare against).
+  warns (`check --base <ref>`, which CI passes on pull requests) when a change edits the text of an
+  AC that a test already cites.
 
 ## 7. Audience and tone
 
@@ -188,8 +192,9 @@ Run by `milestone`, `epic`, `feature`, `story` and `slice-open` before a documen
   rule an agent breaks by default, or a rule that cannot be mechanised.
 - **Index → item:** conventions, decisions, external behaviour, security notes. `INDEX.md` is
   generated from each item's `title` + `summary`; an agent reads the index and opens one item.
-- **`spry find <query>`:** SQLite FTS5 (stdlib `sqlite3`) over `spry/` + `AGENTS.md`, built into
-  `.spry/index.db`, rebuilt when files change. Falls back to plain search if FTS5 is missing.
+- **`spry find <query>`:** SQLite FTS5 (stdlib `sqlite3`) over `spry/` + `AGENTS.md`, one row per
+  section (document title, heading, body; link targets and generated blocks left out), in
+  `.spry/index.db`, refreshed per file when it changes. Falls back to plain search without FTS5.
 
 ## 12. Knowledge
 
@@ -257,7 +262,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 | Command | Does |
 |---|---|
-| `check` | front-matter, IDs, placement in the tree, glossary, budgets, links, AC references, conflict checks, leftover guides |
+| `check [--base <ref>]` | front-matter, IDs, placement in the tree, glossary, budgets, links, AC references, QA scenarios, conflict checks, leftover guides; with `--base`, cited ACs whose text changed |
 | `status [--level]` | roll-up from §6 |
 | `index` | regenerate marker blocks and `INDEX.md` files (CI on `main`) |
 | `map [ID]` | hierarchy + blocked-by + related around an item |
@@ -267,7 +272,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `pr-body <slice>` | the slice's work order (+ close summary) for its pull request |
 | `vendor` | copy `process/` and the tool into a project (plugin's copy only); `--diff` lists what differs |
 | `scrub <file>` | private words (product, people, glossary terms, emails, URLs) left in text about to leave the project |
-| `find <query>` | full-text search |
+| `find <query>` | full-text search, best sections first (§11) |
 | `falsify suggest <slice>` · `falsify run <plan>` | §16 |
 | `tests --slowest` | §15 |
 | `install --agent` | §3 |
@@ -318,7 +323,8 @@ Later: `product-docs`, `product-guide`, `spry-web` plugin.
 ## 21. Built
 
 - 2026-10-08 — tool: `check`, `status`, `index`, `related`, `next`, `new`, `pr-body`, `vendor`.
-  Not yet: `find`, `tests --slowest`, `install`, `codeowners`, the AC-edit warning.
+- 2026-10-08 — `find`, `install --agent`, `codeowners`, `tests --slowest`, `check --base`.
+  Not yet: parallel `falsify` (serial first, §16).
 - 2026-10-08 — `falsify suggest` / `falsify run` (serial; worktree parallelism not built).
 - 2026-10-08 — skills: `init`, `adopt`, `milestone`, `epic`, `feature`, `story`, `slice`,
   `slice-open`, `slice-close`, `status`, `tone`, `update`, `contribute`.

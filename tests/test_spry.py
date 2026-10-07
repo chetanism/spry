@@ -592,6 +592,18 @@ class Falsify(unittest.TestCase):
         self.assertEqual(plan[1]["with"], "    if False and (overdue):")
         self.assertEqual(plan[0]["expect"], ["S-1/AC-1", "S-1/AC-2"])
 
+    def test_check_base_warns_on_a_cited_criterion_that_changed(self):
+        path = os.path.join(self.root, "spry/plan/M-1-m/E-1-e/F-1-f/S-1-s/README.md")
+        with open(path) as handle:
+            text = handle.read()
+        with open(path, "w") as handle:
+            handle.write(text.replace("| AC-1 | a | b | c |", "| AC-1 | a | b | something else |"))
+        p = spry.Project(self.root)
+        spry.changed_criteria(p, "main")
+        warnings = [str(x) for x in p.problems if x.level == "warning"]
+        self.assertEqual(len(warnings), 1, warnings)
+        self.assertIn("S-1/AC-1 changed since main, and tests/test_limit.py cite it", warnings[0])
+
     def test_record_writes_the_slice_table(self):
         results = self.run_plan([self.guard("    if overdue:", ["S-1/AC-2"])])
         spry.record_falsify(spry.Project(self.root), "SL-1", spry.falsify_rows(results))
@@ -611,6 +623,74 @@ class Mutations(unittest.TestCase):
 def story_text():
     return ("---\nid: S-1\ntitle: Lend\nstate: draft\n---\n# S-1\n\n## Acceptance criteria\n\n"
             "| AC | Given | When | Then |\n|---|---|---|---|\n| AC-1 | a | b | c |\n| AC-2 | a | b | c |\n")
+
+
+class Find(Base):
+    def test_ranks_the_section_that_matters(self):
+        t = self.tree(**{"spry__knowledge__decisions__D-1-x.md":
+                         "---\nid: D-1\ntitle: Store the due date\nsummary: s\n---\n# D-1\n\n## Decision\n\n- The due date is stored on the loan.\n"})
+        hits = spry.find(t.project(), "due date")
+        self.assertEqual(hits[0][0], "spry/knowledge/decisions/D-1-x.md")
+        self.assertIn("D-1 Store the due date › Decision", hits[0][2])
+        self.assertEqual(spry.find(t.project(), "nothing-like-this"), [])
+
+    def test_index_follows_edits(self):
+        t = self.tree()
+        self.assertEqual(spry.find(t.project(), "zebra"), [])
+        with open(os.path.join(t.root, F, "README.md"), "a") as handle:
+            handle.write("\n## Notes\n\n- A zebra crossing.\n")
+        self.assertEqual(spry.find(t.project(), "zebra")[0][0], f"{F}/README.md")
+
+    def test_plain_search_without_fts(self):
+        t = self.tree(**{f"{F}/README.md".replace("/", "__"): item("F-1", body="## Notes\n\n- A zebra crossing.\n")})
+        p = t.project()
+        hits = spry.find_plain(p, spry.searchable_files(p), ["zebra"], 5)
+        self.assertEqual(hits[0][0], f"{F}/README.md")
+
+
+class Install(unittest.TestCase):
+    def test_each_agent(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        skills = sorted(os.listdir(os.path.join(REPO, "plugins", "spry", "skills")))
+        for agent in spry.AGENTS:
+            spry.install(root, agent)
+        self.assertEqual(sorted(f[:-3] for f in os.listdir(os.path.join(root, "spry", "skills"))), skills)
+        self.assertTrue(os.path.isfile(os.path.join(root, ".claude", "skills", "spry-story", "SKILL.md")))
+        self.assertTrue(os.path.isfile(os.path.join(root, ".cursor", "commands", "spry-story.md")))
+        with open(os.path.join(root, ".gemini", "commands", "spry", "story.toml")) as handle:
+            toml = handle.read()
+        self.assertIn("{{args}}", toml)
+        self.assertNotIn("$ARGUMENTS", toml)
+        with open(os.path.join(root, ".claude", "skills", "spry-init", "SKILL.md")) as handle:
+            self.assertIn("name: spry-init\n", handle.read())
+        spry.install(root, "generic")
+        with open(os.path.join(root, "AGENTS.md")) as handle:
+            agents = handle.read()
+        self.assertEqual(agents.count("<!-- spry:skills -->"), 1, "a second install replaces the block")
+        self.assertIn("`/spry:story`", agents)
+
+
+class Codeowners(Base):
+    def test_owners_by_role(self):
+        config = dict(CONFIG, team={"members": [{"name": "A", "github": "a", "roles": ["product"]},
+                                                {"name": "B", "github": "b", "roles": ["developer", "product"]}],
+                                    "review": {"spry/plan/**": ["product"], "src/**": ["developer"], "ops/**": ["ops"]}})
+        p = self.tree(**{"spry__spry.config.json": json.dumps(config)}).project()
+        text = spry.codeowners(p)
+        self.assertIn("/spry/plan/** @a @b\n", text)
+        self.assertIn("/src/** @b\n", text)
+        self.assertNotIn("ops", text)
+        self.assertTrue(any("ops/**" in str(x) for x in p.problems))
+
+
+class Slowest(Base):
+    def test_reads_junit(self):
+        t = self.tree(**{"reports__junit.xml": '<testsuite><testcase file="a.test.ts" name="fast" time="0.1"/>'
+                                               '<testcase file="b.test.ts" name="slow" time="3.5"/></testsuite>'})
+        out = spry.slowest(t.project(), "reports/junit.xml", 5)
+        self.assertTrue(out.startswith("2 tests, 3.6s in total"))
+        self.assertLess(out.index("slow"), out.index("fast"))
 
 
 class Example(unittest.TestCase):

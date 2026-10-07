@@ -16,7 +16,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - run: python3 spry/tool/spry.py check
+        with:
+          fetch-depth: 0
+      - run: python3 spry/tool/spry.py check --base origin/${{ github.base_ref }}
   affected-tests:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

@@ -13,6 +13,11 @@
     python3 spry/tool/spry.py scrub <file>       # private words left in text about to leave the project
     python3 spry/tool/spry.py falsify suggest <slice> [--base main]   # draft a plan from the diff
     python3 spry/tool/spry.py falsify run <plan.json> [--dry-run] [--record <slice>]
+    python3 spry/tool/spry.py find "<words>"     # search spry/ and AGENTS.md, best sections first
+    python3 spry/tool/spry.py check --base origin/main   # also warn on cited criteria whose text changed
+    python3 spry/tool/spry.py codeowners [--check]       # .github/CODEOWNERS from team.review
+    python3 spry/tool/spry.py tests --slowest    # from the JUnit report in tests.junit
+    python3 <plugin>/tool/spry.py install --agent <generic|claude|cursor|gemini> [--root <project>]
 
 Run from anywhere inside the project, or pass --root. The project root is the nearest directory
 above the current one holding `spry/spry.config.json`.
@@ -1479,6 +1484,261 @@ def falsify_suggest(project: Project, slice_id: str, base: str) -> list:
     return plan
 
 
+# ---------------------------------------------------------------- find
+
+def searchable_files(project: Project) -> list:
+    out = markdown_files(project)
+    process = os.path.join(project.spry, "process")
+    if os.path.isdir(process):
+        for dirpath, _dirs, filenames in os.walk(process):
+            out += [os.path.join(dirpath, f) for f in filenames if f.endswith(".md")]
+    return sorted(set(out))
+
+
+def split_sections(path: str, text: str):
+    """(document title, [(heading, first line, body)]) — one entry per heading, so a hit points at
+    the part that matters. Link targets are dropped: a file name is not what a section is about."""
+    fm, start, _ = parse_front_matter(text)
+    title = (fm or {}).get("title") or os.path.basename(path)
+    if (fm or {}).get("id") and not title.startswith(fm["id"]):
+        title = f"{fm['id']} {title}"
+    text = re.sub(r"\]\([^)]*\)", "]", strip_blocks(text))
+    chunks, heading, first, body, in_fence = [], title, start + 1, [], False
+    for n, line in enumerate(text.split("\n")[start:], start + 1):
+        if FENCE.match(line):
+            in_fence = not in_fence
+        m = None if in_fence else HEADING.match(line)
+        if m:
+            if any(b.strip() for b in body):
+                chunks.append((heading, first, "\n".join(body)))
+            heading, first, body = m.group(2).strip(), n, []
+        else:
+            body.append(line)
+    if any(b.strip() for b in body):
+        chunks.append((heading, first, "\n".join(body)))
+    return title, chunks
+
+
+def search_terms(query: str) -> list:
+    return [w for w in re.findall(r"[\w-]+", query.lower()) if w]
+
+
+def find(project: Project, query: str, limit: int = 10, rebuild: bool = False) -> list:
+    """[(rel path, line, heading, snippet)] best first. SQLite FTS5 when the stdlib has it."""
+    import sqlite3
+    terms = search_terms(query)
+    if not terms:
+        return []
+    files = searchable_files(project)
+    db_path = os.path.join(project.root, ".spry", "index.db")
+    os.makedirs(os.path.dirname(db_path), exist_ok=True)
+    if rebuild and os.path.exists(db_path):
+        os.remove(db_path)
+    con = sqlite3.connect(db_path)
+    columns = [r[1] for r in con.execute("PRAGMA table_info(sections)")]
+    if columns and "title" not in columns:
+        con.close()
+        os.remove(db_path)
+        con = sqlite3.connect(db_path)
+    try:
+        con.execute("CREATE VIRTUAL TABLE IF NOT EXISTS sections USING "
+                    "fts5(path UNINDEXED, line UNINDEXED, title, heading, body, tokenize='porter unicode61')")
+    except sqlite3.OperationalError:
+        con.close()
+        return find_plain(project, files, terms, limit)
+    con.execute("CREATE TABLE IF NOT EXISTS files(path TEXT PRIMARY KEY, stamp TEXT)")
+    known = dict(con.execute("SELECT path, stamp FROM files"))
+    current = {}
+    for path in files:
+        st = os.stat(path)
+        current[project.rel(path)] = (path, f"{st.st_mtime_ns}:{st.st_size}")
+    for rel in set(known) - set(current):
+        con.execute("DELETE FROM sections WHERE path = ?", (rel,))
+        con.execute("DELETE FROM files WHERE path = ?", (rel,))
+    for rel, (path, stamp) in current.items():
+        if known.get(rel) == stamp:
+            continue
+        con.execute("DELETE FROM sections WHERE path = ?", (rel,))
+        title, chunks = split_sections(path, read(path))
+        con.executemany("INSERT INTO sections(path, line, title, heading, body) VALUES (?, ?, ?, ?, ?)",
+                        [(rel, line, title, heading, body) for heading, line, body in chunks])
+        con.execute("INSERT OR REPLACE INTO files(path, stamp) VALUES (?, ?)", (rel, stamp))
+    con.commit()
+    rows = []
+    for joiner in (" ", " OR "):
+        match = joiner.join('"' + t.replace('"', "") + '"*' for t in terms)
+        rows = con.execute("SELECT path, line, title || ' › ' || heading, snippet(sections, 4, '[', ']', '…', 12) "
+                           "FROM sections WHERE sections MATCH ? ORDER BY bm25(sections, 0, 0, 1.5, 2.0, 1.0) LIMIT ?",
+                           (match, limit)).fetchall()
+        if rows:
+            break
+    con.close()
+    return [(path, int(line), heading, " ".join(snippet.split())) for path, line, heading, snippet in rows]
+
+
+def find_plain(project: Project, files: list, terms: list, limit: int) -> list:
+    scored = []
+    for path in files:
+        title, chunks = split_sections(path, read(path))
+        for heading, line, body in chunks:
+            text = (title + " " + heading + " " + body).lower()
+            hits = sum(text.count(t) for t in terms)
+            if hits and all(t in text for t in terms):
+                at = text.find(terms[0])
+                snippet = " ".join((heading + " " + body)[max(0, at - 40):at + 80].split())
+                scored.append((hits, project.rel(path), line, f"{title} › {heading}", snippet))
+    scored.sort(key=lambda s: -s[0])
+    return [s[1:] for s in scored[:limit]]
+
+
+# ---------------------------------------------------------------- install
+
+AGENTS = ("generic", "claude", "cursor", "gemini")
+
+
+def install(root: str, agent: str) -> list:
+    """Copy the plugin's skills where another agent finds them. Returns the paths written."""
+    here = os.path.dirname(os.path.abspath(__file__))
+    plugin = os.path.dirname(here)
+    skills = os.path.join(plugin, "skills")
+    if not os.path.isdir(skills):
+        raise SystemExit("run `install` with the plugin's spry.py, not a project's copy")
+    if agent not in AGENTS:
+        raise SystemExit(f"unknown agent `{agent}` — one of {', '.join(AGENTS)}")
+    root = os.path.abspath(root)
+    written, listing = [], []
+    for name in sorted(os.listdir(skills), key=natural_key):
+        source = os.path.join(skills, name, "SKILL.md")
+        if not os.path.isfile(source):
+            continue
+        text = read(source).replace("two folders above this file's folder (`…/plugins/spry`)",
+                                    f"`{plugin}` — a copy of spry's `plugins/spry`")
+        fm, start, _ = parse_front_matter(text)
+        fm = fm or {}
+        body = "\n".join(text.split("\n")[start:]).strip() + "\n"
+        description = fm.get("description", "")
+        if agent == "generic":
+            path = os.path.join(root, "spry", "skills", f"{name}.md")
+            content = text
+            short = re.split(r" — |\. |, ", description)[0].rstrip(".")
+            if len(short) > 90:
+                short = short[:90].rsplit(" ", 1)[0] + "…"
+            listing.append(f"- `/spry:{name}` — {short} → `spry/skills/{name}.md`")
+        elif agent == "claude":
+            path = os.path.join(root, ".claude", "skills", f"spry-{name}", "SKILL.md")
+            content = text.replace(f"name: {name}\n", f"name: spry-{name}\n", 1)
+        elif agent == "cursor":
+            path = os.path.join(root, ".cursor", "commands", f"spry-{name}.md")
+            content = f"<!-- {description} -->\n\n{body}"
+        else:
+            if "'''" in body:
+                raise SystemExit(f"skill {name} contains ''' and cannot be written as a TOML literal")
+            path = os.path.join(root, ".gemini", "commands", "spry", f"{name}.toml")
+            content = (f"description = {json.dumps(description, ensure_ascii=False)}\n"
+                       f"prompt = '''\n{body.replace('$ARGUMENTS', '{{args}}')}'''\n")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        write(path, content)
+        written.append(os.path.relpath(path, root).replace(os.sep, "/"))
+    if agent == "generic":
+        agents_md = os.path.join(root, "AGENTS.md")
+        block = ("When the person types `/spry:<name>`, or asks for what a skill below does, read its file "
+                 "and follow it. `$ARGUMENTS` in a skill means what they wrote after the command.\n\n"
+                 + "\n".join(listing))
+        text = read(agents_md) if os.path.isfile(agents_md) else "# AGENTS.md\n"
+        new = replace_block(text, "skills", block)
+        if new is None:
+            new = text.rstrip("\n") + "\n\n## spry skills\n\n<!-- spry:skills -->\n" + block + "\n<!-- /spry:skills -->\n"
+        write(agents_md, new)
+        written.append("AGENTS.md")
+    return written
+
+
+# ---------------------------------------------------------------- codeowners
+
+def codeowners(project: Project) -> str:
+    team = project.config.get("team", {})
+    members, review = team.get("members", []), team.get("review", {})
+    lines = ["# Generated by `spry.py codeowners` from team.review in spry/spry.config.json.",
+             "# Change that, not this file. Later lines win, as GitHub reads them."]
+    for pattern, roles in review.items():
+        owners = sorted({"@" + m["github"] for m in members
+                         if m.get("github") and set(m.get("roles", [])) & set(roles)})
+        if not owners:
+            project.problem(os.path.join(project.spry, "spry.config.json"), 1,
+                            f"team.review `{pattern}` names roles nobody has: {', '.join(roles)}", "warning")
+            continue
+        anchored = pattern if pattern.startswith(("/", "*")) else "/" + pattern
+        lines.append(f"{anchored} {' '.join(owners)}")
+    return "\n".join(lines) + "\n"
+
+
+# ---------------------------------------------------------------- tests --slowest
+
+def slowest(project: Project, junit: str | None = None, limit: int = 10) -> str:
+    import glob as globber
+    import xml.etree.ElementTree as ElementTree
+    pattern = junit or project.config.get("tests", {}).get("junit", "")
+    if not pattern or pattern.startswith("<"):
+        raise SystemExit("no JUnit report — set tests.junit in spry.config.json, or pass --junit <path>")
+    base = os.path.join(project.root, pattern)
+    paths = sorted(globber.glob(os.path.join(base, "**", "*.xml"), recursive=True)) if os.path.isdir(base) \
+        else sorted(globber.glob(base, recursive=True))
+    if not paths:
+        raise SystemExit(f"no report at {pattern} — run the full test suite first")
+    cases = []
+    for path in paths:
+        try:
+            tree = ElementTree.parse(path)
+        except ElementTree.ParseError as e:
+            raise SystemExit(f"{project.rel(path)} is not JUnit XML: {e}")
+        for case in tree.iter("testcase"):
+            try:
+                seconds = float(case.get("time") or 0)
+            except ValueError:
+                seconds = 0.0
+            where = case.get("file") or case.get("classname") or "?"
+            cases.append((seconds, where, case.get("name") or "?"))
+    if not cases:
+        return "no test cases in the report"
+    total = sum(c[0] for c in cases)
+    by_file: dict = {}
+    for seconds, where, _ in cases:
+        by_file[where] = by_file.get(where, 0) + seconds
+    out = [f"{len(cases)} tests, {total:.1f}s in total", "", "Slowest tests:"]
+    out += [f"  {s:7.2f}s  {w} — {n}" for s, w, n in sorted(cases, reverse=True)[:limit]]
+    out += ["", "Slowest files:"]
+    out += [f"  {s:7.2f}s  {w}" for w, s in sorted(by_file.items(), key=lambda p: -p[1])[:limit]]
+    return "\n".join(out)
+
+
+# ---------------------------------------------------------------- changed criteria
+
+def ac_texts(text: str) -> dict:
+    out = {}
+    for _i, cells in table_rows(section_lines(text, "Acceptance criteria") or []):
+        m = re.fullmatch(r"(~~)?(AC-\d+)(~~)?", cells[0]) if cells else None
+        if m:
+            out[m.group(2)] = " ".join(" | ".join(cells[1:]).split())
+    return out
+
+
+def changed_criteria(project: Project, base: str):
+    """Warn for each acceptance criterion whose text changed since `base` while a test cites it."""
+    for story in project.of_type("story"):
+        rel = project.rel(story.doc)
+        before = git(project.root, "show", f"{base}:{rel}")
+        if before.returncode != 0:
+            continue
+        old, new = ac_texts(before.stdout), ac_texts(story.text)
+        for ac, text in new.items():
+            ref = f"{story.id}/{ac}"
+            if ac in old and old[ac] != text and project.tests.get(ref):
+                tests = ", ".join(sorted({p for p, _, _ in project.tests[ref]}))
+                project.problem(story.doc, story.acs[ac]["line"],
+                                f"{ref} changed since {base}, and {tests} cite it — check they still prove it",
+                                "warning")
+
+
 # ---------------------------------------------------------------- main
 
 def find_root(start: str):
@@ -1497,7 +1757,8 @@ def main(argv=None) -> int:
     parser.add_argument("--root", help="project root (default: nearest folder holding spry/spry.config.json)")
     parser.add_argument("--version", action="version", version=VERSION)
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("check", help="consistency of the plan, knowledge and links")
+    p = sub.add_parser("check", help="consistency of the plan, knowledge and links")
+    p.add_argument("--base", help="git ref to compare acceptance criteria against (warns on cited ones that changed)")
     p = sub.add_parser("status", help="done vs total at every level")
     p.add_argument("--level", help="stop at this level, e.g. feature")
     p = sub.add_parser("index", help="regenerate marker blocks and INDEX.md files")
@@ -1520,6 +1781,19 @@ def main(argv=None) -> int:
     p.add_argument("--diff", action="store_true", help="change nothing; list what differs from the plugin")
     p = sub.add_parser("scrub", help="private words still in a file meant to leave the project")
     p.add_argument("file")
+    p = sub.add_parser("find", help="search spry/ and AGENTS.md")
+    p.add_argument("query", nargs="+")
+    p.add_argument("--limit", type=int, default=10)
+    p.add_argument("--rebuild", action="store_true", help="rebuild the local index from scratch")
+    p = sub.add_parser("install", help="put the skills where another agent finds them (run the plugin's copy)")
+    p.add_argument("--agent", required=True, choices=AGENTS)
+    p.add_argument("--root", dest="install_root", help="the project (default: current folder)")
+    p = sub.add_parser("codeowners", help="write .github/CODEOWNERS from team.review")
+    p.add_argument("--check", action="store_true", help="change nothing; exit 1 if it is stale")
+    p = sub.add_parser("tests", help="test-suite reports")
+    p.add_argument("--slowest", action="store_true", required=True, help="the slowest tests and files")
+    p.add_argument("--junit", help="report file, folder or glob (default: tests.junit)")
+    p.add_argument("--limit", type=int, default=10)
     p = sub.add_parser("falsify", help="prove a slice's tests notice its safeguards")
     fsub = p.add_subparsers(dest="action", required=True)
     q = fsub.add_parser("suggest", help="draft a plan from the source lines this branch added")
@@ -1532,6 +1806,10 @@ def main(argv=None) -> int:
     q.add_argument("--record", metavar="SLICE", help="write the results into this slice's Falsify table")
     args = parser.parse_args(argv)
 
+    if args.command == "install":
+        for path in install(args.install_root or args.root or os.getcwd(), args.agent):
+            print("wrote: " + path)
+        return 0
     if args.command == "vendor" and args.diff:
         lines = vendor_diff(args.vendor_root or args.root or os.getcwd())
         print("\n".join(lines) or "same as the plugin")
@@ -1548,6 +1826,8 @@ def main(argv=None) -> int:
     project = Project(root)
 
     if args.command == "check":
+        if args.base:
+            changed_criteria(project, args.base)
         problems = check(project)
         for p in problems:
             print(p)
@@ -1577,6 +1857,32 @@ def main(argv=None) -> int:
         return 0
     if args.command == "new":
         print(project.rel(new_item(project, args.type, args.parent, args.title, args.owner, dependency=args.dependency)))
+        return 0
+    if args.command == "find":
+        hits = find(project, " ".join(args.query), args.limit, args.rebuild)
+        for path, line, heading, snippet in hits:
+            print(f"{path}:{line} · {heading}\n    {snippet}")
+        if not hits:
+            print("nothing found")
+        return 0
+    if args.command == "codeowners":
+        text = codeowners(project)
+        for p in project.problems:
+            print(p)
+        path = os.path.join(project.root, ".github", "CODEOWNERS")
+        current = read(path) if os.path.isfile(path) else None
+        if args.check:
+            print("up to date" if current == text else "stale: .github/CODEOWNERS")
+            return 0 if current == text else 1
+        if current != text:
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            write(path, text)
+            print("wrote: .github/CODEOWNERS")
+        else:
+            print("up to date")
+        return 0
+    if args.command == "tests":
+        print(slowest(project, args.junit, args.limit))
         return 0
     if args.command == "falsify":
         try:

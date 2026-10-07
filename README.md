@@ -24,6 +24,10 @@ cd ~/projects/your-project && claude
 > /spry:init       # new project — or /spry:adopt for existing code
 ```
 
+**Other agents:** clone this repository, then in your project run
+`python3 <clone>/plugins/spry/tool/spry.py install --agent generic` (or `claude`, `cursor`,
+`gemini`). `generic` lists the skills in `AGENTS.md`, which most agents read.
+
 ## See it first
 
 [A worked example](docs/example/README.md) — a small invented product taken from roadmap to slice.
