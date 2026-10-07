@@ -73,7 +73,9 @@ alternatives.
      criteria that safeguard serves; add any the draft missed (same `find` / `with` form).
    - `falsify run .spry/falsify/SL-<n>.json --dry-run`, then
      `falsify run .spry/falsify/SL-<n>.json --record SL-<n>` — it runs only the tests citing each
-     `expect`, stops at the first failure, restores every file, and writes the table.
+     `expect`, stops at the first failure, restores every file, and writes the table. With
+     `falsify.parallel` set (or `--jobs N`) it spreads controls over git worktrees and never
+     touches this tree; commit first, or it runs serially and says why.
    - `survived` → a new test, then run again until `caught`; or a written reason in that row.
      `unreliable` → the baseline was red or timed out: fix that first.
 4. **Proof:** every criterion in `covers` has a citing test, or tell QA which need a manual check

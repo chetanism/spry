@@ -247,8 +247,13 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 - **Runs only those test files**, through per-runner commands with `{files}`, using the runner's
   fail-fast flag — one failure is enough.
 - **Baseline once** for the union of files; a red baseline marks the group `unreliable`.
-- **Serial first.** Parallel runs in temporary git worktrees come later, per-runner, once serial is
-  proven on real stacks.
+- **Parallel in git worktrees** (`falsify.parallel`: `false`, `true` or a number; `--jobs N`):
+  each worker has a detached worktree of `HEAD` outside the repository, so this tree is never
+  written to. Installed dependencies (`node_modules`, `.venv`, `venv`, plus `falsify.share`) are
+  symlinked in. **The baseline runs in a worktree**, so anything a worktree lacks shows as
+  `unreliable`, never as every control `caught`. Falls back to serial when tracked files have
+  uncommitted changes or a cited test file is not committed. A runner with `"parallel": false`
+  (integration tests on a shared database, fixed ports) runs its controls one at a time.
 - **Refuses** no-op mutations, files with uncommitted changes, and `expect`s with no test.
 - **Always restores**, including on error, Ctrl-C and SIGTERM; checks the files are as committed after.
 - **Every write gets a fresh, increasing mtime.** Two same-size mutations written in one second
@@ -324,7 +329,7 @@ Later: `product-docs`, `product-guide`, `spry-web` plugin.
 
 - 2026-10-08 — tool: `check`, `status`, `index`, `related`, `next`, `new`, `pr-body`, `vendor`.
 - 2026-10-08 — `find`, `install --agent`, `codeowners`, `tests --slowest`, `check --base`.
-  Not yet: parallel `falsify` (serial first, §16).
+- 2026-10-08 — parallel `falsify` in worktrees (§16), built before a pilot at the owner's call.
 - 2026-10-08 — `falsify suggest` / `falsify run` (serial; worktree parallelism not built).
 - 2026-10-08 — skills: `init`, `adopt`, `milestone`, `epic`, `feature`, `story`, `slice`,
   `slice-open`, `slice-close`, `status`, `tone`, `update`, `contribute`.

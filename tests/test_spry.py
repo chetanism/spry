@@ -604,6 +604,69 @@ class Falsify(unittest.TestCase):
         self.assertEqual(len(warnings), 1, warnings)
         self.assertIn("S-1/AC-1 changed since main, and tests/test_limit.py cite it", warnings[0])
 
+    def configure(self, **falsify):
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["falsify"].update(falsify)
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+
+    def both_guards(self):
+        return [self.guard("    if count >= 3:", ["S-1/AC-1", "S-1/AC-2"]),
+                self.guard("    if overdue:", ["S-1/AC-1", "S-1/AC-2"])]
+
+    def worktrees(self):
+        return [l for l in self.git("worktree", "list").splitlines() if l.strip()]
+
+    def test_parallel_matches_serial_and_never_touches_this_tree(self):
+        before = os.stat(os.path.join(self.root, "src", "loans.py")).st_mtime_ns
+        said = []
+        results = spry.falsify_run(spry.Project(self.root), self.plan(self.both_guards()), say=said.append, jobs=2)
+        self.assertEqual([r for _, r, _ in results], ["caught", "survived"])
+        self.assertTrue(any(s.startswith("2 worktrees") for s in said), said)
+        self.assertEqual(os.stat(os.path.join(self.root, "src", "loans.py")).st_mtime_ns, before)
+        self.assertEqual(len(self.worktrees()), 1, "every worktree removed")
+
+    def test_parallel_falls_back_to_serial_with_uncommitted_changes(self):
+        self.write({"run.py": RUNNER + "# edited\n"})
+        said = []
+        results = spry.falsify_run(spry.Project(self.root), self.plan(self.both_guards()), say=said.append, jobs=2)
+        self.assertTrue(any(s.startswith("serial: tracked files") for s in said), said)
+        self.assertEqual([r for _, r, _ in results], ["caught", "survived"])
+
+    def needs_untracked_dependency(self, folder):
+        self.write({".gitignore": f"{folder}/\n__pycache__/\n", f"{folder}/helper.py": "READY = True\n",
+                    "tests/test_limit.py": f"import sys; sys.path.insert(0, '{folder}')\nimport helper\n" + TEST_LIMIT})
+        self.commit("tests need an installed dependency")
+
+    def test_installed_dependencies_are_shared_into_worktrees(self):
+        self.needs_untracked_dependency("node_modules")
+        results = self.run_plan(self.both_guards(), jobs=2)
+        self.assertEqual([r for _, r, _ in results], ["caught", "survived"])
+
+    def test_a_worktree_missing_a_dependency_is_unreliable_never_caught(self):
+        self.needs_untracked_dependency("deps")
+        results = self.run_plan(self.both_guards(), jobs=2)
+        self.assertEqual([r for _, r, _ in results], ["unreliable", "unreliable"])
+        self.configure(share=["deps"])
+        results = self.run_plan(self.both_guards(), jobs=2)
+        self.assertEqual([r for _, r, _ in results], ["caught", "survived"])
+
+    def test_a_serial_runner_still_runs_in_a_worktree(self):
+        self.configure(runners=[{"match": ["tests/**"], "cwd": "root", "parallel": False,
+                                 "command": "python3 run.py {files}"}])
+        results = self.run_plan(self.both_guards(), jobs=2)
+        self.assertEqual([r for _, r, _ in results], ["caught", "survived"])
+        self.assertEqual(self.source(), LOANS_AFTER)
+
+    def test_jobs_setting(self):
+        p = spry.Project(self.root)
+        self.assertEqual(spry.jobs_for(p, None, 5), 1, "serial unless asked")
+        self.assertEqual(spry.jobs_for(p, 8, 3), 3, "never more worktrees than controls")
+        self.configure(parallel=True)
+        self.assertGreaterEqual(spry.jobs_for(spry.Project(self.root), None, 5), 2)
+
     def test_record_writes_the_slice_table(self):
         results = self.run_plan([self.guard("    if overdue:", ["S-1/AC-2"])])
         spry.record_falsify(spry.Project(self.root), "SL-1", spry.falsify_rows(results))

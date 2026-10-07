@@ -16,7 +16,10 @@ audience: 8
 - **Monorepo:** with Turborepo, `turbo run test --filter=...[origin/main]` runs only changed packages
   and their dependents; set `cwd: package` on falsify runners.
 - **Integration tests** on a shared database: their own runner entry, matched by
-  `**/*.integration.test.ts`, run serially (`--pool=forks --poolOptions.forks.singleFork`).
+  `**/*.integration.test.ts`, run serially (`--pool=forks --poolOptions.forks.singleFork`), with
+  `"parallel": false` so falsify never runs two of them at once.
+- **Parallel falsify** shares `node_modules` into each worktree. Generated code outside it (a
+  Prisma client in `src/generated`, a build output tests import) goes in `falsify.share`.
 - **Deploy exclusion:** add `spry/` to `.dockerignore`; with a bundler, nothing reads `spry/` anyway.
 - **CI setup steps:** `actions/setup-node` with the `.nvmrc` version; `pnpm install --frozen-lockfile`
   (or the project's manager) with its cache.

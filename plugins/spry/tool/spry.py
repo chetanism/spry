@@ -12,7 +12,7 @@
     python3 <plugin>/tool/spry.py vendor --diff --root <project>   # what differs from the plugin
     python3 spry/tool/spry.py scrub <file>       # private words left in text about to leave the project
     python3 spry/tool/spry.py falsify suggest <slice> [--base main]   # draft a plan from the diff
-    python3 spry/tool/spry.py falsify run <plan.json> [--dry-run] [--record <slice>]
+    python3 spry/tool/spry.py falsify run <plan.json> [--dry-run] [--record <slice>] [--jobs N]
     python3 spry/tool/spry.py find "<words>"     # search spry/ and AGENTS.md, best sections first
     python3 spry/tool/spry.py check --base origin/main   # also warn on cited criteria whose text changed
     python3 spry/tool/spry.py codeowners [--check]       # .github/CODEOWNERS from team.review
@@ -46,6 +46,8 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
+import threading
 import time
 from datetime import date
 from dataclasses import dataclass, field
@@ -1291,9 +1293,10 @@ def load_plan(project: Project, path: str) -> list:
     return plan
 
 
-def run_tests(project: Project, runner: dict, cwd: str, files: list, timeout: int):
-    """('pass' | 'fail' | 'timeout', last lines of output)."""
-    rels = [os.path.relpath(os.path.join(project.root, f), cwd) for f in files]
+def run_tests(project: Project, runner: dict, cwd: str, files: list, timeout: int, root: str | None = None):
+    """('pass' | 'fail' | 'timeout', last lines of output). `root` is the tree the files live in."""
+    base = root or project.root
+    rels = [os.path.relpath(os.path.join(base, f), cwd) for f in files]
     command = runner["command"].replace("{files}", " ".join(shlex.quote(r) for r in rels))
     try:
         done = subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout)
@@ -1310,87 +1313,249 @@ def describe(entry: dict) -> str:
     return f"delete `{find}`" if not entry["with"] else f"`{find}` → `{' '.join(entry['with'].split())}`"
 
 
-def falsify_run(project: Project, plan_path: str, dry: bool = False, say=print) -> list:
+class Writer:
+    """Writes files so no build cache can mistake one version for another.
+
+    Every write gets its own whole-second mtime, later than the last. Build caches that judge
+    "unchanged" by size and mtime (Python's .pyc among them) would otherwise run the previous
+    mutation's compiled code when two mutations have the same size — a false `caught`."""
+
+    def __init__(self):
+        self.clock = int(time.time())
+        self.lock = threading.Lock()
+
+    def put(self, path: str, data: bytes):
+        with open(path, "wb") as handle:
+            handle.write(data)
+        with self.lock:
+            self.clock = max(self.clock + 1, int(time.time()))
+            stamp = self.clock
+        os.utime(path, (stamp, stamp))
+
+
+def mutate(entry: dict, original: bytes) -> bytes:
+    text = original.decode("utf-8")
+    return text.replace(in_line_endings(original, entry["find"]), in_line_endings(original, entry["with"]), 1).encode("utf-8")
+
+
+def in_tree(project: Project, root: str, cwd: str) -> str:
+    """The same folder as `cwd` (under the project root), inside another tree."""
+    return os.path.join(root, os.path.relpath(cwd, project.root))
+
+
+def run_control(project: Project, entry: dict, table: list, timeout: int, red: dict, root: str) -> tuple:
+    """Run the tests one mutated control should fail, in the tree at `root`. Returns (result, note)."""
+    outcomes, notes = [], []
+    for key, files in group_files(project, entry["_tests"]).items():
+        if key in red:
+            outcomes.append("unreliable")
+            notes.append(red[key])
+            continue
+        outcome, _tail = run_tests(project, table[key[0]], in_tree(project, root, key[1]), files, timeout, root)
+        outcomes.append({"fail": "caught", "pass": "survived"}.get(outcome, "unreliable"))
+        if outcome == "timeout":
+            notes.append("timed out")
+        if outcome == "fail":
+            break
+    if "caught" in outcomes:
+        return "caught", "; ".join(notes)
+    if "survived" in outcomes:
+        return "survived", "; ".join(notes)
+    return "unreliable", "; ".join(notes)
+
+
+def baseline(project: Project, groups: dict, table: list, timeout: int, root: str, say) -> dict:
+    """{group key: why it is red} for every group whose tests fail before anything is changed."""
+    red = {}
+    for key, files in groups.items():
+        outcome, tail = run_tests(project, table[key[0]], in_tree(project, root, key[1]), files, timeout, root)
+        if outcome != "pass":
+            red[key] = f"baseline {outcome}" + (f": {tail.splitlines()[-1]}" if tail else "")
+        say(f"baseline {'green' if outcome == 'pass' else outcome} · {len(files)} test files")
+    return red
+
+
+DEFAULT_SHARE = ("node_modules", ".venv", "venv")
+
+
+def shared_paths(project: Project) -> list:
+    """Untracked folders each worktree borrows from the main tree: installed dependencies."""
+    names = set(DEFAULT_SHARE)
+    found = list(project.config.get("falsify", {}).get("share", []))
+    for dirpath, dirnames, _files in os.walk(project.root):
+        depth = os.path.relpath(dirpath, project.root).count(os.sep)
+        keep = []
+        for d in dirnames:
+            if d in names:
+                found.append(os.path.relpath(os.path.join(dirpath, d), project.root))
+            elif not d.startswith(".") and d not in SKIP_DIRS and depth < 3:
+                keep.append(d)
+        dirnames[:] = keep
+    return sorted(set(found))
+
+
+def parallel_blocker(project: Project, plan: list):
+    """Why a worktree would not see what the main tree has — or None when parallel is safe."""
+    status = git(project.root, "status", "--porcelain", "--untracked-files=no")
+    if status.returncode != 0:
+        return "not a git repository"
+    if status.stdout.strip():
+        return "tracked files have uncommitted changes, which a worktree would not see"
+    for path in sorted({f for e in plan for f in e["_tests"]}):
+        if git(project.root, "ls-files", "--error-unmatch", "--", path).returncode != 0:
+            return f"{path} is not committed, so a worktree would not have it"
+    return None
+
+
+def jobs_for(project: Project, wanted, controls: int) -> int:
+    setting = wanted if wanted is not None else project.config.get("falsify", {}).get("parallel", False)
+    if setting is True:
+        setting = max(2, (os.cpu_count() or 2) // 2)
+    try:
+        jobs = int(setting or 1)
+    except (TypeError, ValueError):
+        raise PlanError(f"falsify.parallel must be true, false or a number, not {setting!r}")
+    return max(1, min(jobs, controls))
+
+
+def falsify_run(project: Project, plan_path: str, dry: bool = False, say=print, jobs=None) -> list:
     """Run a plan. Returns [(entry, result, note)], result caught | survived | unreliable."""
     plan = load_plan(project, plan_path)
     table = runners(project)
     timeout = int(project.config.get("falsify", {}).get("timeout", 600))
     groups = group_files(project, [f for e in plan for f in e["_tests"]])
+    jobs = jobs_for(project, jobs, len(plan))
+    if jobs > 1:
+        blocker = parallel_blocker(project, plan)
+        if blocker:
+            say(f"serial: {blocker}")
+            jobs = 1
     if dry:
+        say(f"{jobs} worktrees in parallel" if jobs > 1 else "serial, in this tree")
         for (index, cwd), files in groups.items():
             say(f"baseline · runner {index + 1} · {project.rel(cwd) if cwd != project.root else '.'} · {len(files)} test files")
         for entry in plan:
             say(f"would remove: {entry['control']} — {describe(entry)} — then run {', '.join(entry['_tests'])}")
         return []
-
-    red = {}
-    for key, files in groups.items():
-        outcome, tail = run_tests(project, table[key[0]], key[1], files, timeout)
-        if outcome != "pass":
-            red[key] = f"baseline {outcome}" + (f": {tail.splitlines()[-1]}" if tail else "")
-        say(f"baseline {'green' if outcome == 'pass' else outcome} · {len(files)} test files")
-
-    results, touched, clock = [], {}, [int(time.time())]
-
-    def put(path: str, data: bytes):
-        # Every write gets its own whole-second mtime, later than the last. Build caches that judge
-        # "unchanged" by size and mtime (Python's .pyc among them) would otherwise run the previous
-        # mutation's compiled code when two mutations have the same size — a false `caught`.
-        with open(path, "wb") as handle:
-            handle.write(data)
-        clock[0] = max(clock[0] + 1, int(time.time()))
-        os.utime(path, (clock[0], clock[0]))
-
-    def restore():
-        for path, data in touched.items():
-            put(path, data)
-        touched.clear()
-
     previous = signal.getsignal(signal.SIGTERM)
+
     def interrupt(*_):
         raise KeyboardInterrupt()
 
     signal.signal(signal.SIGTERM, interrupt)
     try:
-        for entry in plan:
-            target = os.path.join(project.root, entry["file"])
-            with open(target, "rb") as handle:
-                original = handle.read()
-            text = original.decode("utf-8")
-            mutated = text.replace(in_line_endings(original, entry["find"]),
-                                   in_line_endings(original, entry["with"]), 1)
-            touched[target] = original
-            put(target, mutated.encode("utf-8"))
-            outcomes, notes = [], []
-            try:
-                for key, files in group_files(project, entry["_tests"]).items():
-                    if key in red:
-                        outcomes.append("unreliable")
-                        notes.append(red[key])
-                        continue
-                    outcome, _tail = run_tests(project, table[key[0]], key[1], files, timeout)
-                    outcomes.append({"fail": "caught", "pass": "survived"}.get(outcome, "unreliable"))
-                    if outcome == "timeout":
-                        notes.append("timed out")
-                    if outcome == "fail":
-                        break
-            finally:
-                restore()
-            if "caught" in outcomes:
-                result = "caught"
-            elif "survived" in outcomes:
-                result = "survived"
-            else:
-                result = "unreliable"
-            results.append((entry, result, "; ".join(notes)))
-            say(f"{result}: {entry['control']}")
+        if jobs > 1:
+            results = falsify_parallel(project, plan, table, timeout, groups, jobs, say)
+        else:
+            results = falsify_serial(project, plan, table, timeout, groups, say)
     finally:
-        restore()
         signal.signal(signal.SIGTERM, previous)
     dirty = [e["file"] for e in plan if not git_clean(project.root, e["file"])]
     if dirty:
         raise PlanError("after the run these files are not as committed — check them now: " + ", ".join(dirty))
     return results
+
+
+def falsify_serial(project: Project, plan: list, table: list, timeout: int, groups: dict, say) -> list:
+    """One control at a time, in this tree; every file restored, whatever happens."""
+    red = baseline(project, groups, table, timeout, project.root, say)
+    writer, results, touched = Writer(), [], {}
+
+    def restore():
+        for path, data in touched.items():
+            writer.put(path, data)
+        touched.clear()
+
+    try:
+        for entry in plan:
+            target = os.path.join(project.root, entry["file"])
+            with open(target, "rb") as handle:
+                original = handle.read()
+            touched[target] = original
+            writer.put(target, mutate(entry, original))
+            try:
+                result, note = run_control(project, entry, table, timeout, red, project.root)
+            finally:
+                restore()
+            results.append((entry, result, note))
+            say(f"{result}: {entry['control']}")
+    finally:
+        restore()
+    return results
+
+
+def falsify_parallel(project: Project, plan: list, table: list, timeout: int, groups: dict, jobs: int, say) -> list:
+    """Controls spread over `jobs` git worktrees of HEAD. This tree is never written to.
+
+    The baseline runs inside a worktree, not here: a worktree missing something the tests need
+    (a dependency not shared, a generated file) must show as a red baseline — `unreliable` —
+    never as every control `caught`."""
+    from concurrent.futures import ThreadPoolExecutor
+    import queue
+
+    parent = tempfile.mkdtemp(prefix="spry-falsify-")
+    trees, writer, lock = [], Writer(), threading.Lock()
+    share = shared_paths(project)
+    try:
+        for n in range(jobs):
+            tree = os.path.join(parent, f"w{n + 1}")
+            done = git(project.root, "worktree", "add", "--detach", "-q", tree, "HEAD")
+            if done.returncode != 0:
+                raise PlanError(f"git worktree add failed: {done.stderr.strip()}")
+            trees.append(tree)
+            for rel in share:
+                link = os.path.join(tree, rel)
+                if not os.path.exists(link):
+                    os.makedirs(os.path.dirname(link), exist_ok=True)
+                    os.symlink(os.path.join(project.root, rel), link)
+        say(f"{jobs} worktrees · sharing {', '.join(share) or 'nothing'}")
+        red = baseline(project, groups, table, timeout, trees[0], say)
+
+        def serial_only(entry):
+            keys = group_files(project, entry["_tests"])
+            return any(table[index].get("parallel") is False for index, _cwd in keys)
+
+        free = queue.Queue()
+        for tree in trees:
+            free.put(tree)
+
+        def one(entry):
+            tree = free.get()
+            target = os.path.join(tree, entry["file"])
+            try:
+                with open(target, "rb") as handle:
+                    original = handle.read()
+                writer.put(target, mutate(entry, original))
+                try:
+                    return run_control(project, entry, table, timeout, red, tree)
+                finally:
+                    writer.put(target, original)
+            finally:
+                free.put(tree)
+
+        results: dict = {}
+        pool_entries = [(i, e) for i, e in enumerate(plan) if not serial_only(e)]
+        with ThreadPoolExecutor(max_workers=jobs) as pool:
+            futures = {pool.submit(one, e): (i, e) for i, e in pool_entries}
+            try:
+                for future in futures:
+                    i, entry = futures[future]
+                    results[i] = (entry, *future.result())
+                    with lock:
+                        say(f"{results[i][1]}: {entry['control']}")
+            except BaseException:
+                pool.shutdown(wait=True, cancel_futures=True)
+                raise
+        for i, entry in enumerate(plan):
+            if i not in results:
+                results[i] = (entry, *one(entry))
+                say(f"{results[i][1]}: {entry['control']} (serial runner)")
+        return [results[i] for i in range(len(plan))]
+    finally:
+        for tree in trees:
+            git(project.root, "worktree", "remove", "--force", tree)
+        git(project.root, "worktree", "prune")
+        shutil.rmtree(parent, ignore_errors=True)
 
 
 def falsify_rows(results) -> list:
@@ -1804,6 +1969,7 @@ def main(argv=None) -> int:
     q.add_argument("plan")
     q.add_argument("--dry-run", action="store_true", help="validate and list what would run")
     q.add_argument("--record", metavar="SLICE", help="write the results into this slice's Falsify table")
+    q.add_argument("--jobs", type=int, help="worktrees to run in parallel (default: falsify.parallel; 1 = serial)")
     args = parser.parse_args(argv)
 
     if args.command == "install":
@@ -1897,7 +2063,7 @@ def main(argv=None) -> int:
                     print("fill in `expect` — the slice covers no story criteria")
                 print("prune it to the safeguards that matter, then: falsify run " + project.rel(out))
                 return 0
-            results = falsify_run(project, args.plan, dry=args.dry_run)
+            results = falsify_run(project, args.plan, dry=args.dry_run, jobs=args.jobs)
         except PlanError as e:
             print("plan refused: " + str(e), file=sys.stderr)
             return 1
