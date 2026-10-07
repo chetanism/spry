@@ -275,6 +275,8 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `next <type>` | next free ID |
 | `new <type> --parent --title` | create an item from its template, next ID, right folder |
 | `pr-body <slice>` | the slice's work order (+ close summary) for its pull request |
+| `merge-check <slice> [--base]` | ready to merge? closed, PR number, falsify survivors resolved, covered ACs proven (else a QA follow-up), `check` clean |
+| `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
 | `vendor` | copy `process/` and the tool into a project (plugin's copy only); `--diff` lists what differs |
 | `scrub <file>` | private words (product, people, glossary terms, emails, URLs) left in text about to leave the project |
 | `find <query>` | full-text search, best sections first (§11) |
@@ -295,6 +297,8 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `slice` | 8 | Split a ready story / task / bug into `planned` slices: one slice is reviewable in one sitting and demos one visible change |
 | `slice-open` | 8 | Work order (opening with a brief summary of what will be done), conflict check, branch, draft PR with the work order as its body; stops before code |
 | `slice-close` | 8 | Close summary from the diff, falsify, AC proof, done list; PR body refreshed with both parts |
+| `review` | 8 | Review a PR against its work order; findings as blocker / should / nit, posted only on a yes |
+| `merge` | 8 | Checks green, `merge-check`, PR body current, approval, base not moved → squash with trailers → full suite on main → what is unblocked |
 | `bug` / `task` | 4 / 7 | Record one, attached to its parent |
 | `status` | reader's | Roll-up explained at the asker's tone |
 | `tone` | — | Personal audience override |
@@ -342,3 +346,5 @@ Later: `product-docs`, `product-guide`, `spry-web` plugin.
   last entry it considered — and `spry/knowledge/process-changes.md` logs its local changes and
   every entry taken, adapted or skipped, so an update keeps local changes. The tool is never changed
   locally; it is replaced whole.
+- 2026-10-08 — `review` and `merge` (`process/merging.md`), with `merge-check` and `merge-message`.
+  The merge rules a writ project kept in its always-loaded file now load only when merging.

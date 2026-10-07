@@ -17,6 +17,8 @@
     python3 spry/tool/spry.py check --base origin/main   # also warn on cited criteria whose text changed
     python3 spry/tool/spry.py codeowners [--check]       # .github/CODEOWNERS from team.review
     python3 spry/tool/spry.py tests --slowest    # from the JUnit report in tests.junit
+    python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
+    python3 spry/tool/spry.py merge-message <slice>   # the squash commit: subject, summary, trailers
     python3 <plugin>/tool/spry.py install --agent <generic|claude|cursor|gemini> [--root <project>]
 
 Run from anywhere inside the project, or pass --root. The project root is the nearest directory
@@ -1904,6 +1906,75 @@ def changed_criteria(project: Project, base: str):
                                 "warning")
 
 
+# ---------------------------------------------------------------- merge-check / merge-message
+
+def falsify_table(item: Item) -> list:
+    """Cells of each result row in the slice's Falsify table."""
+    lines = section_lines(item.text, "Falsify") or []
+    rows = [cells for _i, cells in table_rows(lines)]
+    return [r for r in rows if r and r[0].lower() != "control"]
+
+
+def merge_check(project: Project, slice_id: str, base: str | None = None) -> list:
+    """[(status, line)] — status `ok`, `warn` (merge may go ahead, someone must act) or `block`."""
+    item = project.items.get(slice_id)
+    if item is None or item.type != "slice":
+        raise SystemExit(f"no slice {slice_id}")
+    out = []
+    out.append(("ok", "state is closed") if item.state == "closed"
+               else ("block", f"state is `{item.state}` — run /spry:slice-close first"))
+    out.append(("ok", f"PR #{item.fm['pr']}") if str(item.fm.get("pr", "")).isdigit()
+               else ("block", "no `pr:` number in the slice"))
+    rows = falsify_table(item)
+    if not rows:
+        out.append(("block", "no falsify results — run `falsify run … --record` at close"))
+    for cells in rows:
+        result = cells[-1].strip().lower()
+        if result == "survived":
+            out.append(("block", f"falsify: `{cells[0]}` survived — add a test and re-run, or write the reason after `survived`"))
+        elif result.startswith("unreliable"):
+            out.append(("warn", f"falsify: `{cells[0]}` unreliable — its tests never ran green; say why or re-run"))
+    story = item.parent if item.parent and item.parent.type == "story" else None
+    for ac in (item.fm.get("covers") or []) if story else []:
+        ref = f"{story.id}/{ac}"
+        tests = len(project.tests.get(ref, []))
+        manual = project.manual.get(story.id, {}).get(ac)
+        said = [f"{tests} test{'s' if tests != 1 else ''}"] if tests else []
+        if manual:
+            said.append(f"manual {manual[3]} {manual[0]}")
+        if project.proof(story, ac)[0]:
+            out.append(("ok", f"{ref} proven — {', '.join(said)}"))
+        elif manual and manual[3] == "fail":
+            out.append(("warn", f"{ref} — the latest manual check failed ({manual[0]}, {manual[2]}); is there a bug for it?"))
+        else:
+            out.append(("warn", f"{ref} — no test cites it; QA must check it by hand after the merge"))
+    if base:
+        changed_criteria(project, base)
+    errors = [p for p in check(project) if p.level == "error"]
+    out.append(("ok", "spry check clean") if not errors
+               else ("block", f"spry check: {len(errors)} error{'s' if len(errors) != 1 else ''} — first: {errors[0]}"))
+    for p in project.problems:
+        if p.level == "warning" and "changed since" in p.message:
+            out.append(("warn", p.message))
+    return out
+
+
+def merge_message(project: Project, slice_id: str) -> str:
+    """Subject, blank line, body: the slice summary, then the trailers. For `gh pr merge --squash`."""
+    item = project.items.get(slice_id)
+    if item is None or item.type != "slice":
+        raise SystemExit(f"no slice {slice_id}")
+    pr = f" (#{item.fm['pr']})" if str(item.fm.get("pr", "")).isdigit() else ""
+    summary = [line.rstrip() for _i, line in (section_lines(item.text, "Summary") or [])
+               if line.strip() and not line.strip().startswith("<!--")]
+    trailers = [f"Slice: {item.id}"]
+    if item.parent:
+        trailers.append(f"Parent: {item.parent.id}")
+    if item.parent and item.parent.type == "story" and item.fm.get("covers"):
+        trailers.append("Covers: " + ", ".join(f"{item.parent.id}/{ac}" for ac in item.fm["covers"]))
+    return f"{item.id} {item.title}{pr}\n\n" + ("\n".join(summary) + "\n\n" if summary else "") + "\n".join(trailers) + "\n"
+
+
 # ---------------------------------------------------------------- main
 
 def find_root(start: str):
@@ -1959,6 +2030,11 @@ def main(argv=None) -> int:
     p.add_argument("--slowest", action="store_true", required=True, help="the slowest tests and files")
     p.add_argument("--junit", help="report file, folder or glob (default: tests.junit)")
     p.add_argument("--limit", type=int, default=10)
+    p = sub.add_parser("merge-check", help="is a closed slice ready to merge? exit 1 if anything blocks it")
+    p.add_argument("slice")
+    p.add_argument("--base", help="git ref the PR merges into, to catch cited criteria that changed")
+    p = sub.add_parser("merge-message", help="the squash commit for a slice: subject, summary, trailers")
+    p.add_argument("slice")
     p = sub.add_parser("falsify", help="prove a slice's tests notice its safeguards")
     fsub = p.add_subparsers(dest="action", required=True)
     q = fsub.add_parser("suggest", help="draft a plan from the source lines this branch added")
@@ -2049,6 +2125,17 @@ def main(argv=None) -> int:
         return 0
     if args.command == "tests":
         print(slowest(project, args.junit, args.limit))
+        return 0
+    if args.command == "merge-check":
+        lines = merge_check(project, args.slice, args.base)
+        mark = {"ok": "✓", "warn": "!", "block": "✗"}
+        for level, text in lines:
+            print(f"{mark[level]} {text}")
+        blocks = sum(1 for s, _ in lines if s == "block")
+        print("ready to merge" if not blocks else f"{blocks} thing{'s block' if blocks != 1 else ' blocks'} the merge")
+        return 1 if blocks else 0
+    if args.command == "merge-message":
+        print(merge_message(project, args.slice), end="")
         return 0
     if args.command == "falsify":
         try:

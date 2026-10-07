@@ -76,7 +76,8 @@ alternatives.
      `expect`, stops at the first failure, restores every file, and writes the table. With
      `falsify.parallel` set (or `--jobs N`) it spreads controls over git worktrees and never
      touches this tree; commit first, or it runs serially and says why.
-   - `survived` → a new test, then run again until `caught`; or a written reason in that row.
+   - `survived` → a new test, then run again until `caught`; or write the reason after `survived`
+     in that row (`survived — logged only; no rule depends on it`). A bare `survived` blocks the merge.
      `unreliable` → the baseline was red or timed out: fix that first.
 4. **Proof:** every criterion in `covers` has a citing test, or tell QA which need a manual check
    (`[Test]` under `NEXT`).
@@ -85,4 +86,4 @@ alternatives.
 6. Set `state: closed`; `spry.py check`; commit `docs(slice): SL-<n> close summary` with the
    trailer `Slice: SL-<n>` in the body; push; replace the PR body with `spry.py pr-body SL-<n>`;
    mark the PR ready for review.
-7. **Never merge.** Tell the person the PR is ready, and to merge only once its checks are green.
+7. **Never merge here.** Tell the person the PR is ready for `/spry:review`, then `/spry:merge`.

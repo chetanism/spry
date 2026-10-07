@@ -756,6 +756,50 @@ class Slowest(Base):
         self.assertLess(out.index("slow"), out.index("fast"))
 
 
+class Merge(Base):
+    def closed_slice(self, falsify_rows, covers="[AC-1]"):
+        text = slice_("SL-1", covers=covers).replace("### Plan", "### Summary\n\n- Lends a book.\n\n### Plan")
+        return text + "\n## Close summary\n\n### Falsify\n\n| Control | Mutation | Expect | Result |\n|---|---|---|---|\n" + falsify_rows
+
+    def check(self, rows, **files):
+        t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): self.closed_slice(rows)}, **files)
+        return spry.merge_check(t.project(), "SL-1")
+
+    def blocks(self, lines):
+        return [text for status, text in lines if status == "block"]
+
+    def test_ready(self):
+        lines = self.check("| guard | never true | S-1/AC-1 | caught |\n")
+        self.assertEqual(self.blocks(lines), [])
+        self.assertIn(("ok", "S-1/AC-1 proven — 1 test"), lines)
+
+    def test_a_bare_survivor_blocks_and_a_reasoned_one_does_not(self):
+        self.assertTrue(self.blocks(self.check("| guard | never true | S-1/AC-1 | survived |\n")))
+        self.assertEqual(self.blocks(self.check("| guard | never true | S-1/AC-1 | survived — logged only |\n")), [])
+
+    def test_no_falsify_results_blocks(self):
+        self.assertIn("no falsify results", " ".join(self.blocks(self.check(""))))
+
+    def test_open_slice_blocks(self):
+        t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): slice_("SL-1", state="open")})
+        self.assertIn("state is `open`", " ".join(self.blocks(spry.merge_check(t.project(), "SL-1"))))
+
+    def test_unproven_criterion_warns_but_does_not_block(self):
+        t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): self.closed_slice("| g | m | S-1/AC-1 | caught |\n"),
+                         "src/a.test.ts": "nothing\n"})
+        lines = spry.merge_check(t.project(), "SL-1")
+        self.assertEqual(self.blocks(lines), [])
+        self.assertTrue(any(s == "warn" and "QA must check it" in x for s, x in lines))
+
+    def test_message_carries_the_trailers(self):
+        t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): self.closed_slice("")})
+        message = spry.merge_message(t.project(), "SL-1")
+        subject, _, body = message.partition("\n\n")
+        self.assertEqual(subject, "SL-1 Slice SL-1 (#1)")
+        self.assertIn("- Lends a book.", body)
+        self.assertTrue(body.rstrip().endswith("Slice: SL-1\nParent: S-1\nCovers: S-1/AC-1"))
+
+
 class Example(unittest.TestCase):
     """The worked example in docs/example must stay clean and freshly indexed."""
 
