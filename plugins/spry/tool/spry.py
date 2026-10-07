@@ -11,6 +11,8 @@
     python3 <plugin>/tool/spry.py vendor --root <project>   # copy process/ and the tool into a project
     python3 <plugin>/tool/spry.py vendor --diff --root <project>   # what differs from the plugin
     python3 spry/tool/spry.py scrub <file>       # private words left in text about to leave the project
+    python3 spry/tool/spry.py falsify suggest <slice> [--base main]   # draft a plan from the diff
+    python3 spry/tool/spry.py falsify run <plan.json> [--dry-run] [--record <slice>]
 
 Run from anywhere inside the project, or pass --root. The project root is the nearest directory
 above the current one holding `spry/spry.config.json`.
@@ -34,8 +36,12 @@ import json
 import math
 import os
 import re
+import shlex
 import shutil
+import signal
+import subprocess
 import sys
+import time
 from datetime import date
 from dataclasses import dataclass, field
 
@@ -1121,6 +1127,301 @@ def scrub(project: Project, path: str) -> list:
     return hits
 
 
+# ---------------------------------------------------------------- falsify
+
+PACKAGE_MARKERS = ("package.json", "pyproject.toml", "go.mod", "Cargo.toml", "pom.xml",
+                   "build.gradle", "Gemfile", "setup.py")
+
+
+class PlanError(Exception):
+    pass
+
+
+def git(root: str, *args: str) -> subprocess.CompletedProcess:
+    return subprocess.run(["git", "-C", root, *args], capture_output=True, text=True)
+
+
+def git_clean(root: str, rel: str) -> bool:
+    done = git(root, "status", "--porcelain", "--", rel)
+    return done.returncode == 0 and not done.stdout.strip()
+
+
+def in_line_endings(data: bytes, snippet: str) -> str:
+    return snippet.replace("\r\n", "\n").replace("\n", "\r\n") if b"\r\n" in data else snippet
+
+
+def runners(project: Project) -> list:
+    table = project.config.get("falsify", {}).get("runners") or []
+    if not table:
+        raise PlanError("spry.config.json has no falsify.runners — say how to run a list of test files")
+    for runner in table:
+        command = str(runner.get("command") or "")
+        if "{files}" not in command:
+            raise PlanError("a falsify runner's command needs `{files}`: " + json.dumps(runner))
+        if re.search(r"<[a-z][a-z ,/-]*>", command):
+            raise PlanError("a falsify runner is still the template's placeholder: " + command)
+    return table
+
+
+def runner_cwd(project: Project, runner: dict, rel: str) -> str:
+    """The folder a runner runs in for this test file: the project root, or its nearest package."""
+    if runner.get("cwd") != "package":
+        return project.root
+    folder = os.path.dirname(os.path.join(project.root, rel))
+    while os.path.abspath(folder).startswith(project.root):
+        if any(os.path.isfile(os.path.join(folder, m)) for m in PACKAGE_MARKERS):
+            return folder
+        if os.path.abspath(folder) == project.root:
+            break
+        folder = os.path.dirname(folder)
+    return project.root
+
+
+def group_files(project: Project, files) -> dict:
+    """{(runner index, cwd): [rel paths]} — the first runner whose `match` takes each file."""
+    table = runners(project)
+    groups: dict = {}
+    for rel in sorted(set(files)):
+        index = next((i for i, r in enumerate(table) if any(glob_regex(g).match(rel) for g in r.get("match", ["**"]))), None)
+        if index is None:
+            raise PlanError(f"no falsify runner matches {rel}")
+        groups.setdefault((index, runner_cwd(project, table[index], rel)), []).append(rel)
+    return groups
+
+
+def load_plan(project: Project, path: str) -> list:
+    try:
+        plan = json.loads(read(path))
+    except (OSError, json.JSONDecodeError) as e:
+        raise PlanError(f"cannot read the plan {path}: {e}")
+    if not isinstance(plan, list) or not plan:
+        raise PlanError("a plan is a non-empty JSON list of controls")
+    for n, entry in enumerate(plan, 1):
+        where = f"control {n} ({entry.get('control', '?')})" if isinstance(entry, dict) else f"control {n}"
+        if not isinstance(entry, dict):
+            raise PlanError(f"{where} is not an object")
+        for key in ("control", "file", "find", "expect"):
+            if not entry.get(key):
+                raise PlanError(f"{where} has no `{key}`")
+        entry.setdefault("with", "")
+        if entry["find"] == entry["with"]:
+            raise PlanError(f"{where}: `find` equals `with` — nothing would change")
+        target = os.path.join(project.root, entry["file"])
+        if not os.path.isfile(target):
+            raise PlanError(f"{where}: no file {entry['file']}")
+        if not git_clean(project.root, entry["file"]):
+            raise PlanError(f"{where}: {entry['file']} has uncommitted changes — commit first; restoring would lose them")
+        with open(target, "rb") as handle:
+            data = handle.read()
+        count = data.decode("utf-8").count(in_line_endings(data, entry["find"]))
+        if count != 1:
+            raise PlanError(f"{where}: `find` occurs {count} times in {entry['file']} — it must occur exactly once")
+        if not isinstance(entry["expect"], list):
+            raise PlanError(f"{where}: `expect` must be a list such as [\"S-1/AC-2\"]")
+        cited = sorted({path for ref in entry["expect"] for path, _, _ in project.tests.get(ref, [])})
+        if not cited:
+            raise PlanError(f"{where}: no test cites {', '.join(entry['expect'])} — nothing could notice")
+        chosen = entry.get("files") or cited
+        stray = sorted(set(chosen) - set(cited))
+        if stray:
+            raise PlanError(f"{where}: {', '.join(stray)} cites none of {', '.join(entry['expect'])}")
+        entry["_tests"] = chosen
+    return plan
+
+
+def run_tests(project: Project, runner: dict, cwd: str, files: list, timeout: int):
+    """('pass' | 'fail' | 'timeout', last lines of output)."""
+    rels = [os.path.relpath(os.path.join(project.root, f), cwd) for f in files]
+    command = runner["command"].replace("{files}", " ".join(shlex.quote(r) for r in rels))
+    try:
+        done = subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return "timeout", ""
+    tail = "\n".join((done.stdout + done.stderr).strip().split("\n")[-5:])
+    return ("pass" if done.returncode == 0 else "fail"), tail
+
+
+def describe(entry: dict) -> str:
+    if entry.get("mutation"):
+        return entry["mutation"]
+    find = " ".join(entry["find"].split())
+    return f"delete `{find}`" if not entry["with"] else f"`{find}` → `{' '.join(entry['with'].split())}`"
+
+
+def falsify_run(project: Project, plan_path: str, dry: bool = False, say=print) -> list:
+    """Run a plan. Returns [(entry, result, note)], result caught | survived | unreliable."""
+    plan = load_plan(project, plan_path)
+    table = runners(project)
+    timeout = int(project.config.get("falsify", {}).get("timeout", 600))
+    groups = group_files(project, [f for e in plan for f in e["_tests"]])
+    if dry:
+        for (index, cwd), files in groups.items():
+            say(f"baseline · runner {index + 1} · {project.rel(cwd) if cwd != project.root else '.'} · {len(files)} test files")
+        for entry in plan:
+            say(f"would remove: {entry['control']} — {describe(entry)} — then run {', '.join(entry['_tests'])}")
+        return []
+
+    red = {}
+    for key, files in groups.items():
+        outcome, tail = run_tests(project, table[key[0]], key[1], files, timeout)
+        if outcome != "pass":
+            red[key] = f"baseline {outcome}" + (f": {tail.splitlines()[-1]}" if tail else "")
+        say(f"baseline {'green' if outcome == 'pass' else outcome} · {len(files)} test files")
+
+    results, touched, clock = [], {}, [int(time.time())]
+
+    def put(path: str, data: bytes):
+        # Every write gets its own whole-second mtime, later than the last. Build caches that judge
+        # "unchanged" by size and mtime (Python's .pyc among them) would otherwise run the previous
+        # mutation's compiled code when two mutations have the same size — a false `caught`.
+        with open(path, "wb") as handle:
+            handle.write(data)
+        clock[0] = max(clock[0] + 1, int(time.time()))
+        os.utime(path, (clock[0], clock[0]))
+
+    def restore():
+        for path, data in touched.items():
+            put(path, data)
+        touched.clear()
+
+    previous = signal.getsignal(signal.SIGTERM)
+    def interrupt(*_):
+        raise KeyboardInterrupt()
+
+    signal.signal(signal.SIGTERM, interrupt)
+    try:
+        for entry in plan:
+            target = os.path.join(project.root, entry["file"])
+            with open(target, "rb") as handle:
+                original = handle.read()
+            text = original.decode("utf-8")
+            mutated = text.replace(in_line_endings(original, entry["find"]),
+                                   in_line_endings(original, entry["with"]), 1)
+            touched[target] = original
+            put(target, mutated.encode("utf-8"))
+            outcomes, notes = [], []
+            try:
+                for key, files in group_files(project, entry["_tests"]).items():
+                    if key in red:
+                        outcomes.append("unreliable")
+                        notes.append(red[key])
+                        continue
+                    outcome, _tail = run_tests(project, table[key[0]], key[1], files, timeout)
+                    outcomes.append({"fail": "caught", "pass": "survived"}.get(outcome, "unreliable"))
+                    if outcome == "timeout":
+                        notes.append("timed out")
+                    if outcome == "fail":
+                        break
+            finally:
+                restore()
+            if "caught" in outcomes:
+                result = "caught"
+            elif "survived" in outcomes:
+                result = "survived"
+            else:
+                result = "unreliable"
+            results.append((entry, result, "; ".join(notes)))
+            say(f"{result}: {entry['control']}")
+    finally:
+        restore()
+        signal.signal(signal.SIGTERM, previous)
+    dirty = [e["file"] for e in plan if not git_clean(project.root, e["file"])]
+    if dirty:
+        raise PlanError("after the run these files are not as committed — check them now: " + ", ".join(dirty))
+    return results
+
+
+def falsify_rows(results) -> list:
+    rows = []
+    for entry, result, note in results:
+        expect = ", ".join(entry["expect"])
+        rows.append(f"| {entry['control']} | {describe(entry)} | {expect} | {result}{' — ' + note if note else ''} |")
+    return rows
+
+
+def record_falsify(project: Project, slice_id: str, rows: list) -> str:
+    """Write rows into the slice's Falsify table, replacing what was there."""
+    item = project.items.get(slice_id)
+    if item is None or item.type != "slice":
+        raise PlanError(f"no slice {slice_id}")
+    lines = item.text.split("\n")
+    head = next((i for i, l in enumerate(lines) if re.match(r"^\|\s*Control\s*\|", l)), None)
+    if head is None:
+        at = next((i for i, l in enumerate(lines) if l.strip() == "### Falsify"), None)
+        if at is None:
+            raise PlanError(f"{project.rel(item.doc)} has no `### Falsify` section")
+        lines[at + 1:at + 1] = ["", "| Control | Mutation | Expect | Result |", "|---|---|---|---|"]
+        head = at + 2
+    end = head + 2
+    while end < len(lines) and lines[end].startswith("|"):
+        end += 1
+    lines[head + 2:end] = rows
+    write(item.doc, "\n".join(lines))
+    return item.doc
+
+
+CONTROL_LINE = re.compile(r"^\s*(if\b|elif\b|else if\b|unless\b|guard\b|throw\b|raise\b|return\s+(err|Err|error|None|null|false|False)\b|assert\b|require\b)|(\|\||&&|>=|<=|===|!==|==|!=)")
+COMPARISON_FLIPS = [(">=", ">"), ("<=", "<"), ("===", "!=="), ("!==", "==="), ("==", "!="), ("!=", "=="), (">", ">="), ("<", "<=")]
+
+
+def mutations_for(line: str) -> list:
+    """Candidate (with, label) mutations for one added source line, most telling first."""
+    stripped = line.strip()
+    out = []
+    # A guard is removed by making it never true. Negating it would also break the normal path,
+    # so any test at all would "catch" it — a false catch, the one result falsify must not give.
+    m = re.match(r"^(\s*(?:if|else if|while)\s*)\((.*)\)(\s*\{?\s*)$", line)
+    if m:
+        out.append((f"{m.group(1)}(false && ({m.group(2)})){m.group(3)}", "never true"))
+    m = re.match(r"^(\s*(?:if|elif|while)\s+)(.*?)(:\s*)$", line)
+    if m and not out:
+        out.append((f"{m.group(1)}False and ({m.group(2)}){m.group(3)}", "never true"))
+    for old, new in COMPARISON_FLIPS:
+        at = re.search(r"(?<![=!<>])" + re.escape(old) + r"(?![=>])", line)
+        if at:
+            out.append((line[:at.start()] + new + line[at.end():], f"`{old}` → `{new}`"))
+            break
+    if re.match(r"^\s*(throw|raise|return\s+(err|Err|error|None|null|false|False)\b|assert\b|require\b)", line):
+        out.append(("", "delete the line"))
+    if not out and stripped:
+        out.append(("", "delete the line"))
+    return out
+
+
+def falsify_suggest(project: Project, slice_id: str, base: str) -> list:
+    """A draft plan from the source lines this branch added, for a person to prune."""
+    item = project.items.get(slice_id)
+    if item is None or item.type != "slice":
+        raise PlanError(f"no slice {slice_id}")
+    story = item.parent.id if item.parent and item.parent.type == "story" else None
+    expect = [f"{story}/{ac}" for ac in item.fm.get("covers") or []] if story else []
+    diff = git(project.root, "diff", "-U0", f"{base}...HEAD", "--", ".", ":(exclude)spry")
+    if diff.returncode != 0:
+        raise PlanError(f"git diff against {base} failed: {diff.stderr.strip()}")
+    tests = project._test_globs()
+    plan, current = [], None
+    for line in diff.stdout.split("\n"):
+        if line.startswith("+++ "):
+            path = line[6:] if line.startswith("+++ b/") else None
+            current = path if path and not any(g.match(path) for g in tests) else None
+            continue
+        if not current or not line.startswith("+") or line.startswith("+++"):
+            continue
+        source = line[1:]
+        if not CONTROL_LINE.search(source):
+            continue
+        try:
+            text = read(os.path.join(project.root, current))
+        except (OSError, UnicodeDecodeError):
+            continue
+        if text.count(source) != 1:
+            continue
+        for with_, label in mutations_for(source)[:1]:
+            plan.append({"control": " ".join(source.split())[:70], "file": current, "find": source,
+                         "with": with_, "mutation": label, "expect": list(expect)})
+    return plan
+
+
 # ---------------------------------------------------------------- main
 
 def find_root(start: str):
@@ -1161,6 +1462,16 @@ def main(argv=None) -> int:
     p.add_argument("--diff", action="store_true", help="change nothing; list what differs from the plugin")
     p = sub.add_parser("scrub", help="private words still in a file meant to leave the project")
     p.add_argument("file")
+    p = sub.add_parser("falsify", help="prove a slice's tests notice its safeguards")
+    fsub = p.add_subparsers(dest="action", required=True)
+    q = fsub.add_parser("suggest", help="draft a plan from the source lines this branch added")
+    q.add_argument("slice")
+    q.add_argument("--base", help="branch to diff against (default: main_branch in config)")
+    q.add_argument("--out", help="where to write the plan (default: .spry/falsify/<slice>.json)")
+    q = fsub.add_parser("run", help="remove each control, run the tests that should notice, restore")
+    q.add_argument("plan")
+    q.add_argument("--dry-run", action="store_true", help="validate and list what would run")
+    q.add_argument("--record", metavar="SLICE", help="write the results into this slice's Falsify table")
     args = parser.parse_args(argv)
 
     if args.command == "vendor" and args.diff:
@@ -1208,6 +1519,39 @@ def main(argv=None) -> int:
         return 0
     if args.command == "new":
         print(project.rel(new_item(project, args.type, args.parent, args.title, args.owner)))
+        return 0
+    if args.command == "falsify":
+        try:
+            if args.action == "suggest":
+                base = args.base or project.config.get("main_branch", "main")
+                plan = falsify_suggest(project, args.slice, base)
+                out = args.out or os.path.join(project.root, ".spry", "falsify", f"{args.slice}.json")
+                os.makedirs(os.path.dirname(out), exist_ok=True)
+                write(out, json.dumps(plan, indent=2, ensure_ascii=False) + "\n")
+                print(f"{len(plan)} candidate control{'s' if len(plan) != 1 else ''} → {project.rel(out)}")
+                if plan and not plan[0]["expect"]:
+                    print("fill in `expect` — the slice covers no story criteria")
+                print("prune it to the safeguards that matter, then: falsify run " + project.rel(out))
+                return 0
+            results = falsify_run(project, args.plan, dry=args.dry_run)
+        except PlanError as e:
+            print("plan refused: " + str(e), file=sys.stderr)
+            return 1
+        except KeyboardInterrupt:
+            print("interrupted — every file was restored", file=sys.stderr)
+            return 130
+        if results:
+            rows = falsify_rows(results)
+            print("\n| Control | Mutation | Expect | Result |\n|---|---|---|---|\n" + "\n".join(rows))
+            if args.record:
+                try:
+                    print("recorded in " + project.rel(record_falsify(Project(project.root), args.record, rows)))
+                except PlanError as e:
+                    print(str(e), file=sys.stderr)
+                    return 1
+            survivors = sum(1 for _, r, _ in results if r == "survived")
+            if survivors:
+                print(f"{survivors} survived — each needs a new test or a written reason before the slice closes")
         return 0
     if args.command == "scrub":
         hits = scrub(project, args.file)

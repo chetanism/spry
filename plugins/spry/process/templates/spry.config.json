@@ -31,6 +31,7 @@
   },
   "falsify": {
     "parallel": false,
+    "timeout": 600,
     "runners": [
       {"match": ["<glob of test files>"], "cwd": "package", "command": "<runner with fail-fast flag> {files}"}
     ]

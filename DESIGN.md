@@ -234,8 +234,10 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 - **Plan drafted by `/spry:slice-close` from the diff**, not by hand: guards, validation,
   authorisation and error branches the slice added. A person can edit it before it runs.
-- **Mutations offered automatically** for each control: delete the line, negate the condition,
-  flip a comparison, return early. Plan entries keep writ's exact `find` / `with` form.
+- **Mutations offered automatically** for each control (`falsify suggest`): a guard made *never true*,
+  a comparison's boundary flipped, a `throw` / `raise` / error return deleted. **Not negation:**
+  negating a guard also breaks the normal path, so any test "catches" it — a false catch.
+  Plan entries use writ's exact `find` / `with` form.
 - **`expect` names acceptance criteria** (`S-1/AC-2`); tests are found by their names.
 - **Runs only those test files**, through per-runner commands with `{files}`, using the runner's
   fail-fast flag — one failure is enough.
@@ -243,7 +245,11 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 - **Serial first.** Parallel runs in temporary git worktrees come later, per-runner, once serial is
   proven on real stacks.
 - **Refuses** no-op mutations, files with uncommitted changes, and `expect`s with no test.
-- **Always restores**, including on error and Ctrl-C.
+- **Always restores**, including on error, Ctrl-C and SIGTERM; checks the files are as committed after.
+- **Every write gets a fresh, increasing mtime.** Two same-size mutations written in one second
+  otherwise let size-and-mtime build caches (Python's `.pyc`) run the previous mutation's code — a
+  false `caught`, found while building this.
+- **`--record SL-n`** writes the results into the slice's Falsify table.
 - Result per control — `caught` · `survived` · `unreliable` — goes into the slice file. A survivor
   needs a new test or a written reason before the slice closes.
 
@@ -262,7 +268,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `vendor` | copy `process/` and the tool into a project (plugin's copy only); `--diff` lists what differs |
 | `scrub <file>` | private words (product, people, glossary terms, emails, URLs) left in text about to leave the project |
 | `find <query>` | full-text search |
-| `falsify <plan>` | §16 |
+| `falsify suggest <slice>` · `falsify run <plan>` | §16 |
 | `tests --slowest` | §15 |
 | `install --agent` | §3 |
 | `codeowners` | §14 |
@@ -312,7 +318,8 @@ Later: `product-docs`, `product-guide`, `spry-web` plugin.
 ## 21. Built
 
 - 2026-10-08 — tool: `check`, `status`, `index`, `related`, `next`, `new`, `pr-body`, `vendor`.
-  Not yet: `find`, `falsify`, `tests --slowest`, `install`, `codeowners`, the AC-edit warning.
+  Not yet: `find`, `tests --slowest`, `install`, `codeowners`, the AC-edit warning.
+- 2026-10-08 — `falsify suggest` / `falsify run` (serial; worktree parallelism not built).
 - 2026-10-08 — skills: `init`, `adopt`, `milestone`, `epic`, `feature`, `story`, `slice`,
   `slice-open`, `slice-close`, `status`, `tone`, `update`, `contribute`. Not yet: `bug`, `task`,
   `test-scenarios`, `record`, `security-audit`, `prelaunch`, `process-change`.

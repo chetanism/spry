@@ -5,6 +5,7 @@ import io
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -421,6 +422,163 @@ class Kit(unittest.TestCase):
             self.assertTrue(text.startswith(f"---\nname: {name}\n"), name)
             for ref in re.findall(r"`(?:spry|<plugin root>)/process/([\w/.-]+\.md)`", text):
                 self.assertTrue(os.path.isfile(os.path.join(plugin, "process", ref)), f"{name} names {ref}")
+
+
+LOANS_BEFORE = 'def lend(count, overdue):\n    return "ok"\n'
+LOANS_AFTER = ('def lend(count, overdue):\n    if count >= 3:\n        return "limit"\n'
+               '    if overdue:\n        return "overdue"\n    return "ok"\n')
+RUNNER = "import runpy, sys\nfor f in sys.argv[1:]:\n    runpy.run_path(f)\n"
+TEST_LIMIT = ('# S-1/AC-1 refuses a fourth book\nimport sys; sys.path.insert(0, "src")\nfrom loans import lend\n'
+              'assert lend(3, False) == "limit"\nassert lend(2, False) == "ok"\n')
+TEST_OVERDUE = ('# S-1/AC-2 refuses an overdue member, but never checks it\nimport sys; sys.path.insert(0, "src")\n'
+                'from loans import lend\nassert lend(0, False) == "ok"\n')
+
+
+class Falsify(unittest.TestCase):
+    """A git repository whose slice adds two guards: one a test notices, one no test checks."""
+
+    def setUp(self):
+        self.root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.root)
+        story = "spry/plan/M-1-m/E-1-e/F-1-f/S-1-s"
+        config = {"main_branch": "main", "tests": {"match": ["tests/test_*.py"]},
+                  "falsify": {"runners": [{"match": ["tests/**"], "cwd": "root", "command": "python3 run.py {files}"}]}}
+        files = {
+            "spry/spry.config.json": json.dumps(config),
+            "spry/plan/M-1-m/README.md": "---\nid: M-1\ntitle: m\nstate: draft\n---\n# M-1\n",
+            "spry/plan/M-1-m/E-1-e/README.md": "---\nid: E-1\ntitle: e\nstate: draft\n---\n# E-1\n",
+            "spry/plan/M-1-m/E-1-e/F-1-f/README.md": "---\nid: F-1\ntitle: f\nstate: draft\n---\n# F-1\n",
+            f"{story}/README.md": story_text(),
+            "run.py": RUNNER, "src/loans.py": LOANS_BEFORE,
+            "tests/test_limit.py": TEST_LIMIT, "tests/test_overdue.py": TEST_OVERDUE,
+        }
+        self.write(files)
+        self.git("init", "-q", "-b", "main")
+        self.commit("base")
+        self.git("checkout", "-q", "-b", "sl-1")
+        self.write({"src/loans.py": LOANS_AFTER, f"{story}/SL-1-refuse.md": (
+            "---\nid: SL-1\ntitle: Refuse\nstate: open\ncovers: [AC-1, AC-2]\n---\n# SL-1\n\n"
+            "## Close summary\n\n### Falsify\n\n| Control | Mutation | Expect | Result |\n|---|---|---|---|\n")})
+        self.commit("slice")
+        self.slice_doc = os.path.join(self.root, story, "SL-1-refuse.md")
+
+    def write(self, files):
+        for rel, text in files.items():
+            path = os.path.join(self.root, rel)
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "w") as handle:
+                handle.write(text)
+
+    def git(self, *args):
+        return subprocess.run(["git", "-C", self.root, "-c", "user.name=t", "-c", "user.email=t@t", *args],
+                              capture_output=True, text=True, check=True).stdout
+
+    def commit(self, message):
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", message)
+
+    def plan(self, entries):
+        path = os.path.join(self.root, ".spry", "plan.json")
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as handle:
+            json.dump(entries, handle)
+        return path
+
+    def guard(self, find, expect, **extra):
+        return dict({"control": find.strip(), "file": "src/loans.py", "find": find,
+                     "with": find.replace("if ", "if False and (").replace(":", "):"), "expect": expect}, **extra)
+
+    def run_plan(self, entries, **kw):
+        return spry.falsify_run(spry.Project(self.root), self.plan(entries), say=lambda *_: None, **kw)
+
+    def source(self):
+        with open(os.path.join(self.root, "src", "loans.py")) as handle:
+            return handle.read()
+
+    def test_caught_and_survived_and_everything_restored(self):
+        results = self.run_plan([self.guard("    if count >= 3:", ["S-1/AC-1", "S-1/AC-2"]),
+                                 self.guard("    if overdue:", ["S-1/AC-1", "S-1/AC-2"])])
+        self.assertEqual([r for _, r, _ in results], ["caught", "survived"],
+                         "the second mutation has the first's size: a stale compiled file would make it a false catch")
+        self.assertEqual(self.source(), LOANS_AFTER)
+        self.assertEqual(self.git("status", "--porcelain", "--untracked-files=no", "--", "src"), "")
+
+    def test_runs_only_the_files_that_cite_expect(self):
+        results = self.run_plan([self.guard("    if count >= 3:", ["S-1/AC-2"])])
+        self.assertEqual(results[0][1], "survived", "only test_overdue ran, and it cannot notice the limit")
+
+    def test_red_baseline_is_unreliable_not_caught(self):
+        self.write({"tests/test_overdue.py": TEST_OVERDUE + "assert False\n"})
+        self.commit("red")
+        results = self.run_plan([self.guard("    if overdue:", ["S-1/AC-2"])])
+        self.assertEqual(results[0][1], "unreliable")
+
+    def test_refusals(self):
+        cases = {
+            "nothing would change": [dict(self.guard("    if overdue:", ["S-1/AC-2"]), **{"with": "    if overdue:"})],
+            "occurs 3 times": [dict(self.guard("    if overdue:", ["S-1/AC-2"]), find="return")],
+            "no test cites S-1/AC-9": [self.guard("    if overdue:", ["S-1/AC-9"])],
+            "cites none of": [self.guard("    if overdue:", ["S-1/AC-2"], files=["tests/test_limit.py"])],
+        }
+        for fragment, entries in cases.items():
+            with self.assertRaises(spry.PlanError) as caught:
+                self.run_plan(entries)
+            self.assertIn(fragment, str(caught.exception))
+
+    def test_refuses_a_file_with_uncommitted_changes(self):
+        self.write({"src/loans.py": LOANS_AFTER + "# work in progress\n"})
+        with self.assertRaises(spry.PlanError) as caught:
+            self.run_plan([self.guard("    if overdue:", ["S-1/AC-2"])])
+        self.assertIn("uncommitted", str(caught.exception))
+
+    def test_restores_when_interrupted(self):
+        original = spry.run_tests
+        calls = []
+
+        def interrupt(*args):
+            calls.append(1)
+            if len(calls) > 1:
+                raise KeyboardInterrupt()
+            return original(*args)
+
+        spry.run_tests = interrupt
+        self.addCleanup(setattr, spry, "run_tests", original)
+        with self.assertRaises(KeyboardInterrupt):
+            self.run_plan([self.guard("    if overdue:", ["S-1/AC-2"])])
+        self.assertEqual(self.source(), LOANS_AFTER)
+
+    def test_dry_run_changes_nothing(self):
+        said = []
+        spry.falsify_run(spry.Project(self.root), self.plan([self.guard("    if overdue:", ["S-1/AC-2"])]),
+                         dry=True, say=said.append)
+        self.assertTrue(any("would remove" in s for s in said))
+        self.assertEqual(self.source(), LOANS_AFTER)
+
+    def test_suggest_drafts_never_true_guards_with_expect_from_covers(self):
+        plan = spry.falsify_suggest(spry.Project(self.root), "SL-1", "main")
+        self.assertEqual([e["find"] for e in plan], ["    if count >= 3:", "    if overdue:"])
+        self.assertEqual(plan[1]["with"], "    if False and (overdue):")
+        self.assertEqual(plan[0]["expect"], ["S-1/AC-1", "S-1/AC-2"])
+
+    def test_record_writes_the_slice_table(self):
+        results = self.run_plan([self.guard("    if overdue:", ["S-1/AC-2"])])
+        spry.record_falsify(spry.Project(self.root), "SL-1", spry.falsify_rows(results))
+        with open(self.slice_doc) as handle:
+            self.assertIn("| if overdue: | `if overdue:` → `if False and (overdue):` | S-1/AC-2 | survived |", handle.read())
+
+
+class Mutations(unittest.TestCase):
+    def test_javascript_guard_is_made_never_true(self):
+        self.assertEqual(spry.mutations_for("  if (existing) {")[0], ("  if (false && (existing)) {", "never true"))
+
+    def test_boundary_flip_and_throw(self):
+        self.assertEqual(spry.mutations_for("  const ok = n <= max;")[0][1], "`<=` → `<`")
+        self.assertEqual(spry.mutations_for("  throw new Conflict();")[0], ("", "delete the line"))
+
+
+def story_text():
+    return ("---\nid: S-1\ntitle: Lend\nstate: draft\n---\n# S-1\n\n## Acceptance criteria\n\n"
+            "| AC | Given | When | Then |\n|---|---|---|---|\n| AC-1 | a | b | c |\n| AC-2 | a | b | c |\n")
 
 
 class Example(unittest.TestCase):

@@ -8,6 +8,6 @@ argument-hint: "[slice ID]"
 
 - **Procedure:** `spry/process/slicing.md` → *Close*. Read `chat.md` and `writing.md` beside it.
 - **Slice:** `$ARGUMENTS`; without one, the `open` slice whose `branch` is the current branch.
-- **Falsify carefully:** one mutation at a time, restore the file before the next, and confirm
-  `git status` is clean at the end. A mutation left in place is the one unrecoverable mistake here.
+- **Falsify with the tool** (`spry.py falsify suggest`, then `run`) — never by editing files by hand;
+  the tool restores every file, even when interrupted. Confirm `git status` is clean afterwards.
 - **Never merge** the pull request.

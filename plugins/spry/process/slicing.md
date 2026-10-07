@@ -64,14 +64,18 @@ alternatives.
    what fails.
 2. **What changed:** compare the diff (`git diff <main>...HEAD`) with `Plan`; write only the
    differences and why. Delete the section if none.
-3. **Falsify:** for each safeguard the slice added — a guard, validation, permission check, error
-   branch:
-   - change it so it no longer protects (delete the line, negate the condition, return early);
-   - run only the tests citing the criteria it serves, stopping at the first failure;
-   - restore the file exactly (`git checkout -- <file>`), and confirm the tree is clean;
-   - record a row: control · mutation · expect · `caught` / `survived` / `unreliable`.
-   A `survived` row needs a new test (then re-run: `caught`) or a written reason. Never leave a
-   mutation in place.
+3. **Falsify** — prove the tests notice each safeguard the slice added:
+   - `python3 spry/tool/spry.py falsify suggest SL-<n>` drafts `.spry/falsify/SL-<n>.json` from the
+     source lines the branch added: one candidate per guard, comparison or error line, each with a
+     mutation that removes it (a guard made *never true*, a boundary flipped, a `throw` deleted) and
+     `expect` taken from `covers`.
+   - Prune it with the person: keep the safeguards that matter; narrow each `expect` to the
+     criteria that safeguard serves; add any the draft missed (same `find` / `with` form).
+   - `falsify run .spry/falsify/SL-<n>.json --dry-run`, then
+     `falsify run .spry/falsify/SL-<n>.json --record SL-<n>` — it runs only the tests citing each
+     `expect`, stops at the first failure, restores every file, and writes the table.
+   - `survived` → a new test, then run again until `caught`; or a written reason in that row.
+     `unreliable` → the baseline was red or timed out: fix that first.
 4. **Proof:** every criterion in `covers` has a citing test, or tell QA which need a manual check
    (`[Test]` under `NEXT`).
 5. **Follow-ups:** bugs, tasks, decisions found — create them (`spry.py new …`, `/spry:record`) and
