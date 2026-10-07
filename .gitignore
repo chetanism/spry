@@ -1,0 +1,5 @@
+.idea/
+.DS_Store
+__pycache__/
+.spry/
+.claude/settings.local.json

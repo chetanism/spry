@@ -1,0 +1,16 @@
+{
+  "name": "spry",
+  "owner": {
+    "name": "Chetan Verma"
+  },
+  "description": "spry — an agent-first development process for human teams.",
+  "plugins": [
+    {
+      "name": "spry",
+      "source": "./plugins/spry",
+      "description": "Plan milestone → epic → feature → story in plain words, build in slices, and see progress derived from tests and QA checks. /spry:init or /spry:adopt to start.",
+      "category": "workflow",
+      "tags": ["process", "planning", "agile", "slices"]
+    }
+  ]
+}

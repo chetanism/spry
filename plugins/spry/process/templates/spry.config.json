@@ -1,0 +1,39 @@
+{
+  "spry": "0.1.0",
+  "spry_baseline": "CH-1",
+  "product": "<product name>",
+  "levels": ["milestone", "epic", "feature", "story"],
+  "ids": {
+    "milestone": "M", "epic": "E", "feature": "F", "story": "S",
+    "slice": "SL", "task": "T", "bug": "B", "decision": "D"
+  },
+  "team": {
+    "members": [],
+    "review": {}
+  },
+  "budgets": {
+    "AGENTS.md": 150,
+    "spry/knowledge/**": 120,
+    "spry/plan/**/README.md": 150,
+    "spry/plan/**/SL-*.md": 200
+  },
+  "glossary": "spry/knowledge/glossary.md",
+  "always_check": [
+    "spry/knowledge/security.md",
+    "spry/knowledge/performance.md",
+    "spry/knowledge/decisions/INDEX.md"
+  ],
+  "tests": {
+    "match": ["<glob of test files, e.g. **/*.test.ts>"],
+    "affected": "<command that runs only tests affected by the working tree>",
+    "all": "<command that runs every test, in parallel>",
+    "junit": "<path the runner writes JUnit XML to>"
+  },
+  "falsify": {
+    "parallel": false,
+    "runners": [
+      {"match": ["<glob of test files>"], "cwd": "package", "command": "<runner with fail-fast flag> {files}"}
+    ]
+  },
+  "main_branch": "main"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "spry",
+  "displayName": "spry",
+  "description": "Agent-first development a human team can follow: milestones, epics, features and stories written for non-technical readers; slices, work orders and falsified tests for developers; progress derived from tests and QA checks, never typed. Start with /spry:init (new project) or /spry:adopt (existing code).",
+  "version": "0.1.0",
+  "author": {
+    "name": "Chetan Verma"
+  },
+  "repository": "https://github.com/chetanism/spry",
+  "license": "MIT",
+  "keywords": [
+    "process",
+    "planning",
+    "agile",
+    "slices",
+    "traceability",
+    "agent-first"
+  ]
+}

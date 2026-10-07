@@ -1,0 +1,49 @@
+{
+  "spry": "0.1.0",
+  "spry_baseline": "CH-1",
+  "product": "Shelf",
+  "levels": ["milestone", "epic", "feature", "story"],
+  "ids": {
+    "milestone": "M", "epic": "E", "feature": "F", "story": "S",
+    "slice": "SL", "task": "T", "bug": "B", "decision": "D"
+  },
+  "team": {
+    "members": [
+      {"name": "Asha", "github": "asha-k", "roles": ["product"]},
+      {"name": "Ravi", "github": "ravi-dev", "roles": ["developer"]},
+      {"name": "Meera", "github": "meera-qa", "roles": ["qa"]}
+    ],
+    "review": {
+      "spry/plan/**/README.md": ["product"],
+      "spry/plan/**/checks.md": ["qa"],
+      "spry/plan/**/SL-*.md": ["developer"],
+      "src/**": ["developer"]
+    }
+  },
+  "budgets": {
+    "AGENTS.md": 150,
+    "spry/knowledge/**": 120,
+    "spry/plan/**/README.md": 150,
+    "spry/plan/**/SL-*.md": 200
+  },
+  "glossary": "spry/knowledge/glossary.md",
+  "always_check": [
+    "spry/knowledge/security.md",
+    "spry/knowledge/performance.md",
+    "spry/knowledge/decisions/INDEX.md"
+  ],
+  "tests": {
+    "match": ["**/*.test.ts"],
+    "affected": "pnpm vitest run --changed",
+    "all": "pnpm test:all",
+    "junit": "reports/junit.xml"
+  },
+  "falsify": {
+    "parallel": false,
+    "runners": [
+      {"match": ["**/*.integration.test.ts"], "cwd": "package", "command": "pnpm vitest run --bail 1 --config vitest.integration.ts {files}"},
+      {"match": ["**/*.test.ts"], "cwd": "package", "command": "pnpm vitest run --bail 1 {files}"}
+    ]
+  },
+  "main_branch": "main"
+}

@@ -1,0 +1,50 @@
+# Written by /spry:init. Pull requests: affected tests and spry check, in parallel.
+# Main branch: every test, then spry index commits the progress tables. Nightly: every test.
+name: spry
+on:
+  pull_request:
+  push:
+    branches: [<main branch>]
+  schedule:
+    - cron: "0 2 * * *"
+concurrency:
+  group: spry-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  check:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 spry/tool/spry.py check
+  affected-tests:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      # <setup steps for the stack — stacks/<stack>.md>
+      - run: <affected tests command, against origin/${{ github.base_ref }}>
+  all-tests:
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # <setup steps for the stack — stacks/<stack>.md>
+      - run: <all tests command>
+  index:
+    if: github.event_name == 'push'
+    needs: all-tests
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 spry/tool/spry.py index
+      - run: |
+          git diff --quiet && exit 0
+          git config user.name "spry"
+          git config user.email "spry@users.noreply.github.com"
+          git commit -am "chore(spry): refresh progress [skip ci]"
+          git push
