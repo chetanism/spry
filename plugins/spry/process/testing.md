@@ -10,8 +10,9 @@ rest. **Both report; neither fixes.** A finding becomes a bug or task the person
 
 ## Full suite
 
-When: before closing a slice that touched shared code, after a dependency or configuration
-change, when the affected-only run may have missed something, or when asked.
+When a person asks, or after a change to dependencies or to build or test configuration — where
+the affected-only run cannot tell what is affected. Never as a routine step of a slice or a
+merge: CI runs the full suite on the main branch and nightly.
 
 1. **Say what will run**, in one line: which parts, and whether the stack comes up. If the
    working tree has uncommitted changes, say so — the result is for the tree, not the last commit.

@@ -52,7 +52,7 @@ related: []
 
 ### Falsify
 
-<!-- guide: filled from `spry.py falsify`. A `survived` row needs a new test or a reason before close. -->
+<!-- guide: filled from `spry.py falsify`. Every control the draft lists keeps a row. A `survived` row needs a new test or a reason; a control that cannot run is `skipped — <reason>`. A person accepts each reason at the merge. -->
 
 | Control | Mutation | Expect | Result |
 |---|---|---|---|

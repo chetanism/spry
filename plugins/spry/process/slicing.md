@@ -8,6 +8,20 @@ audience: 8
 Run by `slice`, `slice-open` and `slice-close`. Tone: audience 8 — the person is a developer —
 except a slice's `Summary`, which anyone on the team can read.
 
+## When to stop and ask
+
+A person decides three things, and the agent works through everything else without stopping:
+
+- **The criteria** — a story goes `ready` only on a yes. They are what "done" means.
+- **The merge** — `/spry:merge`, with what a person must accept (survivors, skipped controls,
+  changed criteria) listed in its one ask.
+- **Anything hard to undo** — a database migration, a public API or event shape, a new
+  dependency, deleting data or files, or breaking a `Must not` rule.
+
+Between them the checks stand in for a person watching: `spry.py gate` before close, every control
+the diff adds falsified, a test's name citing each criterion, and `merge-check` blocking what is
+missing. So open, build, test and close run as one piece of work.
+
 ## What a slice is
 
 - **One reviewable change:** a reviewer reads it in one sitting.
@@ -42,26 +56,34 @@ alternatives.
    - `Tests`: one per criterion at least, each name containing `<story>/AC-<n>`.
    - `Demo`: copy-pasteable; no value to fill in by hand.
 3. **Conflict check** — `conflicts.md`, including open slices on the same files (`spry.py related`).
-4. **Show the summary and the plan; ask to approve.** Nothing below happens without a yes.
-5. On approval:
+4. **Show the summary and the plan.** Ask to approve only when the plan does something hard to undo
+   (*When to stop and ask*) or departs from the story; otherwise go on.
+5. Then:
    - branch `sl-<n>-<slug>` from the main branch;
    - set `state: open`, `branch:`; `spry.py check`; commit `docs(slice): SL-<n> work order` —
      the branch's first commit, before any code;
    - push; open a **draft** pull request titled `SL-<n> <title>`, body from
      `spry.py pr-body SL-<n>`; set `pr:` to its number; commit and push.
-6. **Stop.** Coding starts when the person says so, in this session or another.
+6. **Build**, in this session, unless the person asked to open only. Then close.
 
 ## While building
 
-- Run affected tests only (`tests.affected` in config); the full suite is for CI and close.
-- A test that proves a criterion has `<story>/AC-<n>` in its name.
+- **Run `spry.py gate`**, not the test commands by hand. It runs `spry check`, then the fast checks
+  (`checks.fast`: format, lint, types — cheapest first), then the affected tests, and stops at the
+  first failure. A pass is stamped against the code; while only documents change it runs `check`
+  alone. So fix lint before tests run, and write documents after the gate, never the reverse.
+- **Never run the full suite** (`tests.all`). CI runs it on the main branch and nightly;
+  `/spry:test-all` runs it when a person asks.
+- **Push once,** at close. Each push runs CI again.
+- A test that proves a criterion has `<story>/AC-<n>` in its name — the title string, docstring or
+  parametrize id. A citation in a comment or in code proves nothing.
 - A departure from the plan → note it for `What changed`; a new rule learned → `/spry:record` later.
 - Never edit the work order to match the code after the fact; the close summary says what differed.
 
 ## Close — `/spry:slice-close [SL-n]`
 
-1. **Gate:** working tree committed; affected tests and `spry.py check` pass. Otherwise stop and say
-   what fails.
+1. **Gate:** working tree committed; `spry.py gate` passes. Otherwise fix what fails and run it
+   again — it repeats only what the fix could change.
 2. **What changed:** compare the diff (`git diff <main>...HEAD`) with `Plan`; write only the
    differences and why. Delete the section if none.
 3. **Falsify** — prove the tests notice each safeguard the slice added:
@@ -69,21 +91,35 @@ alternatives.
      source lines the branch added: one candidate per guard, comparison or error line, each with a
      mutation that removes it (a guard made *never true*, a boundary flipped, a `throw` deleted) and
      `expect` taken from `covers`.
-   - Prune it with the person: keep the safeguards that matter; narrow each `expect` to the
-     criteria that safeguard serves; add any the draft missed (same `find` / `with` form).
+   - **Keep every control the draft lists** — `merge-check` blocks when one has no row. Narrow
+     each `expect` to the criteria that control serves, and add any the draft missed (same
+     `find` / `with` form). A control that cannot run (it needs a clock, a network) gets the row
+     `skipped — <reason>`, for a person to accept at the merge.
    - `falsify run .spry/falsify/SL-<n>.json --dry-run`, then
      `falsify run .spry/falsify/SL-<n>.json --record SL-<n>` — it runs only the tests citing each
      `expect`, stops at the first failure, restores every file, and writes the table. With
      `falsify.parallel` set (or `--jobs N`) it spreads controls over git worktrees and never
      touches this tree; commit first, or it runs serially and says why.
-   - `survived` → a new test, then run again until `caught`; or write the reason after `survived`
-     in that row (`survived — logged only; no rule depends on it`). A bare `survived` blocks the merge.
+   - `survived` → a new test, then run again until `caught`. Only when no test should catch it,
+     write the reason after `survived` in that row (`survived — logged only; no rule depends on it`):
+     a person accepts it at the merge. A bare `survived` blocks the merge.
      `unreliable` → the baseline was red or timed out: fix that first.
 4. **Proof:** every criterion in `covers` has a citing test, or tell QA which need a manual check
    (`[Test]` under `NEXT`).
 5. **Follow-ups:** bugs, tasks, decisions found — create them (`spry.py new …`, `/spry:record`) and
    list their IDs.
-6. Set `state: closed`; `spry.py check`; commit `docs(slice): SL-<n> close summary` with the
-   trailer `Slice: SL-<n>` in the body; push; replace the PR body with `spry.py pr-body SL-<n>`;
-   mark the PR ready for review.
+6. Set `state: closed`; `spry.py gate` (only `check` runs — nothing but documents changed); commit
+   `docs(slice): SL-<n> close summary` with the trailer `Slice: SL-<n>` in the body; push; replace
+   the PR body with `spry.py pr-body SL-<n> --base origin/<main>`; mark the PR ready for review.
 7. **Never merge here.** Tell the person the PR is ready for `/spry:review`, then `/spry:merge`.
+
+## Slices side by side
+
+Slices of stories that touch different files can be built at the same time, each in its own git
+worktree and agent session:
+
+- `spry.py related` on each work order, and the conflict check, show no shared file.
+- `git worktree add ../<repo>-sl-<n> sl-<n>-<slug>`, then start a session there.
+- Each worktree has its own `.spry/green`, so one gate never vouches for the other.
+- They merge one at a time; the second rebases if the first touched anything it touches
+  (`merging.md` step 5).

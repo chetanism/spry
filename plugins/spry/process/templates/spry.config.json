@@ -1,6 +1,6 @@
 {
-  "spry": "0.3.0",
-  "spry_baseline": "CH-3",
+  "spry": "0.4.0",
+  "spry_baseline": "CH-4",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -23,6 +23,14 @@
     "spry/knowledge/performance.md",
     "spry/knowledge/decisions/INDEX.md"
   ],
+  "checks": {
+    "fast": [
+      {"name": "format", "run": "<formatter in check mode>"},
+      {"name": "lint", "run": "<linter, with its cache>"},
+      {"name": "types", "run": "<type checker, if the language has one>"}
+    ],
+    "docs": ["spry/**", "**/*.md"]
+  },
   "tests": {
     "match": ["<glob of test files, e.g. **/*.test.ts>"],
     "affected": "<command that runs only tests affected by the working tree>",

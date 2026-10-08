@@ -12,9 +12,11 @@ audience: 8
 | `tests.all` | `pytest -n auto` (pytest-xdist) |
 | `tests.junit` | `reports/junit.xml` — the runner writes it with `--junitxml=reports/junit.xml` |
 | falsify runner | `pytest -x -q {files}` |
+| `checks.fast` | format `ruff format --check .` · lint `ruff check .` · types `mypy .` (if typed) |
 
-- Test names cite criteria in the function name or docstring: `def test_S_1_AC_1_lends…` will not
-  match — use the docstring or `@pytest.mark.parametrize` id containing `S-1/AC-1`.
+- Tests cite criteria in a string: the docstring or a `@pytest.mark.parametrize` id containing
+  `S-1/AC-1`. A function name (`def test_S_1_AC_1_lends…`) cannot hold it, and a `#` comment proves
+  nothing.
 - **Integration tests** on a shared database: separate runner, `-p no:xdist`, and
   `"parallel": false` so falsify never runs two of them at once.
 - **Parallel falsify** shares `.venv` / `venv` into each worktree; a virtualenv elsewhere goes in

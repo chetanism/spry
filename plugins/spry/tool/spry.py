@@ -7,7 +7,7 @@
     python3 spry/tool/spry.py related <file>     # candidates for a conflict check
     python3 spry/tool/spry.py next <type>        # next free ID: milestone, story, slice, decision …
     python3 spry/tool/spry.py new <type> --parent <ID> --title "…" [--owner …]
-    python3 spry/tool/spry.py pr-body <slice ID> # the slice's work order (+ close summary) for a PR
+    python3 spry/tool/spry.py pr-body <slice ID> [--base origin/main]   # for the PR: reviewer page + work order
     python3 <plugin>/tool/spry.py vendor --root <project>   # copy process/ and the tool into a project
     python3 <plugin>/tool/spry.py vendor --diff --root <project>   # what differs from the plugin
     python3 spry/tool/spry.py scrub <file>       # private words left in text about to leave the project
@@ -21,6 +21,8 @@
     python3 spry/tool/spry.py draw <seed> <n> --pick < choices   # the same choice for ever, per (seed, n)
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
     python3 spry/tool/spry.py merge-message <slice>   # the squash commit: subject, summary, trailers
+    python3 spry/tool/spry.py gate [--force]     # check, fast checks, affected tests; skipped while no code changed
+    python3 spry/tool/spry.py changed --base <ref>   # for CI: code=true when anything but docs changed
     python3 <plugin>/tool/spry.py install --agent <generic|claude|cursor|gemini> [--root <project>]
 
 Run from anywhere inside the project, or pass --root. The project root is the nearest directory
@@ -41,6 +43,7 @@ from __future__ import annotations
 
 import argparse
 import filecmp
+import hashlib
 import json
 import math
 import os
@@ -56,7 +59,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.3.0"
+VERSION = "0.4.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -65,6 +68,8 @@ DEFAULT_TEST_MATCH = ["**/*.test.*", "**/*.spec.*", "**/*_test.*", "**/test_*.py
 SKIP_DIRS = {".git", "node_modules", ".spry", "dist", "build", "__pycache__", ".venv", "venv",
              ".idea", ".turbo", "coverage", ".next", "target"}
 CONTAINERS = {"tasks": "task", "bugs": "bug"}
+# A change to these alone never needs a test run: the gate skips, and CI skips its test jobs.
+DEFAULT_DOCS = ["spry/**", "**/*.md"]
 
 PLAN_STATES = {"draft", "ready", "dropped"}
 SLICE_STATES = {"planned", "open", "closed", "dropped"}
@@ -90,6 +95,8 @@ SCALAR_KEYS = {"id", "title", "summary", "state", "owner", "audience", "branch",
 # A citation on one of these lines proves nothing: the test is skipped or not written yet.
 NOT_RUN = re.compile(r"\b(?:it|test|describe|context)\.(?:skip|todo)\b|\bx(?:it|test|describe)\s*\(|"
                      r"@pytest\.mark\.(?:skip|xfail)\b|@unittest\.skip|\bt\.Skip\(")
+# A citation on a comment line proves nothing: only a test's name says what the test checks.
+COMMENT_LINE = re.compile(r"^\s*(#|//|/\*|\*|--|;|<!--)")
 
 
 # ---------------------------------------------------------------- text helpers
@@ -230,6 +237,42 @@ def replace_block(text: str, name: str, content: str):
     if not pattern.search(text):
         return None
     return pattern.sub(lambda m: m.group(1) + content.rstrip("\n") + "\n" + m.group(3), text, count=1)
+
+
+def string_spans(line: str, triple: str | None):
+    """([(start, end)] of the string contents on one source line, the triple quote still open after it).
+
+    `triple` is the `\"\"\"` or `'''` left open by an earlier line, as in a Python docstring. A trailing
+    `#` or `//` comment ends the scan, so a quoted citation inside one is not a string."""
+    spans, i = [], 0
+    if triple:
+        close = line.find(triple)
+        if close < 0:
+            return [(0, len(line))], triple
+        spans.append((0, close))
+        i = close + 3
+    while i < len(line):
+        c = line[i]
+        if line.startswith('"""', i) or line.startswith("'''", i):
+            delim = line[i:i + 3]
+            close = line.find(delim, i + 3)
+            if close < 0:
+                spans.append((i + 3, len(line)))
+                return spans, delim
+            spans.append((i + 3, close))
+            i = close + 3
+            continue
+        if c in "\"'`":
+            j = i + 1
+            while j < len(line) and line[j] != c:
+                j += 2 if line[j] == "\\" else 1
+            spans.append((i + 1, min(j, len(line))))
+            i = j + 1
+            continue
+        if (c == "#" or line.startswith("//", i)) and (i == 0 or line[i - 1].isspace()):
+            break
+        i += 1
+    return spans, None
 
 
 def strip_blocks(text: str) -> str:
@@ -466,11 +509,14 @@ class Project:
         return [glob_regex(g) for g in (real or DEFAULT_TEST_MATCH)]
 
     def _scan_tests(self):
-        """{"S-1/AC-1": [(rel path, line, test name)]} from every test file outside spry/."""
+        """{"S-1/AC-1": [(rel path, line, test name)]} from every test file outside spry/.
+
+        Only a citation inside a string — a test's title, a docstring, a parametrize id — counts.
+        One in a comment or in code is listed in `self.unproving`, so `check` can say why."""
         story = re.escape(self.ids["story"])
         ref = re.compile(r"(?<![A-Za-z0-9])(" + story + r"-\d+)/(AC-\d+)(?!\d)")
-        quoted = re.compile(r"""(["'`])((?:(?!\1).)*?)\1""")
         globs, found = self._test_globs(), {}
+        self.unproving = []
         for dirpath, dirnames, filenames in os.walk(self.root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
             if os.path.abspath(dirpath) == self.root and "spry" in dirnames:
@@ -486,13 +532,23 @@ class Project:
                     text = read(path)
                 except (UnicodeDecodeError, OSError):
                     continue
+                triple = None
                 for n, line in enumerate(text.split("\n"), 1):
-                    if NOT_RUN.search(line):
-                        continue
-                    for m in ref.finditer(line):
-                        name_ = next((q.group(2) for q in quoted.finditer(line)
-                                      if q.start() <= m.start() < q.end()), "")
-                        found.setdefault(f"{m.group(1)}/{m.group(2)}", []).append((rel, n, name_))
+                    hits = list(ref.finditer(line)) if "/AC-" in line else []
+                    if not hits and '""' not in line and "''" not in line:
+                        continue  # no citation, and no triple quote to open or close: nothing to track
+                    spans, triple_after = string_spans(line, triple)
+                    if hits and not NOT_RUN.search(line):
+                        comment = COMMENT_LINE.match(line) and triple is None
+                        for m in hits:
+                            span = None if comment else next(
+                                (s for s in spans if s[0] <= m.start() < s[1]), None)
+                            key = f"{m.group(1)}/{m.group(2)}"
+                            if span is None:
+                                self.unproving.append((rel, n, key))
+                            else:
+                                found.setdefault(key, []).append((rel, n, line[span[0]:span[1]].strip()))
+                    triple = triple_after
         return found
 
     def _manual_checks(self, story: Item):
@@ -750,6 +806,11 @@ def check(project: Project):
                 project.problem(os.path.join(project.root, path), line, f"test cites {ref}, but {story_id} has no {ac}")
             elif story.acs[ac]["dropped"]:
                 project.problem(os.path.join(project.root, path), line, f"test cites {ref}, which is dropped", "warning")
+    for path, line, ref in project.unproving:
+        if ref not in project.tests:
+            project.problem(os.path.join(project.root, path), line,
+                            f"{ref} is cited outside a test's name (a comment or code), which proves nothing — "
+                            f"put it in the test's title string", "warning")
     return project.problems
 
 
@@ -1128,7 +1189,7 @@ def new_item(project: Project, kind: str, parent_id: str | None, title: str,
 
 # ---------------------------------------------------------------- pr-body
 
-def pr_body(project: Project, slice_id: str) -> str:
+def pr_body(project: Project, slice_id: str, base: str | None = None) -> str:
     item = project.items.get(slice_id)
     if item is None or item.type != "slice":
         raise SystemExit(f"no slice {slice_id}")
@@ -1139,7 +1200,36 @@ def pr_body(project: Project, slice_id: str) -> str:
     body = re.sub(r"<!-- guide:.*?-->\n?", "", "\n".join(lines[start:]), flags=re.S)
     body = re.sub(r"\n{3,}", "\n\n", body).strip()
     parent = f" · {item.parent.label}" if item.parent else ""
-    return f"**{item.label}**{parent} — `{project.rel(item.doc)}`\n\n{body}\n"
+    review = reviewer_page(project, item, base)
+    return f"**{item.label}**{parent} — `{project.rel(item.doc)}`\n\n{review}{body}\n"
+
+
+def reviewer_page(project: Project, item: Item, base: str | None) -> str:
+    """What a person must judge, on one screen: the criteria in words, what changed in them, what
+    falsify could not show, and what QA checks by hand. Everything else is the work order below."""
+    story = item.parent if item.parent and item.parent.type == "story" else None
+    out = []
+    if story:
+        texts = ac_texts(story.text)
+        for ac in item.fm.get("covers") or []:
+            ref = f"{story.id}/{ac}"
+            proven = len(project.tests.get(ref, []))
+            state = f"{proven} test{'s' if proven != 1 else ''}" if proven else "**no test yet**"
+            out.append(f"- `{ref}` — {texts.get(ac, '?').replace(' | ', ' · ')} — {state}")
+    if base and git(project.root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode == 0:
+        for st, ac, old, new in criteria_edits(project, base):
+            out.append(f"- **Changed:** `{st.id}/{ac}` \"{old}\" → " + (f"\"{new}\"" if new is not None else "removed"))
+    rows = falsify_table(item)
+    if rows:
+        caught = sum(1 for r in rows if r[-1].strip().lower() == "caught")
+        out.append(f"- **Falsify:** {caught} of {len(rows)} caught")
+        out += [f"  - `{r[0]}` — {r[-1].strip()}" for r in rows if r[-1].strip().lower() != "caught"]
+    if story:
+        manual = [f"`{story.id}/{ac}`" for ac in item.fm.get("covers") or []
+                  if not project.tests.get(f"{story.id}/{ac}")]
+        if manual and rows:
+            out.append("- **QA checks by hand:** " + ", ".join(manual))
+    return "## For the reviewer\n\n" + "\n".join(out) + "\n\n" if out else ""
 
 
 # ---------------------------------------------------------------- vendor
@@ -1979,13 +2069,32 @@ def slowest(project: Project, junit: str | None = None, limit: int = 10) -> str:
 
 # ---------------------------------------------------------------- changed criteria
 
-def ac_texts(text: str) -> dict:
+def ac_texts(text: str, struck: bool = False) -> dict:
+    """{"AC-1": "given | when | then"}; with `struck`, a dropped (~~struck~~) criterion is marked."""
     out = {}
     for _i, cells in table_rows(section_lines(text, "Acceptance criteria") or []):
         m = re.fullmatch(r"(~~)?(AC-\d+)(~~)?", cells[0]) if cells else None
         if m:
-            out[m.group(2)] = " ".join(" | ".join(cells[1:]).split())
+            out[m.group(2)] = ("dropped: " if struck and m.group(1) else "") + " ".join(" | ".join(cells[1:]).split())
     return out
+
+
+def criteria_edits(project: Project, base: str) -> list:
+    """[(story, AC, text at base, text now or None)] for criteria that existed at `base` and changed."""
+    out = []
+    for story in project.of_type("story"):
+        before = git(project.root, "show", f"{base}:./{project.rel(story.doc)}")
+        if before.returncode != 0:
+            continue
+        old, new = ac_texts(before.stdout, struck=True), ac_texts(story.text, struck=True)
+        out += [(story, ac, text, new.get(ac)) for ac, text in sorted(old.items()) if new.get(ac) != text]
+    return out
+
+
+def code_changed(project: Project, base: str) -> list:
+    """Files outside spry/ that this branch changed since `base` — code, tests and configuration."""
+    done = git(project.root, "diff", "--relative", "--name-only", f"{base}...HEAD", "--", ".", ":(exclude)spry")
+    return [line for line in done.stdout.split("\n") if line.strip()] if done.returncode == 0 else []
 
 
 def changed_criteria(project: Project, base: str):
@@ -2032,11 +2141,22 @@ def merge_check(project: Project, slice_id: str, base: str | None = None) -> lis
     if not rows:
         out.append(("block", "no falsify results — run `falsify run … --record` at close"))
     for cells in rows:
-        result = cells[-1].strip().lower()
-        if result == "survived":
-            out.append(("block", f"falsify: `{cells[0]}` survived — add a test and re-run, or write the reason after `survived`"))
-        elif result.startswith("unreliable"):
-            out.append(("warn", f"falsify: `{cells[0]}` unreliable — its tests never ran green; say why or re-run"))
+        result = cells[-1].strip()
+        control = cells[0].replace("\\|", "|")
+        reason = re.sub(r"^\w+\s*(—|--|-|:)?\s*", "", result)
+        if result.lower() == "survived":
+            out.append(("block", f"falsify: `{control}` survived — add a test and re-run, or write the reason after `survived`"))
+        elif result.lower().startswith("survived"):
+            out.append(("warn", f"falsify: `{control}` survived, because \"{reason}\" — a person accepts this at the merge, or it gets a test"))
+        elif result.lower().startswith("skipped"):
+            out.append(("warn", f"falsify: `{control}` was not run, because \"{reason}\" — a person accepts this at the merge, or it is run"))
+        elif result.lower().startswith("unreliable"):
+            out.append(("warn", f"falsify: `{control}` unreliable — its tests never ran green; say why or re-run"))
+    if base:
+        out += required_controls(project, item, rows, base)
+        out += criteria_and_code(project, item, base)
+    else:
+        out.append(("warn", "no --base: the controls the diff requires and any criteria it changes were not checked"))
     story = item.parent if item.parent and item.parent.type == "story" else None
     for ac in (item.fm.get("covers") or []) if story else []:
         ref = f"{story.id}/{ac}"
@@ -2062,6 +2182,36 @@ def merge_check(project: Project, slice_id: str, base: str | None = None) -> lis
     return out
 
 
+def required_controls(project: Project, item: Item, rows: list, base: str) -> list:
+    """Every control `falsify suggest` finds in the diff must have a row: the agent adds, never drops."""
+    try:
+        wanted = falsify_suggest(project, item.id, base)
+    except PlanError as e:
+        return [("block", f"falsify: cannot list the controls the diff requires — {e}")]
+    have = {" ".join(cells[0].replace("\\|", "|").split()) for cells in rows}
+    missing = [e for e in wanted if " ".join(e["control"].split()) not in have]
+    if not missing:
+        return [("ok", f"falsify: all {len(wanted)} control{'s' if len(wanted) != 1 else ''} the diff adds were run")] if wanted else []
+    return [("block", f"falsify: `{e['control']}` ({e['file']}) was not run — run it, or record it as "
+                      f"`skipped — <reason>` for a person to accept") for e in missing]
+
+
+def criteria_and_code(project: Project, item: Item, base: str) -> list:
+    """Criteria changed in a branch that also changes code need the story owner's approval in the slice."""
+    edits = criteria_edits(project, base)
+    if not edits or not code_changed(project, base):
+        return []
+    approved = str(item.fm.get("criteria_approved_by") or "").strip()
+    owners = {str(story.fm.get("owner") or "").strip() for story, *_ in edits} - {""}
+    said = "; ".join(f"{story.id}/{ac}: \"{old}\" → " + (f"\"{new}\"" if new is not None else "removed")
+                     for story, ac, old, new in edits)
+    if approved and (not owners or approved in owners):
+        return [("ok", f"criteria changed with the code, approved by {approved}: {said}")]
+    who = " or ".join(sorted(owners)) or "the story's owner"
+    return [("block", f"criteria changed in the same branch as the code — {said}. Only {who} approves this: "
+                      f"after reading it, they add `criteria_approved_by: <name>` to {item.id}")]
+
+
 def merge_message(project: Project, slice_id: str) -> str:
     """Subject, blank line, body: the slice summary, then the trailers. For `gh pr merge --squash`."""
     item = project.items.get(slice_id)
@@ -2076,6 +2226,100 @@ def merge_message(project: Project, slice_id: str) -> str:
     if item.parent and item.parent.type == "story" and item.fm.get("covers"):
         trailers.append("Covers: " + ", ".join(f"{item.parent.id}/{ac}" for ac in item.fm["covers"]))
     return f"{item.id} {item.title}{pr}\n\n" + ("\n".join(summary) + "\n\n" if summary else "") + "\n".join(trailers) + "\n"
+
+
+# ---------------------------------------------------------------- gate
+
+def code_fingerprint(project: Project, base: str | None = None):
+    """A hash of every file a test result can depend on — tracked and untracked, minus `checks.docs`.
+    None outside git, so the gate always runs there."""
+    docs = [glob_regex(g) for g in project.config.get("checks", {}).get("docs") or DEFAULT_DOCS]
+    staged = git(project.root, "ls-files", "-s", "--", ".")
+    dirty = git(project.root, "ls-files", "-m", "-o", "--exclude-standard", "--", ".")
+    if staged.returncode != 0 or dirty.returncode != 0:
+        return None
+    changed = {line for line in dirty.stdout.split("\n") if line}
+    entries = {}
+    for line in staged.stdout.split("\n"):
+        meta, _, path = line.partition("\t")
+        if path and path not in changed:
+            entries[path] = meta.split()[1]
+    for path in changed:
+        full = os.path.join(project.root, path)
+        try:
+            with open(full, "rb") as handle:
+                entries[path] = hashlib.sha1(handle.read()).hexdigest()
+        except OSError:
+            entries[path] = "deleted"
+    digest = hashlib.sha256()
+    for path in sorted(entries):
+        # Untracked output a run leaves behind (`__pycache__`, `coverage`, `.spry/green` itself) is not code.
+        if path in changed and SKIP_DIRS.intersection(path.split("/")[:-1]):
+            continue
+        if not any(g.match(path) for g in docs):
+            digest.update(f"{path} {entries[path]}\n".encode())
+    return digest.hexdigest()
+
+
+def gate_steps(project: Project) -> list:
+    """[(name, command)] — fast checks cheapest first, then the affected tests."""
+    steps = []
+    for n, entry in enumerate(project.config.get("checks", {}).get("fast") or [], 1):
+        name, command = (entry.get("name"), entry.get("run")) if isinstance(entry, dict) else (None, entry)
+        command = str(command or "")
+        steps.append((name or (command.split()[0] if command.split() else f"check {n}"), command))
+    steps.append(("affected tests", str(project.config.get("tests", {}).get("affected") or "")))
+    for name, command in steps:
+        if not command.strip() or re.search(r"<[a-z][a-z ,/-]*>", command):
+            raise SystemExit(f"spry.config.json: `{name}` has no command yet — set "
+                             f"{'tests.affected' if name == 'affected tests' else 'checks.fast'}")
+    return steps
+
+
+def gate(project: Project, force: bool = False, say=print) -> int:
+    """`spry check`, then the fast checks, then the affected tests — stopping at the first failure.
+    A pass is stamped with the code's fingerprint; while the code is unchanged, only `check` runs again."""
+    started = time.time()
+    errors = [p for p in check(project) if p.level == "error"]
+    say(f"{'✗' if errors else '✓'} spry check · {time.time() - started:.1f}s")
+    if errors:
+        for p in errors[:10]:
+            say(f"  {p}")
+        return 1
+    steps = gate_steps(project)
+    stamp_path = os.path.join(project.root, ".spry", "green")
+    fingerprint = code_fingerprint(project)
+    try:
+        stamp = json.loads(read(stamp_path))
+    except (OSError, ValueError):
+        stamp = {}
+    if fingerprint and stamp.get("code") == fingerprint and not force:
+        say(f"– {', '.join(n for n, _ in steps)} skipped: no code changed since they passed at {stamp.get('at', '?')}")
+        return 0
+    for name, command in steps:
+        started = time.time()
+        done = subprocess.run(command, shell=True, cwd=project.root, capture_output=True, text=True)
+        say(f"{'✓' if done.returncode == 0 else '✗'} {name} · {time.time() - started:.1f}s")
+        if done.returncode != 0:
+            tail = (done.stdout + done.stderr).rstrip().split("\n")[-40:]
+            say("\n".join("  " + line for line in tail))
+            return 1
+    if fingerprint:
+        os.makedirs(os.path.dirname(stamp_path), exist_ok=True)
+        write(stamp_path, json.dumps({"code": fingerprint, "at": time.strftime("%Y-%m-%d %H:%M")}) + "\n")
+        say("green — stamped; until the code changes, the gate runs only `spry check`")
+    return 0
+
+
+def code_changed_since(project: Project, base: str) -> bool:
+    """Did anything outside `checks.docs` change between `base` and the working tree? True when unsure."""
+    if git(project.root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
+        return True
+    done = git(project.root, "diff", "--relative", "--name-only", base, "--", ".")
+    if done.returncode != 0:
+        return True
+    docs = [glob_regex(g) for g in project.config.get("checks", {}).get("docs") or DEFAULT_DOCS]
+    return any(not any(g.match(path) for g in docs) for path in done.stdout.split("\n") if path)
 
 
 # ---------------------------------------------------------------- main
@@ -2114,6 +2358,7 @@ def main(argv=None) -> int:
     p.add_argument("--dependency", help="external: the service the behaviour belongs to")
     p = sub.add_parser("pr-body", help="a slice's work order and close summary, for its pull request")
     p.add_argument("slice")
+    p.add_argument("--base", help="git ref the PR merges into, to show criteria the branch changed")
     p = sub.add_parser("vendor", help="copy process/ and the tool into a project (run the plugin's copy)")
     p.add_argument("--force", action="store_true", help="overwrite an existing spry/process/")
     p.add_argument("--root", dest="vendor_root", help="the project to copy into (default: current folder)")
@@ -2147,6 +2392,10 @@ def main(argv=None) -> int:
     p.add_argument("--base", help="git ref the PR merges into, to catch cited criteria that changed")
     p = sub.add_parser("merge-message", help="the squash commit for a slice: subject, summary, trailers")
     p.add_argument("slice")
+    p = sub.add_parser("gate", help="spry check, fast checks, affected tests — skipped while no code changed since green")
+    p.add_argument("--force", action="store_true", help="run everything even if the code is unchanged")
+    p = sub.add_parser("changed", help="for CI: prints code=true when files outside checks.docs changed since --base")
+    p.add_argument("--base", required=True, help="git ref to compare with")
     p = sub.add_parser("falsify", help="prove a slice's tests notice its safeguards")
     fsub = p.add_subparsers(dest="action", required=True)
     q = fsub.add_parser("suggest", help="draft a plan from the source lines this branch added")
@@ -2261,6 +2510,11 @@ def main(argv=None) -> int:
         blocks = sum(1 for s, _ in lines if s == "block")
         print("ready to merge" if not blocks else f"{blocks} thing{'s block' if blocks != 1 else ' blocks'} the merge")
         return 1 if blocks else 0
+    if args.command == "gate":
+        return gate(project, args.force)
+    if args.command == "changed":
+        print(f"code={'true' if code_changed_since(project, args.base) else 'false'}")
+        return 0
     if args.command == "merge-message":
         print(merge_message(project, args.slice), end="")
         return 0
@@ -2304,7 +2558,7 @@ def main(argv=None) -> int:
         print(f"{len(hits)} private word{'s' if len(hits) != 1 else ''}")
         return 1 if hits else 0
     if args.command == "pr-body":
-        print(pr_body(project, args.slice), end="")
+        print(pr_body(project, args.slice, args.base), end="")
         return 0
     return 2
 

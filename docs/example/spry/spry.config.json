@@ -1,6 +1,6 @@
 {
-  "spry": "0.3.0",
-  "spry_baseline": "CH-3",
+  "spry": "0.4.0",
+  "spry_baseline": "CH-4",
   "product": "Shelf",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -32,6 +32,13 @@
     "spry/knowledge/performance.md",
     "spry/knowledge/decisions/INDEX.md"
   ],
+  "checks": {
+    "fast": [
+      {"name": "format", "run": "pnpm prettier --check ."},
+      {"name": "lint", "run": "pnpm eslint . --cache"},
+      {"name": "types", "run": "pnpm tsc --noEmit"}
+    ]
+  },
   "tests": {
     "match": ["**/*.test.ts"],
     "affected": "pnpm vitest run --changed",

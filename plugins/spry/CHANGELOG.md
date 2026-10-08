@@ -71,3 +71,36 @@ Entry format:
 - **Migrate:**
   - A decision's `affects` lists item IDs only. An area name there never matched anything; move
     it into the decision's text.
+
+## CH-4 · Fewer ways to pass by mistake, fewer slow runs
+
+- **Date:** 2026-10-08 · **Version:** 0.4.0
+- **Touches:** `tool/spry.py` (`gate`, `changed`, `merge-check`, `pr-body`, test scan),
+  `process/{slicing,merging,testing,from-writ,setup}.md`,
+  `process/templates/{spry.config.json,ci-github.yml,agents.md,slice.md}`,
+  `skills/{slice-open,slice-close,merge}`, `stacks/{generic,python,typescript-node}.md`
+- **Why:**
+  - People cannot read everything an agent writes, so each place an agent could mark its own work
+    as passing is now a check:
+    - a comment citing `S-1/AC-1` proved the criterion;
+    - the agent chose which controls to falsify, so it could leave out the ones its tests miss;
+    - a survivor with any written reason passed `merge-check`;
+    - a branch could weaken a criterion and change the code to fit it, with only a warning.
+  - Slow runs repeated for nothing. Nothing ran lint before the tests, so a lint error found
+    after them meant running them again. A document fixed after the gate re-ran the tests, CI
+    ran every test on pushes that changed only documents, and `/spry:merge` ran the full suite
+    locally after CI had already run it on main.
+  - The agent stopped to ask at every step of a slice. Only three of those are a person's to
+    make: the criteria, the merge, and anything hard to undo.
+- **Adapt:**
+  - `checks.fast`: the project's format, lint and type-check commands, cheapest first (see the
+    stack profile). `checks.docs` if documents live outside `spry/` and `*.md`.
+  - CI: take the new `templates/ci-github.yml`, which gives fast checks a job of their own and
+    skips them and the tests when no code changed.
+  - `AGENTS.md` *Commands*: `spry.py gate` replaces the two test lines (see `templates/agents.md`).
+- **Migrate:**
+  - Tests citing a criterion only in a comment no longer prove it. `spry check` warns for each
+    one; move the ID into the test's title string or docstring.
+  - Closed slices are not re-checked. An open slice's Falsify table needs a row for every control
+    `falsify suggest` lists before it merges.
+

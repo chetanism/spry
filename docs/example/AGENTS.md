@@ -14,7 +14,8 @@ agent breaks by default**, or a **rule that cannot be checked by a tool**. Every
 
 - Follow `spry/process/` — chat (`chat.md`), writing (`writing.md`), conflict check (`conflicts.md`).
 - Work arrives as a slice: `/spry:slice-open` before any code, `/spry:slice-close` before merge.
-- Before planning or coding, search: `python3 spry/tool/spry.py find "<words>"`.
+- Start from this file and the work order; open a process file only when a step names it, and
+  search before planning or coding: `python3 spry/tool/spry.py find "<words>"`.
 - Use the words in `spry/knowledge/glossary.md`; never their banned synonyms.
 
 ## Replies
@@ -26,8 +27,9 @@ agent breaks by default**, or a **rule that cannot be checked by a tool**. Every
 
 ## Commands
 
-- Tests during a slice (affected only): `pnpm vitest run --changed`
-- All tests: `pnpm test:all`
+- Before close, and whenever tests are wanted: `python3 spry/tool/spry.py gate` — check, fast
+  checks, affected tests; skipped while only documents changed
+- Never run the full suite; CI does, and `/spry:test-all` when asked
 - Check the process: `python3 spry/tool/spry.py check`
 
 ## Must not

@@ -43,7 +43,7 @@ document both work. Everything after is drafted from it, so read it twice.
 | f | Security — who may see what, personal data, sign-in, audit | `knowledge/security.md`, rules `SEC-n` (`templates/knowledge-topic.md`) |
 | g | Performance — load, response times, devices, data volumes | `knowledge/performance.md`, rules `PERF-n` (`templates/knowledge-topic.md`) |
 | h | External services — each one the product depends on | `knowledge/external/<service>/INDEX.md` each |
-| i | Stack and tests (developer) — language, framework, test runner, CI host | `tests`, `stack` and `falsify` in config, from `stacks/<stack>.md`; `explore` may wait for the first `/spry:explore` |
+| i | Stack and tests (developer) — language, framework, test runner, CI host | `checks`, `tests`, `stack` and `falsify` in config, from `stacks/<stack>.md`; `explore` may wait for the first `/spry:explore` |
 | j | Words — every term used so far, its meaning, its synonyms | `knowledge/glossary.md` (`templates/glossary.md`) |
 
 ## 3. Write the rest

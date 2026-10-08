@@ -194,6 +194,29 @@ class Check(Base):
         t = self.tree(**{"src__a.test.ts": 'test.skip("S-1/AC-1 does the thing", () => {})\n'})
         self.assertNotIn("S-1/AC-1", t.project().tests)
 
+    def test_a_citation_in_a_comment_or_code_proves_nothing(self):
+        for text in ['// S-1/AC-1 does the thing\ntest("x", () => {})\n',
+                     'test("x", () => { expect(f()).toBe(1) }) // "S-1/AC-1"\n',
+                     ' * S-1/AC-1 in a doc comment\n']:
+            t = self.tree(**{"src__a.test.ts": text})
+            p = t.project()
+            self.assertNotIn("S-1/AC-1", p.tests, text)
+            warnings = [str(x) for x in spry.check(p) if x.level == "warning"]
+            self.assertTrue(any("cited outside a test's name" in w for w in warnings), warnings)
+
+    def test_a_citation_in_a_title_or_docstring_proves(self):
+        config = dict(CONFIG, tests={"match": ["**/*.test.ts", "**/test_*.py"]})
+        t = self.tree(**{"spry__spry.config.json": json.dumps(config), "src__a.test.ts": None,
+                         "tests__test_a.py": 'def test_lends():\n    """\n    S-1/AC-1 lends a book\n    """\n',
+                         "tests__test_b.py": "@pytest.mark.parametrize('x', [1], ids=['S-1/AC-1 one'])\ndef test_x(x): pass\n"})
+        tests = t.project().tests["S-1/AC-1"]
+        self.assertEqual(sorted((p, n) for p, n, _ in tests), [("tests/test_a.py", 3), ("tests/test_b.py", 1)])
+
+    def test_string_spans(self):
+        self.assertEqual(spry.string_spans('test("a # b", () => {}) // "c"', None), ([(6, 11)], None))
+        self.assertEqual(spry.string_spans('    """opens', None), ([(7, 12)], '"""'))
+        self.assertEqual(spry.string_spans('still in""" + "x"', '"""'), ([(0, 8), (15, 16)], None))
+
     def test_skills_copied_for_another_agent_are_not_checked(self):
         t = self.tree()
         spry.install(t.root, "generic")
@@ -426,6 +449,16 @@ class PrBody(Base):
         self.assertNotIn("guide", body)
 
 
+    def test_reviewer_page_comes_first(self):
+        text = slice_("SL-1").replace("### Plan", "### Plan\n\n- x\n\n## Close summary\n\n### Falsify\n\n"
+                                      "| Control | Mutation | Expect | Result |\n|---|---|---|---|\n"
+                                      "| g | m | S-1/AC-1 | caught |\n| h | m | S-1/AC-1 | survived — logged only |\n\n### Plan2")
+        t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): text})
+        body = spry.pr_body(t.project(), "SL-1")
+        self.assertLess(body.index("## For the reviewer"), body.index("## Work order"))
+        self.assertIn("- `S-1/AC-1` — x · y · z — 1 test", body)
+        self.assertIn("- **Falsify:** 1 of 2 caught\n  - `h` — survived — logged only", body)
+
 class Vendor(unittest.TestCase):
     def test_copies_process_and_tool_and_refuses_to_overwrite(self):
         root = tempfile.mkdtemp()
@@ -529,9 +562,9 @@ LOANS_BEFORE = 'def lend(count, overdue):\n    return "ok"\n'
 LOANS_AFTER = ('def lend(count, overdue):\n    if count >= 3:\n        return "limit"\n'
                '    if overdue:\n        return "overdue"\n    return "ok"\n')
 RUNNER = "import runpy, sys\nfor f in sys.argv[1:]:\n    runpy.run_path(f)\n"
-TEST_LIMIT = ('# S-1/AC-1 refuses a fourth book\nimport sys; sys.path.insert(0, "src")\nfrom loans import lend\n'
+TEST_LIMIT = ('"""S-1/AC-1 refuses a fourth book"""\nimport sys; sys.path.insert(0, "src")\nfrom loans import lend\n'
               'assert lend(3, False) == "limit"\nassert lend(2, False) == "ok"\n')
-TEST_OVERDUE = ('# S-1/AC-2 refuses an overdue member, but never checks it\nimport sys; sys.path.insert(0, "src")\n'
+TEST_OVERDUE = ('"""S-1/AC-2 refuses an overdue member, but never checks it"""\nimport sys; sys.path.insert(0, "src")\n'
                 'from loans import lend\nassert lend(0, False) == "ok"\n')
 
 
@@ -766,6 +799,104 @@ class Falsify(unittest.TestCase):
             self.assertIn("| if overdue: | `if overdue:` → `if False and (overdue):` | S-1/AC-2 | survived |", handle.read())
 
 
+    def merge_lines(self, rows):
+        with open(self.slice_doc) as handle:
+            text = handle.read()
+        with open(self.slice_doc, "w") as handle:
+            handle.write(text + rows)
+        return spry.merge_check(spry.Project(self.root), "SL-1", "main")
+
+    def test_merge_needs_every_control_the_diff_adds(self):
+        lines = self.merge_lines("| if count >= 3: | m | S-1/AC-1 | caught |\n")
+        self.assertIn(("block", "falsify: `if overdue:` (src/loans.py) was not run — run it, or record it as "
+                                "`skipped — <reason>` for a person to accept"), lines)
+        self.assertFalse(any("`if count >= 3:`" in x and s == "block" for s, x in lines))
+
+    def test_a_skipped_control_waits_for_a_person(self):
+        lines = self.merge_lines("| if count >= 3: | m | S-1/AC-1 | caught |\n| if overdue: | m | S-1/AC-2 | skipped — needs a clock |\n")
+        self.assertIn(("ok", "falsify: all 2 controls the diff adds were run"), lines)
+        self.assertTrue(any(s == "warn" and '"needs a clock"' in x for s, x in lines), lines)
+
+    def test_criteria_changed_with_the_code_need_the_owner(self):
+        path = os.path.join(self.root, "spry/plan/M-1-m/E-1-e/F-1-f/S-1-s/README.md")
+        with open(path) as handle:
+            text = handle.read()
+        with open(path, "w") as handle:
+            handle.write(text.replace("state: draft\n", "state: draft\nowner: Asha\n")
+                             .replace("| AC-2 | a | b | c |", "| AC-2 | a | b | anything |"))
+        blocked = [x for s, x in self.merge_lines("") if s == "block" and "criteria changed" in x]
+        self.assertEqual(len(blocked), 1)
+        self.assertIn('S-1/AC-2: "a | b | c" → "a | b | anything". Only Asha approves this', blocked[0])
+        with open(self.slice_doc) as handle:
+            text = handle.read()
+        with open(self.slice_doc, "w") as handle:
+            handle.write(text.replace("covers:", "criteria_approved_by: Asha\ncovers:"))
+        lines = spry.merge_check(spry.Project(self.root), "SL-1", "main")
+        self.assertTrue(any(s == "ok" and "approved by Asha" in x for s, x in lines), lines)
+
+    def gate_config(self, fast, affected="python3 run.py tests/test_limit.py"):
+        log = os.path.join(tempfile.mkdtemp(), "ran")
+        self.addCleanup(shutil.rmtree, os.path.dirname(log))
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["checks"] = {"fast": [{"name": "lint", "run": fast.replace("LOG", log)}]}
+        config["tests"]["affected"] = f"{affected} && echo t >> {log}"
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        with open(self.slice_doc) as handle:
+            text = handle.read()
+        with open(self.slice_doc, "w") as handle:
+            handle.write(text.replace("## Close summary", "## Work order\n\n### Conflict check\n\n"
+                                      "- Checked 2026-10-01 against: S-1\n\n## Close summary"))
+        return log
+
+    def gate(self):
+        said = []
+        code = spry.gate(spry.Project(self.root), say=said.append)
+        return code, said
+
+    def ran(self, log):
+        return open(log).read().split() if os.path.exists(log) else []
+
+    def test_gate_skips_checks_and_tests_until_code_changes(self):
+        log = self.gate_config("echo f >> LOG")
+        self.assertEqual(self.gate()[0], 0)
+        self.assertEqual(self.ran(log), ["f", "t"])
+        code, said = self.gate()
+        self.assertEqual(code, 0)
+        self.assertTrue(any("skipped: no code changed" in x for x in said), said)
+        with open(self.slice_doc, "a") as handle:
+            handle.write("\nA note.\n")
+        self.gate()
+        self.assertEqual(self.ran(log), ["f", "t"], "a document change runs nothing")
+        self.write({"src/loans.py": LOANS_AFTER + "# changed\n"})
+        self.gate()
+        self.assertEqual(self.ran(log), ["f", "t", "f", "t"], "a code change runs everything")
+
+    def test_gate_stops_at_the_first_failure(self):
+        log = self.gate_config("echo f >> LOG && exit 3")
+        code, said = self.gate()
+        self.assertEqual(code, 1)
+        self.assertEqual(self.ran(log), ["f"], "tests never ran after lint failed")
+        self.assertIn("✗ lint", " ".join(said))
+        code, _ = self.gate()
+        self.assertEqual(self.ran(log), ["f", "f"], "a failure is never stamped green")
+
+    def test_gate_refuses_a_placeholder(self):
+        self.gate_config("<lint command>")
+        with self.assertRaises(SystemExit):
+            self.gate()
+
+    def test_changed_tells_ci_whether_tests_must_run(self):
+        p = spry.Project(self.root)
+        self.assertTrue(spry.code_changed_since(p, "main"))
+        self.git("checkout", "-q", "-b", "docs-only", "main")
+        self.write({"spry/plan/M-1-m/README.md": "---\nid: M-1\ntitle: m2\nstate: draft\n---\n# M-1\n", "notes.md": "x\n"})
+        self.commit("docs")
+        self.assertFalse(spry.code_changed_since(spry.Project(self.root), "main"))
+        self.assertTrue(spry.code_changed_since(spry.Project(self.root), "0000000000000000000000000000000000000000"))
+
 class Mutations(unittest.TestCase):
     def test_javascript_guard_is_made_never_true(self):
         self.assertEqual(spry.mutations_for("  if (existing) {")[0], ("  if (false && (existing)) {", "never true"))
@@ -903,9 +1034,11 @@ class Merge(Base):
         self.assertEqual(self.blocks(lines), [])
         self.assertIn(("ok", "S-1/AC-1 proven — 1 test"), lines)
 
-    def test_a_bare_survivor_blocks_and_a_reasoned_one_does_not(self):
+    def test_a_bare_survivor_blocks_and_a_reasoned_one_waits_for_a_person(self):
         self.assertTrue(self.blocks(self.check("| guard | never true | S-1/AC-1 | survived |\n")))
-        self.assertEqual(self.blocks(self.check("| guard | never true | S-1/AC-1 | survived — logged only |\n")), [])
+        lines = self.check("| guard | never true | S-1/AC-1 | survived — logged only |\n")
+        self.assertEqual(self.blocks(lines), [])
+        self.assertTrue(any(s == "warn" and '"logged only" — a person accepts this' in x for s, x in lines), lines)
 
     def test_no_falsify_results_blocks(self):
         self.assertIn("no falsify results", " ".join(self.blocks(self.check(""))))

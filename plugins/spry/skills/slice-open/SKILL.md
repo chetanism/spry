@@ -1,6 +1,6 @@
 ---
 name: slice-open
-description: Open a slice — write its work order (starting with a short summary of what will be done), check it for conflicts with open slices and the project's rules, create the branch and a draft pull request, and stop before any code. Use when starting work on a slice.
+description: Open a slice — write its work order (starting with a short summary of what will be done), check it for conflicts with open slices and the project's rules, create the branch and a draft pull request, then build it — asking first only when the plan does something hard to undo. Use when starting work on a slice.
 argument-hint: "[slice ID]"
 ---
 
@@ -10,4 +10,6 @@ argument-hint: "[slice ID]"
   `chat.md` and `writing.md` beside it.
 - **Slice:** `$ARGUMENTS`; without one, offer the first `planned` slice that is not blocked, and
   the alternatives.
-- **Ask before** creating the branch, and **stop before any code** — even when the next step is obvious.
+- **Ask only** when the plan does something hard to undo or departs from the story (`slicing.md` →
+  *When to stop and ask*). Otherwise open the branch and the draft PR, build, and close — unless
+  the person said to open only.

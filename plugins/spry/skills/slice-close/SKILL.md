@@ -8,6 +8,9 @@ argument-hint: "[slice ID]"
 
 - **Procedure:** `spry/process/slicing.md` → *Close*. Read `chat.md` and `writing.md` beside it.
 - **Slice:** `$ARGUMENTS`; without one, the `open` slice whose `branch` is the current branch.
+- **Gate with the tool** (`spry.py gate`), never by running test commands by hand, and never the
+  full suite.
 - **Falsify with the tool** (`spry.py falsify suggest`, then `run`) — never by editing files by hand;
-  the tool restores every file, even when interrupted. Confirm `git status` is clean afterwards.
+  the tool restores every file, even when interrupted. Keep every control the draft lists.
+  Confirm `git status` is clean afterwards.
 - **Never merge** the pull request.

@@ -1,5 +1,8 @@
-# Written by /spry:init. Pull requests: affected tests and spry check, in parallel.
-# Main branch: spry check; every test, then spry index commits the progress tables. Nightly: every test.
+# Written by /spry:init. Cheapest first, and tests only when code changed:
+# spry check → fast checks (format, lint, types) → tests. A change to documents alone
+# (checks.docs in spry.config.json) runs spry check and nothing else.
+# Pull requests: affected tests. Main branch: every test, then spry index commits the progress
+# tables. Nightly: every test.
 name: spry
 on:
   pull_request:
@@ -14,6 +17,8 @@ jobs:
   check:
     if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
+    outputs:
+      code: ${{ steps.changed.outputs.code }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -22,8 +27,19 @@ jobs:
         run: python3 spry/tool/spry.py check --base origin/${{ github.base_ref }}
       - if: github.event_name == 'push'
         run: python3 spry/tool/spry.py check
+      - id: changed
+        run: python3 spry/tool/spry.py changed --base ${{ github.event_name == 'pull_request' && format('origin/{0}', github.base_ref) || github.event.before }} >> "$GITHUB_OUTPUT"
+  fast:
+    needs: check
+    if: needs.check.outputs.code == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # <setup steps for the stack — stacks/<stack>.md>
+      - run: <each command in checks.fast, one step each, cheapest first>
   affected-tests:
-    if: github.event_name == 'pull_request'
+    needs: [check, fast]
+    if: github.event_name == 'pull_request' && needs.check.outputs.code == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -32,15 +48,20 @@ jobs:
       # <setup steps for the stack — stacks/<stack>.md>
       - run: <affected tests command, against origin/${{ github.base_ref }}>
   all-tests:
-    if: github.event_name != 'pull_request'
+    needs: [check, fast]
+    if: >-
+      !cancelled() && (github.event_name == 'schedule' ||
+      (github.event_name == 'push' && needs.check.outputs.code == 'true' && needs.fast.result == 'success'))
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       # <setup steps for the stack — stacks/<stack>.md>
       - run: <all tests command>
   index:
-    if: github.event_name == 'push'
-    needs: all-tests
+    needs: [check, all-tests]
+    if: >-
+      !cancelled() && github.event_name == 'push' && needs.check.result == 'success' &&
+      needs.all-tests.result != 'failure'
     runs-on: ubuntu-latest
     permissions:
       contents: write

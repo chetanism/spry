@@ -81,7 +81,7 @@ spry/
   history/writ.md                 # adopted from writ only: old ID → new (process/from-writ.md)
   process/                        # vendored from the plugin: rules + templates
   tool/spry.py
-.spry/                            # gitignored: search index, personal tone, caches
+.spry/                            # gitignored: search index, personal tone, gate stamp, caches
 ```
 
 - **The folder tree is the hierarchy.** GitHub shows a folder's `README.md` when you open it, so a
@@ -129,8 +129,9 @@ spry/
 ## 6. Status and proof
 
 - **Slice** done = `closed`. `slice-close` sets it in the PR's last commit, so on `main` it means merged.
-- **Acceptance criterion** proven = a test whose source line contains `S-1/AC-1`, or a `pass` as the
-  latest row for it in the story's `checks.md`. A line that skips the test or leaves it to do
+- **Acceptance criterion** proven = a test whose name contains `S-1/AC-1` — inside a string on the
+  line (a title, a docstring, a parametrize id), never a comment or code, which `check` warns about
+  — or a `pass` as the latest row for it in the story's `checks.md`. A line that skips the test or leaves it to do
   (`it.skip`, `test.todo`, `xit`, `@pytest.mark.skip`) proves nothing. A later `fail` row un-proves it, test or not — a person
   saw it broken.
 - **Story** done = all its slices done **and** every AC proven.
@@ -139,7 +140,9 @@ spry/
   milestones · epics by milestone · features by epic · stories by feature · slices by story.
 - **Editing a story after slicing has started is allowed** — git history is the record. `spry check`
   warns (`check --base <ref>`, which CI passes on pull requests) when a change edits the text of an
-  AC that a test already cites.
+  AC that a test already cites. A branch that changes an AC **and** code is blocked by
+  `merge-check` until the slice carries `criteria_approved_by:` the story's owner — the quiet way
+  to "pass" is to weaken the criterion to fit the code.
 
 ## 7. Audience and tone
 
@@ -229,11 +232,21 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
 
 ## 15. Test speed
 
+The rule: **a slow check runs only when its answer could have changed**, and the cheapest checks run
+first so a slow one never runs only to be thrown away by a lint error.
+
 - The interview captures the stack; the stack profile writes:
   - parallel test execution on by default;
   - an **affected-only** command used during a slice (`vitest --changed`, turbo filters,
     `pytest-testmon`, …);
-  - the full suite in CI on `main` and nightly, and on demand — not on every slice.
+  - the full suite in CI on `main` and nightly, and on demand — never by the agent as a routine
+    step: not on a slice, not at close, not after a merge (the merge waits for CI on `main`).
+- **`gate`** runs `spry check` → `checks.fast` (format, lint, types, cheapest first) → affected
+  tests, stopping at the first failure. A pass is stamped in `.spry/green` with a fingerprint of the
+  code (every file outside `checks.docs`, default `spry/**` and `**/*.md`); while it matches, the
+  gate runs `check` alone. So a document fixed after the tests never re-runs them.
+- **CI** follows the same order: `check` (which also prints `changed --base` → `code=true|false`),
+  then fast checks, then tests — and the last two only when `code` is true. Slice close pushes once.
 - `spry tests --slowest` reads JUnit XML and names the slowest tests.
 - `test-all` runs the whole suite on demand, part by part (`tests.parts`), starting the local
   services (`stack`) only when they are down and stopping only what it started. Report only.
@@ -268,10 +281,14 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   otherwise let size-and-mtime build caches (Python's `.pyc`) run the previous mutation's code — a
   false `caught`, found while building this.
 - **`--record SL-n`** writes the results into the slice's Falsify table.
-- Result per control — `caught` · `survived` · `unreliable` — goes into the slice file. `survived`
-  only when every group of its tests ran: one red or timed out makes it `unreliable`. A runner that
-  times out is stopped with its whole process group. A survivor
-  needs a new test or a written reason before the slice closes.
+- **The diff decides what is falsified, not the agent.** `merge-check --base` runs `suggest` again
+  and blocks when a control it lists has no row. The agent can add controls, never drop one; a
+  control that cannot run is recorded `skipped — <reason>`.
+- Result per control — `caught` · `survived` · `unreliable` · `skipped` — goes into the slice
+  file. `survived` only when every group of its tests ran: one red or timed out makes it
+  `unreliable`. A runner that times out is stopped with its whole process group. A survivor needs a
+  new test or a written reason before the slice closes; a reason (on a survivor or a skipped
+  control) is a `!` in `merge-check`, which a person accepts in the merge's one ask.
 
 ## 17. Tool — `spry.py`
 
@@ -283,8 +300,10 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `related <file>` | conflict-check candidates (§10) |
 | `next <type>` | next free ID |
 | `new <type> --parent --title` | create an item from its template, next ID, right folder |
-| `pr-body <slice>` | the slice's work order (+ close summary) for its pull request |
-| `merge-check <slice> [--base]` | ready to merge? closed, PR number, falsify survivors resolved, covered ACs proven (else a QA follow-up), `check` clean |
+| `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
+| `merge-check <slice> [--base]` | ready to merge? closed, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
+| `gate [--force]` | §15 |
+| `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
 | `vendor` | copy `process/` and the tool into a project (plugin's copy only); `--diff` lists what differs |
 | `scrub <file>` | private words (product, people, glossary terms, emails, URLs) left in text about to leave the project |
@@ -305,10 +324,10 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `feature` | 3 | Interview → feature spec (not its stories); conflict check |
 | `story` | 3 | Interview → stories with acceptance criteria; conflict check |
 | `slice` | 8 | Split a ready story / task / bug into `planned` slices: one slice is reviewable in one sitting and demos one visible change |
-| `slice-open` | 8 | Work order (opening with a brief summary of what will be done), conflict check, branch, draft PR with the work order as its body; stops before code |
+| `slice-open` | 8 | Work order (opening with a brief summary of what will be done), conflict check, branch, draft PR with the work order as its body; then builds — asking first only for something hard to undo |
 | `slice-close` | 8 | Close summary from the diff, falsify, AC proof, done list; PR body refreshed with both parts |
 | `review` | 8 | Review a PR against its work order; findings as blocker / should / nit, posted only on a yes |
-| `merge` | 8 | Checks green, `merge-check`, PR body current, approval, base not moved → squash with trailers → full suite on main → what is unblocked |
+| `merge` | 8 | Checks green, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main → what is unblocked |
 | `bug` / `task` | 4 / 7 | Record one, attached to its parent |
 | `status` | reader's | Roll-up explained at the asker's tone |
 | `tone` | — | Personal audience override |
@@ -343,6 +362,10 @@ in `spry/history/writ.md`, then retires `canon/`.
 
 ## 20. Settled
 
+- 2026-10-08 — a person decides three things: the criteria, the merge, and anything hard to undo.
+  Everything between runs without stopping, because the checks — the gate, falsify of every
+  control the diff adds, citations only in test names, `merge-check` — stand in for a person
+  watching each step. Slices of stories on different files run side by side in worktrees.
 - 2026-10-08 — generated blocks: CI on `main` only. Slice size: agent judges against the written
   rule in §18. Story edits: allowed, warned when a cited AC changes. Falsify: serial first.
 - 2026-10-08 — `adopt` is built alongside `init`, not after the pilot.
@@ -378,3 +401,8 @@ in `spry/history/writ.md`, then retires `canon/`.
   resume; adopt handles existing skills and decisions in one ask; `process/from-writ.md`; tool fixes
   for falsify (survivor vs red group, pnpm links, process groups, generics), `check --base` (bad
   ref, subfolder), titles in brackets, skipped tests, line numbers after generated blocks.
+- 2026-10-08 — fewer ways to pass by mistake, fewer slow runs (CH-4, 0.4.0): a citation proves only
+  in a test's name; `merge-check` requires every control the diff adds and the owner's approval for
+  criteria changed with code, and turns reasons into a person's call; the PR body opens with a
+  page for the reviewer; `gate` and `changed`, fast checks first, and tests only when code changed;
+  the merge waits for CI instead of re-running the suite.

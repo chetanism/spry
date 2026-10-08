@@ -130,6 +130,10 @@ Numbered, each with a recommendation. Adopt starts only when every question has 
      text.
    - Take care with prefixes the two share, such as writ's `D-3` and spry's `D-3`. Match only the
      families that became criteria.
+   - **Only a test's name proves a criterion** — its title string or docstring, not a comment. writ
+     counted comments too. The same script moves an ID cited only in a comment (`// FR-12`) into
+     the title of the test right below it; where there is no such test, it lists the line. Every
+     `done` row whose criterion is left unproven is named in the pull request.
    - Commit it on its own (`test: cite spry criteria instead of writ IDs`), then run the full suite.
      Only names changed, so the suite must stay green.
 7. **Knowledge** follows the Documents table and the `knowledge:` rows. All decision records and
@@ -152,6 +156,7 @@ Numbered, each with a recommendation. Adopt starts only when every question has 
 10. **Verify.**
     - `spry check` is clean.
     - Every row of §2 is in the trail.
-    - The done criteria, set beside the `done` rows, differ only where the pull request explains why.
+    - The done criteria, set beside the `done` rows, differ only where the pull request explains why
+      — a comment-only citation is the usual reason.
 11. **Retire `<canon>`** in the last commit. Ask first, after the person has compared `spry status`
     with writ's last ledger. The trail and git history keep everything.

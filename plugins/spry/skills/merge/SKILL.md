@@ -1,6 +1,6 @@
 ---
 name: merge
-description: Merge a slice's pull request safely — checks green, slice ready (merge-check), PR body current, approval, base not moved under it — then squash with the slice trailer, update the main branch, run the full suite, and report what is unblocked. Asks before merging. Use when the user says to merge a PR.
+description: Merge a slice's pull request safely — checks green, slice ready (merge-check), PR body current, approval, base not moved under it — then squash with the slice trailer, update the main branch, wait for CI there, and report what is unblocked. Asks before merging. Use when the user says to merge a PR.
 argument-hint: "[PR number or slice ID]"
 ---
 
@@ -11,4 +11,4 @@ argument-hint: "[PR number or slice ID]"
 - **Pull request:** `$ARGUMENTS`, or the current branch's. Never guess between two.
 - **Never merge** a red or pending PR, without a yes for this PR in this conversation, or with
   `--admin`.
-- After merging, run the full suite on the main branch before reporting done.
+- After merging, wait for CI on the main branch before reporting done — never run the full suite here.
