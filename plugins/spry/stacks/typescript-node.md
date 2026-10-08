@@ -10,7 +10,7 @@ audience: 8
 | `tests.match` | `["**/*.test.ts", "**/*.test.tsx"]` | same |
 | `tests.affected` | `vitest run --changed origin/main` | `jest --changedSince=origin/main` |
 | `tests.all` | `vitest run` (threads by default) | `jest --maxWorkers=50%` |
-| `tests.junit` | `--reporter=junit --outputFile=reports/junit.xml` | `jest-junit` |
+| `tests.junit` | `reports/junit.xml` — the runner writes it with `--reporter=junit --outputFile=reports/junit.xml` | the file `jest-junit` writes (`JEST_JUNIT_OUTPUT_FILE`) |
 | falsify runner | `vitest run --bail 1 {files}` | `jest --bail {files}` |
 
 - **Monorepo:** with Turborepo, `turbo run test --filter=...[origin/main]` runs only changed packages

@@ -13,7 +13,7 @@ Set up spry in a project that has little or no code yet. For existing code, stop
 - **Plugin root:** two folders above this file's folder (`…/plugins/spry`).
 - **Procedure:** `<plugin root>/process/setup.md` §0–§4. Read it, and `interview.md`, `chat.md`
   and `writing.md` beside it, before the first question.
-- **Already set up?** If `spry/spry.config.json` exists, stop: say so, and offer `/spry:status`.
-- **Resuming:** if `spry/` exists without a config, an earlier run stopped part-way — read what was
-  written and continue from the first topic in setup.md §2 that has no answer.
+- **Already set up?** If `spry/README.md` exists, stop: say so, and offer `/spry:status`.
+- **Resuming:** `spry/` without `spry/README.md` is a run that stopped part-way — setup.md §0 says
+  how to continue.
 - **Starting point:** `$ARGUMENTS` if given (text, or a file to read); otherwise ask for it.

@@ -10,7 +10,7 @@ audience: 8
 | `tests.match` | `["**/test_*.py", "**/*_test.py"]` |
 | `tests.affected` | `pytest --testmon` (pytest-testmon) |
 | `tests.all` | `pytest -n auto` (pytest-xdist) |
-| `tests.junit` | `--junitxml=reports/junit.xml` |
+| `tests.junit` | `reports/junit.xml` — the runner writes it with `--junitxml=reports/junit.xml` |
 | falsify runner | `pytest -x -q {files}` |
 
 - Test names cite criteria in the function name or docstring: `def test_S_1_AC_1_lends…` will not

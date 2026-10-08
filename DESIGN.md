@@ -27,6 +27,8 @@ plugins/spry/                     # the process plugin
   skills/<name>/SKILL.md          # thin entry points
   process/                        # rules every agent follows; vendored into each project
     chat.md  writing.md  conflicts.md  interview.md  planning.md  slicing.md  setup.md
+    from-writ.md  merging.md  qa.md  testing.md  recording.md  audits.md  changing.md
+    compacting.md  updating.md  contributing.md
     templates/                    # every document type, one file each
   tool/spry.py                    # single file, Python stdlib only, 3.10+
   stacks/                         # per-stack setup profiles (ts-node, python, generic)
@@ -76,6 +78,7 @@ spry/
     decisions/INDEX.md + D-<n>-<slug>.md
     external/<dependency>/INDEX.md + <behaviour>.md
     security.md  performance.md  … # interview outputs, index→item when over budget
+  history/writ.md                 # adopted from writ only: old ID → new (process/from-writ.md)
   process/                        # vendored from the plugin: rules + templates
   tool/spry.py
 .spry/                            # gitignored: search index, personal tone, caches
@@ -98,7 +101,7 @@ spry/
 | Feature | `F-1` | epic | product | 3 | yes |
 | Story | `S-1` | feature | product / QA | 3 | yes |
 | Slice | `SL-1` | story, task or bug | developer | 8 | yes (story) |
-| Task | `T-1` | milestone or epic | developer | 7 | no |
+| Task | `T-1` | any level above story | developer | 7 | no |
 | Bug | `B-1` | feature or story | anyone | 4 | no |
 
 - **Prefixes and levels are chosen in the interview** (suggestions above). Levels are configurable:
@@ -127,7 +130,8 @@ spry/
 
 - **Slice** done = `closed`. `slice-close` sets it in the PR's last commit, so on `main` it means merged.
 - **Acceptance criterion** proven = a test whose source line contains `S-1/AC-1`, or a `pass` as the
-  latest row for it in the story's `checks.md`. A later `fail` row un-proves it, test or not — a person
+  latest row for it in the story's `checks.md`. A line that skips the test or leaves it to do
+  (`it.skip`, `test.todo`, `xit`, `@pytest.mark.skip`) proves nothing. A later `fail` row un-proves it, test or not — a person
   saw it broken.
 - **Story** done = all its slices done **and** every AC proven.
 - **Feature / Epic / Milestone** done = all counted children done (dropped ones excluded).
@@ -169,8 +173,8 @@ Tone (§7) sets the vocabulary; these set the shape, at every level.
 
 ## 10. Conflict check (`process/conflicts.md`)
 
-Run by `milestone`, `epic`, `feature`, `story` and `slice-open` before a document goes `ready` /
-`open`.
+Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a document goes
+`ready` / `open`.
 
 1. **Gather** — `spry related <file>` lists candidates: the parent, siblings, items sharing glossary
    terms, full-text hits on the draft's key phrases, the knowledge files in `always_check`, and —
@@ -242,7 +246,8 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 - **Plan drafted by `/spry:slice-close` from the diff**, not by hand: guards, validation,
   authorisation and error branches the slice added. A person can edit it before it runs.
 - **Mutations offered automatically** for each control (`falsify suggest`): a guard made *never true*,
-  a comparison's boundary flipped, a `throw` / `raise` / error return deleted. **Not negation:**
+  a comparison's boundary flipped (`>=` ↔ `>`; never `==` ↔ `!=`, and never a generic's `<…>`), a
+  `throw` / `raise` / error return deleted. **Not negation:**
   negating a guard also breaks the normal path, so any test "catches" it — a false catch.
   Plan entries use writ's exact `find` / `with` form.
 - **`expect` names acceptance criteria** (`S-1/AC-2`); tests are found by their names.
@@ -252,7 +257,8 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 - **Parallel in git worktrees** (`falsify.parallel`: `false`, `true` or a number; `--jobs N`):
   each worker has a detached worktree of `HEAD` outside the repository, so this tree is never
   written to. Installed dependencies (`node_modules`, `.venv`, `venv`, plus `falsify.share`) are
-  symlinked in. **The baseline runs in a worktree**, so anything a worktree lacks shows as
+  symlinked in — except a pnpm package's own `node_modules`, whose links are copied so a workspace
+  sibling resolves to the worktree's mutated copy, not the main tree's. **The baseline runs in a worktree**, so anything a worktree lacks shows as
   `unreliable`, never as every control `caught`. Falls back to serial when tracked files have
   uncommitted changes or a cited test file is not committed. A runner with `"parallel": false`
   (integration tests on a shared database, fixed ports) runs its controls one at a time.
@@ -262,7 +268,9 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   otherwise let size-and-mtime build caches (Python's `.pyc`) run the previous mutation's code — a
   false `caught`, found while building this.
 - **`--record SL-n`** writes the results into the slice's Falsify table.
-- Result per control — `caught` · `survived` · `unreliable` — goes into the slice file. A survivor
+- Result per control — `caught` · `survived` · `unreliable` — goes into the slice file. `survived`
+  only when every group of its tests ran: one red or timed out makes it `unreliable`. A runner that
+  times out is stopped with its whole process group. A survivor
   needs a new test or a written reason before the slice closes.
 
 ## 17. Tool — `spry.py`
@@ -272,7 +280,6 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `check [--base <ref>]` | front-matter, IDs, placement in the tree, glossary, budgets, links, AC references, QA scenarios, conflict checks, leftover guides; with `--base`, cited ACs whose text changed |
 | `status [--level]` | roll-up from §6 |
 | `index` | regenerate marker blocks and `INDEX.md` files (CI on `main`) |
-| `map [ID]` | hierarchy + blocked-by + related around an item |
 | `related <file>` | conflict-check candidates (§10) |
 | `next <type>` | next free ID |
 | `new <type> --parent --title` | create an item from its template, next ID, right folder |
@@ -286,6 +293,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `tests --slowest` | §15 |
 | `install --agent` | §3 |
 | `codeowners` | §14 |
+| `draw` | seeded, replayable choices for `/spry:explore` |
 
 ## 18. Skills (`spry` plugin)
 
@@ -313,7 +321,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `process-change` | 7 | Change the process in every file it touches |
 | `update` | 7 | Offer a project what spry gained since it was set up; port only what is chosen |
 | `contribute` | 7 | Offer spry what a project built; files an issue, never a PR |
-| `adopt` | 5 | Put spry around an existing codebase: survey, seed knowledge and plan from what exists — built with `init` |
+| `adopt` | 5 | Put spry around an existing codebase: survey, seed knowledge from what exists, plan from the next work; a writ project is planned from its mapping file (`process/from-writ.md`) — built with `init` |
 
 `milestone` / `epic` / `feature` / `story` share one procedure (`process/planning.md`); each skill
 only names its template and level.
@@ -325,6 +333,13 @@ only names its template and level.
 | Skills run the project; slice loop; work order before code; demo; falsify; decisions; chat rules; process-change; security-audit; prelaunch; test-scenarios; test-all; manual-test → `explore`; context-compact → `compact`; update; contribute; adopt | BRD → incremental milestones; registers → item folders; ledger → derived status; CLAUDE.md → AGENTS.md | many-to-many claims, `requirement-verify`, `coverage-review`, `change-request`, velocity, code graph, maintenance/cleanup |
 
 Later: `product-docs`, `product-guide`, `spry-web` plugin.
+
+**Adopting a writ project** (`process/from-writ.md`): writ's agent first cleans up in writ's terms
+and writes `canon/to-spry.md` — the tree as titles, every traceable ID with what it becomes (`ac`,
+`story`, `rule`, `knowledge`, `milestone`, `drop`) and whether it is done, unbuilt queue rows,
+documents, local process changes. The person approves it; adopt builds the plan from it, gives each
+built story one closed `Built under writ` slice, rewrites test citations to `S-n/AC-m` from the trail
+in `spry/history/writ.md`, then retires `canon/`.
 
 ## 20. Settled
 
@@ -343,7 +358,7 @@ Later: `product-docs`, `product-guide`, `spry-web` plugin.
 - 2026-10-08 — tool: `check`, `status`, `index`, `related`, `next`, `new`, `pr-body`, `vendor`.
 - 2026-10-08 — `find`, `install --agent`, `codeowners`, `tests --slowest`, `check --base`.
 - 2026-10-08 — parallel `falsify` in worktrees (§16), built before a pilot at the owner's call.
-- 2026-10-08 — `falsify suggest` / `falsify run` (serial; worktree parallelism not built).
+- 2026-10-08 — `falsify suggest` / `falsify run`, serial first; worktrees came in the entry above.
 - 2026-10-08 — skills: `init`, `adopt`, `milestone`, `epic`, `feature`, `story`, `slice`,
   `slice-open`, `slice-close`, `status`, `tone`, `update`, `contribute`.
 - 2026-10-08 — the rest of §18: `bug`, `task`, `test-scenarios`, `record`, `security-audit`,
@@ -359,3 +374,7 @@ Later: `product-docs`, `product-guide`, `spry-web` plugin.
   The merge rules a writ project kept in its always-loaded file now load only when merging.
 - 2026-10-08 — `test-all`, `explore` and `compact` (`process/testing.md`, `process/compacting.md`),
   with `draw` in the tool (CH-2, 0.2.0).
+- 2026-10-08 — review before the first pilot (CH-3, 0.3.0): setup writes the config first and can
+  resume; adopt handles existing skills and decisions in one ask; `process/from-writ.md`; tool fixes
+  for falsify (survivor vs red group, pnpm links, process groups, generics), `check --base` (bad
+  ref, subfolder), titles in brackets, skipped tests, line numbers after generated blocks.

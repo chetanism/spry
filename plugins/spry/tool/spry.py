@@ -56,7 +56,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.2.0"
+VERSION = "0.3.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -86,6 +86,10 @@ PLACEHOLDER = re.compile(r"<([a-zA-Z][a-zA-Z0-9 ,/|.'_-]*)>")
 FENCE = re.compile(r"^\s*(```|~~~)")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+SCALAR_KEYS = {"id", "title", "summary", "state", "owner", "audience", "branch", "pr"}
+# A citation on one of these lines proves nothing: the test is skipped or not written yet.
+NOT_RUN = re.compile(r"\b(?:it|test|describe|context)\.(?:skip|todo)\b|\bx(?:it|test|describe)\s*\(|"
+                     r"@pytest\.mark\.(?:skip|xfail)\b|@unittest\.skip|\bt\.Skip\(")
 
 
 # ---------------------------------------------------------------- text helpers
@@ -107,7 +111,7 @@ def write(path: str, text: str) -> None:
 def parse_front_matter(text: str):
     """(fields, first body line index, [(line, error)]). Only `key: value` and `key: [a, b]`."""
     lines = text.split("\n")
-    if not lines or lines[0].strip() != "---":
+    if not lines or lines[0].lstrip("\ufeff").strip() != "---":
         return None, 0, [(1, "no front-matter — the file must start with `---`")]
     fields, errors = {}, []
     for i in range(1, len(lines)):
@@ -121,7 +125,7 @@ def parse_front_matter(text: str):
             errors.append((i + 1, "front-matter line is not `key: value`: " + line.strip()))
             continue
         key, value = m.group(1), (m.group(2) or "").strip()
-        if value.startswith("["):
+        if value.startswith("[") and key not in SCALAR_KEYS:
             if not value.endswith("]"):
                 errors.append((i + 1, "front-matter list must close on its line: " + line.strip()))
                 continue
@@ -197,7 +201,7 @@ def table_rows(lines):
         s = line.strip()
         if not s.startswith("|"):
             continue
-        cells = [c.strip() for c in s.strip("|").split("|")]
+        cells = [c.strip() for c in re.split(r"(?<!\\)\|", s.strip("|"))]
         if all(re.fullmatch(r":?-{2,}:?", c) for c in cells if c):
             continue
         yield i, cells
@@ -229,7 +233,9 @@ def replace_block(text: str, name: str, content: str):
 
 
 def strip_blocks(text: str) -> str:
-    return re.sub(r"<!-- spry:(\w+) -->\n.*?<!-- /spry:\1 -->", "", text, flags=re.S)
+    """The text without generated blocks; each block's lines stay as blank lines, so line numbers hold."""
+    return re.sub(r"<!-- spry:(\w+) -->\n.*?<!-- /spry:\1 -->", lambda m: "\n" * m.group(0).count("\n"),
+                  text, flags=re.S)
 
 
 def tokens(text: str):
@@ -451,7 +457,13 @@ class Project:
                 self.decisions[m.group(1)] = os.path.join(folder, name)
 
     def _test_globs(self):
-        return [glob_regex(g) for g in (self.config.get("tests", {}).get("match") or DEFAULT_TEST_MATCH)]
+        patterns = self.config.get("tests", {}).get("match") or DEFAULT_TEST_MATCH
+        real = [g for g in patterns if not re.search(r"<[^>]*>", g)]
+        if len(real) < len(patterns) and not getattr(self, "_warned_match", False):
+            self._warned_match = True
+            self.problem(os.path.join(self.spry, "spry.config.json"), 0,
+                         "tests.match is still the template's placeholder — using the defaults until it is set")
+        return [glob_regex(g) for g in (real or DEFAULT_TEST_MATCH)]
 
     def _scan_tests(self):
         """{"S-1/AC-1": [(rel path, line, test name)]} from every test file outside spry/."""
@@ -475,6 +487,8 @@ class Project:
                 except (UnicodeDecodeError, OSError):
                     continue
                 for n, line in enumerate(text.split("\n"), 1):
+                    if NOT_RUN.search(line):
+                        continue
                     for m in ref.finditer(line):
                         name_ = next((q.group(2) for q in quoted.finditer(line)
                                       if q.start() <= m.start() < q.end()), "")
@@ -567,7 +581,7 @@ class Project:
 
     def slice_state(self, s: Item) -> str:
         pr = s.fm.get("pr", "")
-        pr = f" · PR #{pr}" if pr.isdigit() else ""
+        pr = f" · PR #{pr}" if isinstance(pr, str) and pr.isdigit() else ""
         return ("done" if self.done(s) else s.state) + (pr if s.state in ("open", "closed") else "")
 
     def progress(self, item: Item) -> str:
@@ -605,14 +619,14 @@ class Project:
 # ---------------------------------------------------------------- check
 
 def markdown_files(project: Project):
-    """Every .md under spry/ except the vendored process/ and tool/, plus AGENTS.md."""
+    """Every .md under spry/ except the copied process/, tool/ and skills/, plus AGENTS.md."""
     out = []
     agents = os.path.join(project.root, "AGENTS.md")
     if os.path.isfile(agents):
         out.append(agents)
     for dirpath, dirnames, filenames in os.walk(project.spry):
         rel = project.rel(dirpath)
-        if rel in ("spry/process", "spry/tool") or rel.startswith(("spry/process/", "spry/tool/")):
+        if rel in ("spry/process", "spry/tool", "spry/skills") or rel.startswith(("spry/process/", "spry/tool/", "spry/skills/")):
             dirnames[:] = []
             continue
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
@@ -680,7 +694,8 @@ def check(project: Project):
             for target in LINK.findall(line):
                 if target.startswith(("http:", "https:", "mailto:", "#")):
                     continue
-                resolved = os.path.normpath(os.path.join(os.path.dirname(path), target.split("#")[0]))
+                base = project.root if target.startswith("/") else os.path.dirname(path)
+                resolved = os.path.normpath(os.path.join(base, target.split("#")[0].lstrip("/")))
                 if not os.path.exists(resolved):
                     project.problem(path, n, f"link to `{target}` does not resolve")
             if check_words and n not in skip:
@@ -869,7 +884,9 @@ def index(project: Project, dry: bool):
 # ---------------------------------------------------------------- status
 
 def status(project: Project, level: str | None):
-    stop = project.levels.index(level) if level in project.levels else None
+    if level and level not in project.levels:
+        raise SystemExit(f"unknown level `{level}` — one of {', '.join(project.levels)}")
+    stop = project.levels.index(level) if level else None
     out = []
 
     def show(item: Item, depth: int):
@@ -983,6 +1000,10 @@ def next_id(project: Project, kind: str) -> str:
         nums = [int(d.split("-")[1]) for d in project.decisions]
     else:
         nums = [i.num for i in project.items.values() if i.type == kind]
+        # Folders and files that failed to load still hold their number.
+        taken = re.compile(r"^" + re.escape(prefix) + r"-(\d+)(?:-|\.md$|$)")
+        for _dir, dirnames, filenames in os.walk(project.plan_dir):
+            nums += [int(m.group(1)) for n in dirnames + filenames if (m := taken.match(n))]
     return f"{prefix}-{max(nums, default=0) + 1}"
 
 
@@ -1052,7 +1073,7 @@ def new_document(project: Project, kind: str, parent_id: str | None, title: str,
         path = os.path.join(folder, f"{slugify(title)}.md")
         text = (template.replace("<dependency>", dependency).replace("<behaviour, as a statement>", title)
                 .replace("<behaviour>", title).replace("observed: <YYYY-MM-DD>", f"observed: {today}")
-                .replace("dependency: <name>", f"dependency: {dependency}").replace("affects: [<IDs>]", "affects: []"))
+                .replace("dependency: <name>", f"dependency: {dependency}").replace("affects: [<item IDs>]", "affects: []"))
     else:
         folder = os.path.join(knowledge, "audits")
         os.makedirs(folder, exist_ok=True)
@@ -1209,6 +1230,12 @@ def git(root: str, *args: str) -> subprocess.CompletedProcess:
     return subprocess.run(["git", "-C", root, *args], capture_output=True, text=True)
 
 
+def git_prefix(root: str) -> str:
+    """Where `root` sits inside its git repository, as `a/b/` — empty at the top."""
+    done = git(root, "rev-parse", "--show-prefix")
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
 def git_clean(root: str, rel: str) -> bool:
     done = git(root, "status", "--porcelain", "--", rel)
     return done.returncode == 0 and not done.stdout.strip()
@@ -1302,12 +1329,30 @@ def run_tests(project: Project, runner: dict, cwd: str, files: list, timeout: in
     base = root or project.root
     rels = [os.path.relpath(os.path.join(base, f), cwd) for f in files]
     command = runner["command"].replace("{files}", " ".join(shlex.quote(r) for r in rels))
+    # Its own process group, so a timeout or Ctrl-C stops the runner's children too (pnpm → vitest
+    # workers) — none may keep running against a mutated file.
+    proc = subprocess.Popen(command, shell=True, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                            text=True, start_new_session=True)
     try:
-        done = subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True, timeout=timeout)
-    except subprocess.TimeoutExpired:
-        return "timeout", ""
-    tail = "\n".join((done.stdout + done.stderr).strip().split("\n")[-5:])
-    return ("pass" if done.returncode == 0 else "fail"), tail
+        output, _ = proc.communicate(timeout=timeout)
+    except BaseException as e:
+        stop_group(proc)
+        if isinstance(e, subprocess.TimeoutExpired):
+            return "timeout", ""
+        raise
+    tail = "\n".join((output or "").strip().split("\n")[-5:])
+    return ("pass" if proc.returncode == 0 else "fail"), tail
+
+
+def stop_group(proc: subprocess.Popen):
+    try:
+        if hasattr(os, "killpg"):
+            os.killpg(proc.pid, signal.SIGKILL)
+        else:
+            proc.kill()
+    except (ProcessLookupError, PermissionError):
+        pass
+    proc.wait()
 
 
 def describe(entry: dict) -> str:
@@ -1363,7 +1408,7 @@ def run_control(project: Project, entry: dict, table: list, timeout: int, red: d
             break
     if "caught" in outcomes:
         return "caught", "; ".join(notes)
-    if "survived" in outcomes:
+    if "survived" in outcomes and "unreliable" not in outcomes:
         return "survived", "; ".join(notes)
     return "unreliable", "; ".join(notes)
 
@@ -1396,6 +1441,20 @@ def shared_paths(project: Project) -> list:
                 keep.append(d)
         dirnames[:] = keep
     return sorted(set(found))
+
+
+def borrow(source: str, link: str, rel: str, pnpm: bool):
+    """Give a worktree the main tree's installed dependencies.
+
+    A pnpm package's own `node_modules` holds relative links to its workspace siblings
+    (`../../packages/domain`). Linking the whole folder would resolve those in the main tree, so a
+    test would run the unmutated sibling — a false `survived`. Copy its links instead: relative ones
+    then resolve inside the worktree. The root `node_modules` (the store) is linked as usual."""
+    nested = os.path.basename(source) == "node_modules" and os.path.dirname(rel.replace(os.sep, "/")) != ""
+    if pnpm and nested:
+        shutil.copytree(source, link, symlinks=True)
+    else:
+        os.symlink(source, link)
 
 
 def parallel_blocker(project: Project, plan: list):
@@ -1498,20 +1557,24 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
     import queue
 
     parent = tempfile.mkdtemp(prefix="spry-falsify-")
-    trees, writer, lock = [], Writer(), threading.Lock()
+    trees, made, writer, lock = [], [], Writer(), threading.Lock()
     share = shared_paths(project)
+    prefix = git_prefix(project.root)
+    pnpm = os.path.isdir(os.path.join(project.root, "node_modules", ".pnpm"))
     try:
         for n in range(jobs):
             tree = os.path.join(parent, f"w{n + 1}")
             done = git(project.root, "worktree", "add", "--detach", "-q", tree, "HEAD")
             if done.returncode != 0:
                 raise PlanError(f"git worktree add failed: {done.stderr.strip()}")
+            made.append(tree)
+            tree = os.path.join(tree, prefix)
             trees.append(tree)
             for rel in share:
                 link = os.path.join(tree, rel)
                 if not os.path.exists(link):
                     os.makedirs(os.path.dirname(link), exist_ok=True)
-                    os.symlink(os.path.join(project.root, rel), link)
+                    borrow(os.path.join(project.root, rel), link, rel, pnpm)
         say(f"{jobs} worktrees · sharing {', '.join(share) or 'nothing'}")
         red = baseline(project, groups, table, timeout, trees[0], say)
 
@@ -1556,7 +1619,7 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
                 say(f"{results[i][1]}: {entry['control']} (serial runner)")
         return [results[i] for i in range(len(plan))]
     finally:
-        for tree in trees:
+        for tree in made:
             git(project.root, "worktree", "remove", "--force", tree)
         git(project.root, "worktree", "prune")
         shutil.rmtree(parent, ignore_errors=True)
@@ -1566,7 +1629,8 @@ def falsify_rows(results) -> list:
     rows = []
     for entry, result, note in results:
         expect = ", ".join(entry["expect"])
-        rows.append(f"| {entry['control']} | {describe(entry)} | {expect} | {result}{' — ' + note if note else ''} |")
+        cells = [entry["control"], describe(entry), expect, result + (" — " + note if note else "")]
+        rows.append("| " + " | ".join(c.replace("|", "\\|") for c in cells) + " |")
     return rows
 
 
@@ -1592,7 +1656,9 @@ def record_falsify(project: Project, slice_id: str, rows: list) -> str:
 
 
 CONTROL_LINE = re.compile(r"^\s*(if\b|elif\b|else if\b|unless\b|guard\b|throw\b|raise\b|return\s+(err|Err|error|None|null|false|False)\b|assert\b|require\b)|(\|\||&&|>=|<=|===|!==|==|!=)")
-COMPARISON_FLIPS = [(">=", ">"), ("<=", "<"), ("===", "!=="), ("!==", "==="), ("==", "!="), ("!=", "=="), (">", ">="), ("<", "<=")]
+# Boundaries only: `==` ↔ `!=` is negation (§16). A bare `>` / `<` needs spaces round it, so a
+# generic (`Array<Item>`) is never taken for a comparison.
+COMPARISON_FLIPS = [(">=", ">"), ("<=", "<"), (" > ", " >= "), (" < ", " <= ")]
 
 
 def mutations_for(line: str) -> list:
@@ -1609,6 +1675,8 @@ def mutations_for(line: str) -> list:
         out.append((f"{m.group(1)}False and ({m.group(2)}){m.group(3)}", "never true"))
     for old, new in COMPARISON_FLIPS:
         at = re.search(r"(?<![=!<>])" + re.escape(old) + r"(?![=>])", line)
+        if at and old.strip() in "<>" and re.search(r"\w<\w|<\w[\w.]*>", line):
+            at = None
         if at:
             out.append((line[:at.start()] + new + line[at.end():], f"`{old}` → `{new}`"))
             break
@@ -1626,7 +1694,7 @@ def falsify_suggest(project: Project, slice_id: str, base: str) -> list:
         raise PlanError(f"no slice {slice_id}")
     story = item.parent.id if item.parent and item.parent.type == "story" else None
     expect = [f"{story}/{ac}" for ac in item.fm.get("covers") or []] if story else []
-    diff = git(project.root, "diff", "-U0", f"{base}...HEAD", "--", ".", ":(exclude)spry")
+    diff = git(project.root, "diff", "--relative", "-U0", f"{base}...HEAD", "--", ".", ":(exclude)spry")
     if diff.returncode != 0:
         raise PlanError(f"git diff against {base} failed: {diff.stderr.strip()}")
     tests = project._test_globs()
@@ -1922,9 +1990,13 @@ def ac_texts(text: str) -> dict:
 
 def changed_criteria(project: Project, base: str):
     """Warn for each acceptance criterion whose text changed since `base` while a test cites it."""
+    if git(project.root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
+        project.problem(project.spry, 0, f"--base {base} is not a commit here — fetch it (a shallow CI "
+                                         f"clone needs `fetch-depth: 0`), or nothing was compared")
+        return
     for story in project.of_type("story"):
         rel = project.rel(story.doc)
-        before = git(project.root, "show", f"{base}:{rel}")
+        before = git(project.root, "show", f"{base}:./{rel}")
         if before.returncode != 0:
             continue
         old, new = ac_texts(before.stdout), ac_texts(story.text)

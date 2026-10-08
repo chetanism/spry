@@ -5,7 +5,7 @@ audience: 2
 ---
 # Glossary
 
-<!-- guide: Reader: everyone. One row per concept. `Don't say` lists banned synonyms — `spry check` fails on them anywhere in spry/ outside code blocks. Two terms that mean the same thing is a bug: keep one, ban the other. -->
+<!-- guide: Reader: everyone. One row per concept. `Don't say` lists banned synonyms — `spry check` fails on them anywhere in spry/ except code, `Conflict check` sections and this file. Two terms that mean the same thing is a bug: keep one, ban the other. -->
 
 | Term | Means | Don't say |
 |---|---|---|

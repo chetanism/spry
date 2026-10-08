@@ -1,5 +1,5 @@
 # Written by /spry:init. Pull requests: affected tests and spry check, in parallel.
-# Main branch: every test, then spry index commits the progress tables. Nightly: every test.
+# Main branch: spry check; every test, then spry index commits the progress tables. Nightly: every test.
 name: spry
 on:
   pull_request:
@@ -12,13 +12,16 @@ concurrency:
   cancel-in-progress: true
 jobs:
   check:
-    if: github.event_name == 'pull_request'
+    if: github.event_name != 'schedule'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-      - run: python3 spry/tool/spry.py check --base origin/${{ github.base_ref }}
+      - if: github.event_name == 'pull_request'
+        run: python3 spry/tool/spry.py check --base origin/${{ github.base_ref }}
+      - if: github.event_name == 'push'
+        run: python3 spry/tool/spry.py check
   affected-tests:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest

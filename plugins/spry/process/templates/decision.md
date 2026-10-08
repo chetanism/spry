@@ -5,7 +5,7 @@ summary: <one line for the index>
 state: accepted
 date: <YYYY-MM-DD>
 decided_by: [<names>]
-affects: [<IDs or areas>]
+affects: [<item IDs>]
 audience: 7
 ---
 # D-<n> · <title>

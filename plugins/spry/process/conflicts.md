@@ -21,7 +21,7 @@ Lists candidates; read every one:
 - items sharing a glossary term with the draft;
 - full-text hits on the draft's key phrases, across all of `spry/plan/`;
 - the knowledge files listed in `always_check` in `spry.config.json`;
-- decisions whose `affects` includes the draft's area;
+- decisions whose `affects` names the draft or one of its parents;
 - **slices only:** every `open` slice, and the files its plan lists.
 
 ## 2. Classify

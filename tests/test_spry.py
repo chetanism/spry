@@ -122,6 +122,14 @@ class FrontMatter(unittest.TestCase):
         self.assertIsNone(fm)
         self.assertTrue(errors)
 
+    def test_a_title_in_brackets_is_text_not_a_list(self):
+        fm, _, errors = spry.parse_front_matter("---\ntitle: [FR-IAM-07] Sign in\nrelated: [S-1]\n---\n")
+        self.assertEqual((fm["title"], fm["related"], errors), ("[FR-IAM-07] Sign in", ["S-1"], []))
+
+    def test_byte_order_mark(self):
+        fm, _, errors = spry.parse_front_matter("\ufeff---\nid: S-1\n---\n")
+        self.assertEqual((fm, errors), ({"id": "S-1"}, []))
+
 
 class Glob(unittest.TestCase):
     def test_double_star(self):
@@ -165,6 +173,31 @@ class Check(Base):
     def test_broken_link(self):
         t = self.tree(**{f"{F}/README.md".replace("/", "__"): item("F-1", body="- See [x](../nope.md)\n")})
         self.assertProblem(t.problems(), "does not resolve")
+
+    def test_line_numbers_count_generated_blocks(self):
+        body = "<!-- spry:x -->\n- a\n- b\n<!-- /spry:x -->\n- See [x](nope.md)\n"
+        t = self.tree(**{f"{F}/README.md".replace("/", "__"): item("F-1", body=body)})
+        line = item("F-1", body=body).split("\n").index("- See [x](nope.md)") + 1
+        self.assertProblem(t.problems(), f"README.md:{line}:")
+
+    def test_a_link_from_the_repository_root(self):
+        t = self.tree(**{f"{F}/README.md".replace("/", "__"): item("F-1", body="- See [x](/src/a.test.ts)\n")})
+        self.assertEqual(t.problems(), [])
+
+    def test_template_test_glob_is_reported_not_used(self):
+        config = dict(CONFIG, tests={"match": ["<glob of test files, e.g. **/*.test.ts>"]})
+        t = self.tree(**{"spry__spry.config.json": json.dumps(config)})
+        self.assertProblem(t.problems(), "tests.match is still the template's placeholder")
+        self.assertIn("S-1/AC-1", t.project().tests, "the defaults still find the test")
+
+    def test_a_skipped_test_proves_nothing(self):
+        t = self.tree(**{"src__a.test.ts": 'test.skip("S-1/AC-1 does the thing", () => {})\n'})
+        self.assertNotIn("S-1/AC-1", t.project().tests)
+
+    def test_skills_copied_for_another_agent_are_not_checked(self):
+        t = self.tree()
+        spry.install(t.root, "generic")
+        self.assertEqual(t.problems(), [])
 
     def test_guide_left_in_ready_but_not_draft(self):
         guided = item("F-1", body="<!-- guide: fill me -->\n- <thing>\n")
@@ -257,6 +290,10 @@ class Status(Base):
         self.assertTrue(self.done(t, "M-1"))
         self.assertFalse(self.done(t, "T-1"))
 
+    def test_unknown_level(self):
+        with self.assertRaises(SystemExit):
+            spry.status(self.tree().project(), "chapter")
+
     def test_status_prints_tree(self):
         out = spry.status(self.tree().project(), None)
         self.assertIn("M-1 Title of M-1", out)
@@ -297,6 +334,10 @@ class Related(Base):
 
 
 class Next(Base):
+    def test_a_folder_that_failed_to_load_keeps_its_number(self):
+        t = self.tree(**{f"{F}/S-7-broken/notes.txt".replace("/", "__"): "x"})
+        self.assertEqual(spry.next_id(t.project(), "story"), "S-8")
+
     def test_next(self):
         p = self.tree().project()
         self.assertEqual(spry.next_id(p, "story"), "S-2")
@@ -632,6 +673,29 @@ class Falsify(unittest.TestCase):
         self.assertEqual(len(warnings), 1, warnings)
         self.assertIn("S-1/AC-1 changed since main, and tests/test_limit.py cite it", warnings[0])
 
+    def test_check_base_reports_a_ref_it_cannot_read(self):
+        p = spry.Project(self.root)
+        spry.changed_criteria(p, "origin/nowhere")
+        self.assertTrue(any("is not a commit here" in str(x) and x.level == "error" for x in p.problems))
+
+    def test_check_base_when_spry_sits_in_a_subfolder(self):
+        outer = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, outer)
+        shutil.copytree(self.root, os.path.join(outer, "app"), ignore=shutil.ignore_patterns(".git"))
+        run = lambda *a: subprocess.run(["git", "-C", outer, "-c", "user.name=t", "-c", "user.email=t@t", *a],
+                                        capture_output=True, text=True, check=True)
+        run("init", "-q", "-b", "main")
+        run("add", "-A")
+        run("commit", "-q", "-m", "base")
+        path = os.path.join(outer, "app", "spry/plan/M-1-m/E-1-e/F-1-f/S-1-s/README.md")
+        with open(path) as handle:
+            text = handle.read()
+        with open(path, "w") as handle:
+            handle.write(text.replace("| AC-1 | a | b | c |", "| AC-1 | a | b | changed |"))
+        p = spry.Project(os.path.join(outer, "app"))
+        spry.changed_criteria(p, "main")
+        self.assertEqual(len([x for x in p.problems if x.level == "warning"]), 1, p.problems)
+
     def configure(self, **falsify):
         path = os.path.join(self.root, "spry", "spry.config.json")
         with open(path) as handle:
@@ -709,6 +773,44 @@ class Mutations(unittest.TestCase):
     def test_boundary_flip_and_throw(self):
         self.assertEqual(spry.mutations_for("  const ok = n <= max;")[0][1], "`<=` → `<`")
         self.assertEqual(spry.mutations_for("  throw new Conflict();")[0], ("", "delete the line"))
+
+    def test_never_negation_and_never_a_generic(self):
+        for line in ("  const same = a === b;", "  return items as Array<Item> || [];",
+                     "  const p: Promise<boolean> = check(a && b);"):
+            self.assertEqual(spry.mutations_for(line), [("", "delete the line")], line)
+        self.assertEqual(spry.mutations_for("  const late = days > limit;")[0][1], "` > ` → ` >= `")
+
+    def test_a_pipe_in_a_cell_is_escaped_and_read_back(self):
+        entry = {"control": "a || b", "find": "a || b", "with": "", "expect": ["S-1/AC-1"]}
+        row = spry.falsify_rows([(entry, "caught", "")])[0]
+        cells = next(spry.table_rows([(0, row)]))[1]
+        self.assertEqual((len(cells), cells[-1]), (4, "caught"))
+
+
+class Controls(unittest.TestCase):
+    def test_a_survivor_in_one_group_and_a_red_one_in_another_is_unreliable(self):
+        groups = {(0, "a"): ["a.test.ts"], (0, "b"): ["b.test.ts"]}
+        original = spry.group_files, spry.run_tests
+        spry.group_files = lambda _p, _f: groups
+        spry.run_tests = lambda *_a: ("pass", "")
+        try:
+            result = spry.run_control(type("P", (), {"root": "/"})(), {"_tests": []}, [{}], 1, {(0, "b"): "baseline fail"}, "/")
+        finally:
+            spry.group_files, spry.run_tests = original
+        self.assertEqual(result[0], "unreliable")
+
+    def test_pnpm_package_links_resolve_inside_the_worktree(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        main, tree = os.path.join(root, "main"), os.path.join(root, "tree")
+        for folder in ("main/node_modules/.pnpm", "main/packages/dom", "main/apps/api/node_modules",
+                       "tree/packages/dom", "tree/apps/api"):
+            os.makedirs(os.path.join(root, folder))
+        os.symlink("../../../packages/dom", os.path.join(main, "apps/api/node_modules/dom"))
+        spry.borrow(os.path.join(main, "apps/api/node_modules"), os.path.join(tree, "apps/api/node_modules"),
+                    "apps/api/node_modules", True)
+        self.assertEqual(os.path.realpath(os.path.join(tree, "apps/api/node_modules/dom")),
+                         os.path.realpath(os.path.join(tree, "packages/dom")))
 
 
 def story_text():
