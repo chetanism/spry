@@ -59,7 +59,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.4.1"
+VERSION = "0.5.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -882,6 +882,81 @@ def top_block(project: Project, doc: str, deep: bool) -> str:
     return out + "".join(f"\n| {link(doc, m)} | {m.state} | {project.progress(m)} |" for m in rows)
 
 
+def coverage_block(project: Project, doc: str) -> str:
+    """Defined vs done for the whole plan, and the gaps a total would hide."""
+    def pct(done, total):
+        return f"{round(100 * done / total)}%" if total else "—"
+
+    def live(kind):
+        return [i for i in project.of_type(kind) if i.state != "dropped"
+                and not any(a.state == "dropped" for a in i.ancestors())]
+
+    def criteria(story):
+        return [a for a, v in story.acs.items() if not v["dropped"]]
+
+    stories = live("story")
+    rows = []
+    for kind in project.levels:
+        items = live(kind)
+        done = sum(map(project.done, items))
+        rows.append((PLURAL.get(kind, kind).capitalize(), done, len(items)))
+    acs = [(s, a) for s in stories for a in criteria(s)]
+    rows.append(("Acceptance criteria proven", sum(1 for s, a in acs if project.proof(s, a)[0]), len(acs)))
+    for kind in ("slice", "task", "bug"):
+        items = live(kind)
+        label = {"slice": "Slices closed", "task": "Tasks", "bug": "Bugs fixed"}[kind]
+        rows.append((label, sum(map(project.done, items)), len(items)))
+    out = ["### Totals", "", "| | Done | Defined | |", "|---|--:|--:|--:|"]
+    out += [f"| {name} | {done} | {total} | {pct(done, total)} |" for name, done, total in rows]
+
+    first = project.levels[0]
+    tops = [i for i in project.top if i.type == first and i.state != "dropped"]
+    out += ["", f"### By {first}", ""]
+    if tops:
+        out += [f"| {first.capitalize()} | State | Stories done | Criteria proven | Open bugs |",
+                "|---|---|--:|--:|--:|"]
+        for m in tops:
+            ss = [m] if m.type == "story" else project.descendants(m, "story")
+            pairs = [(s, a) for s in ss for a in criteria(s)]
+            proven = sum(1 for s, a in pairs if project.proof(s, a)[0])
+            out.append(f"| {link(doc, m)} | {m.state} | {sum(map(project.done, ss))} of {len(ss)} | "
+                       f"{proven} of {len(pairs)} | {len(project.open_bugs(m))} |")
+    else:
+        out.append(f"_No {PLURAL.get(first, first)} yet._")
+
+    out += ["", "### Built, not proven", "",
+            "Every slice is closed and these criteria still have no passing proof — no test names them "
+            "in its title, and no manual check passed.", ""]
+    gaps = []
+    for s in stories:
+        slices = project.counted(s, "slice")
+        if s.state == "draft" or not slices or not all(map(project.done, slices)):
+            continue
+        missing = [a for a in criteria(s) if not project.proof(s, a)[0]]
+        if missing:
+            gaps.append(f"| {link(doc, s)} | {', '.join(missing)} |")
+    out += ["| Story | Not proven |", "|---|---|"] + gaps if gaps else ["_None._"]
+
+    out += ["", "### Cited outside a test's name", "",
+            "Not proven, and cited only in a comment or in code. Moving the ID into the test's title "
+            "string proves it.", ""]
+    cited = {}
+    for rel, line, key in project.unproving:
+        cited.setdefault(key, []).append(f"{rel}:{line}")
+    rows = []
+    for key in sorted(cited, key=natural_key):
+        sid, ac = key.split("/")
+        s = project.items.get(sid)
+        if not s or s.type != "story" or s not in stories or ac not in criteria(s) or project.proof(s, ac)[0]:
+            continue
+        where = cited[key]
+        more = f" · {len(where) - 1} more" if len(where) > 1 else ""
+        target = os.path.relpath(s.doc, os.path.dirname(doc)).replace(os.sep, "/")
+        rows.append(f"| [{key}]({target}) {s.title} | `{where[0]}`{more} |")
+    out += ["| Criterion | Cited at |", "|---|---|"] + rows if rows else ["_None._"]
+    return "\n".join(out)
+
+
 def index_block(project: Project, index_path: str) -> str:
     folder = os.path.dirname(index_path)
     lines = []
@@ -934,6 +1009,8 @@ def index(project: Project, dry: bool):
     apply(roadmap, "children", top_block(project, roadmap, False), True)
     front = os.path.join(project.spry, "README.md")
     apply(front, "children", top_block(project, front, True), False)
+    cover = os.path.join(project.spry, "COVERAGE.md")
+    apply(cover, "coverage", coverage_block(project, cover), True)
     for dirpath, dirnames, filenames in os.walk(os.path.join(project.spry, "knowledge")):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         if "INDEX.md" in filenames:
@@ -2344,6 +2421,7 @@ def main(argv=None) -> int:
     p.add_argument("--base", help="git ref to compare acceptance criteria against (warns on cited ones that changed)")
     p = sub.add_parser("status", help="done vs total at every level")
     p.add_argument("--level", help="stop at this level, e.g. feature")
+    p = sub.add_parser("coverage", help="defined vs done for the whole plan, and what is built but not proven")
     p = sub.add_parser("index", help="regenerate marker blocks and INDEX.md files")
     p.add_argument("--check", action="store_true", help="change nothing; exit 1 if anything is stale")
     p = sub.add_parser("related", help="conflict-check candidates for a document")
@@ -2454,6 +2532,9 @@ def main(argv=None) -> int:
         return 1 if errors else 0
     if args.command == "status":
         print(status(project, args.level))
+        return 0
+    if args.command == "coverage":
+        print(coverage_block(project, os.path.join(project.spry, "COVERAGE.md")))
         return 0
     if args.command == "index":
         changed = index(project, dry=args.check)

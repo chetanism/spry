@@ -214,6 +214,10 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
 
 - Each item `README.md` has a marker block — `<!-- spry:children -->` … `<!-- /spry:children -->` —
   holding its children with links and done/total. Stories also get `<!-- spry:proof -->`.
+- `spry/COVERAGE.md` holds a `<!-- spry:coverage -->` block: done vs defined at each level, criteria
+  proven, slices, tasks and bugs; one row per milestone; stories whose slices are all closed with
+  criteria still unproven; and unproven criteria cited only in a comment or code. `spry coverage`
+  prints it on any branch.
 - **Only CI on `main` regenerates and commits these** (`spry index`, `[skip ci]`). Branches never
   touch them, so they never conflict. `spry check` ignores block contents.
 - A local `spry serve` (stdlib HTTP + minimal Markdown) is deferred; GitHub rendering comes first.
@@ -297,6 +301,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `check [--base <ref>]` | front-matter, IDs, placement in the tree, glossary, budgets, links, AC references, QA scenarios, conflict checks, leftover guides; with `--base`, cited ACs whose text changed |
 | `status [--level]` | roll-up from §6 |
 | `index` | regenerate marker blocks and `INDEX.md` files (CI on `main`) |
+| `coverage` | the coverage page (§13): defined vs done, built but not proven |
 | `related <file>` | conflict-check candidates (§10) |
 | `next <type>` | next free ID |
 | `new <type> --parent --title` | create an item from its template, next ID, right folder |
@@ -407,3 +412,4 @@ in `spry/history/writ.md`, then retires `canon/`.
   page for the reviewer; `gate` and `changed`, fast checks first, and tests only when code changed;
   the merge waits for CI instead of re-running the suite.
 - 2026-10-09 — setup reads the trunk from the repository instead of assuming `main` (CH-5, 0.4.1).
+- 2026-10-09 — a coverage page, `spry/COVERAGE.md`, and `spry coverage` (CH-6, 0.5.0).

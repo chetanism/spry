@@ -344,6 +344,40 @@ class Index(Base):
             self.assertIn("- [D-1 Keep it](D-1-x.md) — we keep it", handle.read())
 
 
+class Coverage(Base):
+    PAGE = "---\ntitle: Coverage\naudience: 3\n---\n# Coverage\n\n<!-- spry:coverage -->\n<!-- /spry:coverage -->\n"
+
+    def test_totals_when_everything_is_proven(self):
+        out = spry.coverage_block(self.tree().project(), "spry/COVERAGE.md")
+        self.assertIn("| Stories | 1 | 1 | 100% |", out)
+        self.assertIn("| Acceptance criteria proven | 1 | 1 | 100% |", out)
+        self.assertIn("| 1 of 1 | 1 of 1 | 0 |", out)
+        self.assertEqual(out.count("_None._"), 2)
+
+    def test_built_but_not_proven_and_cited_only_in_a_comment(self):
+        t = self.tree(**{f"{S}/README.md".replace("/", "__"): story("S-1", acs=("AC-1", "AC-2")),
+                         "src__b.test.ts": "// S-1/AC-2 covered below\ntest('x', () => {})\n"})
+        out = spry.coverage_block(t.project(), os.path.join(t.root, "spry/COVERAGE.md"))
+        self.assertIn("| Acceptance criteria proven | 1 | 2 | 50% |", out)
+        self.assertIn("| [S-1 Title of S-1](plan/M-1-m/E-1-e/F-1-f/S-1-s/README.md) | AC-2 |", out)
+        self.assertIn("| [S-1/AC-2](plan/M-1-m/E-1-e/F-1-f/S-1-s/README.md) Title of S-1 | `src/b.test.ts:1` |", out)
+
+    def test_an_open_slice_is_not_built_and_dropped_work_is_not_defined(self):
+        t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): slice_("SL-1", state="open"),
+                         "src__a.test.ts": "nothing\n",
+                         f"{F}/S-2-x/README.md".replace("/", "__"): story("S-2", state="dropped")})
+        out = spry.coverage_block(t.project(), os.path.join(t.root, "spry/COVERAGE.md"))
+        self.assertIn("| Stories | 0 | 1 | 0% |", out)
+        self.assertIn("### Built, not proven", out)
+        self.assertNotIn("| AC-1 |", out)
+
+    def test_index_fills_the_page(self):
+        t = self.tree(**{"spry__COVERAGE.md": self.PAGE})
+        self.assertIn("spry/COVERAGE.md", spry.index(t.project(), dry=False))
+        with open(os.path.join(t.root, "spry/COVERAGE.md")) as handle:
+            self.assertIn("[M-1 Title of M-1](plan/M-1-m/README.md)", handle.read())
+
+
 class Related(Base):
     def test_open_slice_on_same_files(self):
         t = self.tree(**{

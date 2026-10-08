@@ -115,3 +115,14 @@ Entry format:
 - **Migrate:** check `main_branch` in `spry/spry.config.json` against the repository's default
   branch.
 
+## CH-6 · A coverage page
+
+- **Date:** 2026-10-09 · **Version:** 0.5.0
+- **Touches:** `tool/spry.py` (`coverage`, `index` fills `spry/COVERAGE.md`),
+  `process/templates/{coverage,project-readme,roadmap}.md`, `process/setup.md`, `skills/status`
+- **Why:** progress showed item by item, in each README and in `status`. Nothing said how much of
+  the whole plan was defined, built and proven, or listed the stories whose slices were all closed
+  while a criterion still had no proof — the view writ's `COVERAGE.md` gave.
+- **Adapt:** nothing
+- **Migrate:** add `spry/COVERAGE.md` from `templates/coverage.md`; add the Coverage line to
+  `spry/README.md` (*Start here*) and below the milestones block in `spry/plan/README.md`.

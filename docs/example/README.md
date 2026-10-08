@@ -17,6 +17,7 @@ Shelf is a lending desk for a small community library. Three people: Asha (produ
 | [SL-2 Refuse a loan over the limit](spry/plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/S-2-loan-limit/SL-2-refuse-over-limit.md) | An **open** slice: work order only, conflict check against another slice and a bug |
 | [B-1](spry/plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/bugs/B-1-due-date-a-day-early/README.md) · [T-1](spry/plan/M-1-members-borrow-books/tasks/T-1-set-up-ci/README.md) | A bug and a task — attached, but not counted toward progress |
 | [F-2 Return a book](spry/plan/M-1-members-borrow-books/E-1-lending/F-2-return-a-book/README.md) | A **draft** feature: no conflict check yet, an open question |
+| [Coverage](spry/COVERAGE.md) | The whole plan at a glance: done vs defined, criteria proven, and S-1's AC-2 listed as built but not proven |
 | [Glossary](spry/knowledge/glossary.md) | One term per concept, with the words not to use |
 | [Knowledge](spry/knowledge/) | Index → item: decisions, conventions, an external service's behaviour |
 
@@ -31,6 +32,7 @@ Shelf is a lending desk for a small community library. Three people: Asha (produ
 ```bash
 python3 plugins/spry/tool/spry.py --root docs/example check
 python3 plugins/spry/tool/spry.py --root docs/example status
+python3 plugins/spry/tool/spry.py --root docs/example coverage
 python3 plugins/spry/tool/spry.py --root docs/example related \
   docs/example/spry/plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/S-2-loan-limit/SL-2-refuse-over-limit.md
 ```

@@ -54,6 +54,7 @@ document both work. Everything after is drafted from it, so read it twice.
 |---|---|
 | `spry/spry.config.json` | written at §0; check no `<…>` is left that a topic answered |
 | `spry/plan/README.md` | `templates/roadmap.md` |
+| `spry/COVERAGE.md` | `templates/coverage.md` |
 | `spry/knowledge/{conventions,decisions}/INDEX.md` | `templates/index.md` |
 | `spry/knowledge/process-changes.md` | `templates/process-changes.md` |
 | `AGENTS.md` | `templates/agents.md` — within 150 lines; the admission test stays at the top |

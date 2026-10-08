@@ -13,4 +13,6 @@ argument-hint: "[ID, or a level such as feature]"
      built, what is stuck and why. Titles, not IDs alone. No tree.
    - **Tone 5–10:** the tree as printed, then `[Note]` bullets for what stands out: stories not
      proven, open bugs, slices open longer than the rest.
-3. Never invent progress: everything comes from the tool's output.
+3. When the person asks how much is done overall, or what is built but not proven, run
+   `python3 spry/tool/spry.py coverage` and answer from it.
+4. Never invent progress: everything comes from the tool's output.
