@@ -2,7 +2,7 @@
   "name": "spry",
   "displayName": "spry",
   "description": "Agent-first development a human team can follow: milestones, epics, features and stories written for non-technical readers; slices, work orders and falsified tests for developers; progress derived from tests and QA checks, never typed. Start with /spry:init (new project) or /spry:adopt (existing code).",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": {
     "name": "Chetan Verma"
   },

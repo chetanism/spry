@@ -59,7 +59,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.5.0"
+VERSION = "0.6.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -674,15 +674,26 @@ class Project:
 
 # ---------------------------------------------------------------- check
 
+def history_files(project: Project) -> list:
+    """Documents kept from an earlier process, as they were: `spry/history/<source>/**/*.md`."""
+    out, top = [], os.path.join(project.spry, "history")
+    for dirpath, dirnames, filenames in os.walk(top):
+        dirnames[:] = [d for d in dirnames if not d.startswith(".")]
+        if os.path.abspath(dirpath) != os.path.abspath(top):
+            out += [os.path.join(dirpath, f) for f in filenames if f.endswith(".md")]
+    return sorted(out)
+
+
 def markdown_files(project: Project):
-    """Every .md under spry/ except the copied process/, tool/ and skills/, plus AGENTS.md."""
+    """Every .md under spry/ except the copied process/, tool/ and skills/, and history kept as it
+    was (`history_files`), plus AGENTS.md."""
     out = []
     agents = os.path.join(project.root, "AGENTS.md")
     if os.path.isfile(agents):
         out.append(agents)
     for dirpath, dirnames, filenames in os.walk(project.spry):
         rel = project.rel(dirpath)
-        if rel in ("spry/process", "spry/tool", "spry/skills") or rel.startswith(("spry/process/", "spry/tool/", "spry/skills/")):
+        if rel in ("spry/process", "spry/tool", "spry/skills") or rel.startswith(("spry/process/", "spry/tool/", "spry/skills/", "spry/history/")):
             dirnames[:] = []
             continue
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
@@ -1891,7 +1902,7 @@ def falsify_suggest(project: Project, slice_id: str, base: str) -> list:
 # ---------------------------------------------------------------- find
 
 def searchable_files(project: Project) -> list:
-    out = markdown_files(project)
+    out = markdown_files(project) + history_files(project)
     process = os.path.join(project.spry, "process")
     if os.path.isdir(process):
         for dirpath, _dirs, filenames in os.walk(process):
@@ -1973,11 +1984,19 @@ def find(project: Project, query: str, limit: int = 10, rebuild: bool = False) -
         match = joiner.join('"' + t.replace('"', "") + '"*' for t in terms)
         rows = con.execute("SELECT path, line, title || ' › ' || heading, snippet(sections, 4, '[', ']', '…', 12) "
                            "FROM sections WHERE sections MATCH ? ORDER BY bm25(sections, 0, 0, 1.5, 2.0, 1.0) LIMIT ?",
-                           (match, limit)).fetchall()
+                           (match, limit * 3)).fetchall()
         if rows:
             break
     con.close()
-    return [(path, int(line), heading, " ".join(snippet.split())) for path, line, heading, snippet in rows]
+    return history_last([(path, int(line), heading, " ".join(snippet.split())) for path, line, heading, snippet in rows], limit)
+
+
+def history_last(rows: list, limit: int) -> list:
+    """Current documents first; what an earlier process left in spry/history/<source>/ after them, marked."""
+    def old(row):
+        return row[0].startswith("spry/history/") and row[0].count("/") > 2
+    rows = [r for r in rows if not old(r)] + [(r[0], r[1], "history · " + r[2], r[3]) for r in rows if old(r)]
+    return rows[:limit]
 
 
 def find_plain(project: Project, files: list, terms: list, limit: int) -> list:
@@ -1992,7 +2011,7 @@ def find_plain(project: Project, files: list, terms: list, limit: int) -> list:
                 snippet = " ".join((heading + " " + body)[max(0, at - 40):at + 80].split())
                 scored.append((hits, project.rel(path), line, f"{title} › {heading}", snippet))
     scored.sort(key=lambda s: -s[0])
-    return [s[1:] for s in scored[:limit]]
+    return history_last([s[1:] for s in scored], limit)
 
 
 # ---------------------------------------------------------------- install

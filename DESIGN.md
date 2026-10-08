@@ -79,6 +79,7 @@ spry/
     external/<dependency>/INDEX.md + <behaviour>.md
     security.md  performance.md  … # interview outputs, index→item when over budget
   history/writ.md                 # adopted from writ only: old ID → new (process/from-writ.md)
+  history/writ/slices/            # writ's slice summaries, as written; check skips, find lists last
   process/                        # vendored from the plugin: rules + templates
   tool/spry.py
 .spry/                            # gitignored: search index, personal tone, gate stamp, caches
@@ -413,3 +414,4 @@ in `spry/history/writ.md`, then retires `canon/`.
   the merge waits for CI instead of re-running the suite.
 - 2026-10-09 — setup reads the trunk from the repository instead of assuming `main` (CH-5, 0.4.1).
 - 2026-10-09 — a coverage page, `spry/COVERAGE.md`, and `spry coverage` (CH-6, 0.5.0).
+- 2026-10-09 — adopt keeps writ's slice summaries in `spry/history/writ/slices/`; `check` skips them, `find` lists them last (CH-7, 0.6.0).

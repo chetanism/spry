@@ -126,3 +126,15 @@ Entry format:
 - **Adapt:** nothing
 - **Migrate:** add `spry/COVERAGE.md` from `templates/coverage.md`; add the Coverage line to
   `spry/README.md` (*Start here*) and below the milestones block in `spry/plan/README.md`.
+
+## CH-7 · writ's slice summaries are kept
+
+- **Date:** 2026-10-09 · **Version:** 0.6.0
+- **Touches:** `process/from-writ.md`, `tool/spry.py` (`check` skips `spry/history/<source>/`;
+  `find` lists it last, marked `history`)
+- **Why:** adopt left writ's slice summaries only in git history, so each `Built under writ` slice
+  said where it came from and nothing about what was built, how, which options were rejected, or
+  what was deliberately left out.
+- **Adapt:** nothing
+- **Migrate:** only for a project adopted from writ: follow `process/from-writ.md` → *Adopted
+  before CH-7*.

@@ -119,9 +119,17 @@ Numbered, each with a recommendation. Adopt starts only when every question has 
    row when its item is made, not afterwards.
 5. **Built work.** Every story with at least one `done` row gets one slice, titled `Built under writ`:
    - `state: closed`, and `covers` lists the criteria from its `done` rows;
-   - Summary names the writ slices that built it;
+   - Summary links the writ slices that built it: `- Built under writ by [SL-WD2](<path>), …`;
    - Close summary reads: imported — built, reviewed and falsified under writ.
    The story counts as done once the step 6 renames make its tests cite it.
+
+   **Keep the slice summaries.** By script, copy every writ slice summary (the `*.md` under
+   `<canon>`'s slices folder, not its README, not `*.falsify.json`, not work orders) to
+   `spry/history/writ/slices/<writ slice ID>.md`, adding `SL-` when the file name lacks it. Content
+   unchanged, under one first line:
+   `> writ slice summary, as written. writ IDs → [the trail](../../writ.md).`
+   `spry check` skips these files; `spry find` lists them after current documents, marked
+   `history`. Work orders stay in git history: the summary supersedes them.
 6. **Tests.** Rewrite citations from the trail table, in test files only. Each writ ID that became a
    criterion becomes `S-n/AC-m`.
    - One ID maps to one criterion, so this is a mechanical replace. Do it with a script, run over
@@ -159,4 +167,18 @@ Numbered, each with a recommendation. Adopt starts only when every question has 
     - The done criteria, set beside the `done` rows, differ only where the pull request explains why
       — a comment-only citation is the usual reason.
 11. **Retire `<canon>`** in the last commit. Ask first, after the person has compared `spry status`
-    with writ's last ledger. The trail and git history keep everything.
+    with writ's last ledger. The trail, the kept summaries and git history keep everything.
+
+## Adopted before CH-7
+
+A project that retired `<canon>` without keeping the slice summaries gets them back from git
+history, on a branch, in one commit and one pull request:
+
+1. `c=$(git log -1 --format=%H --diff-filter=D -- '<canon>/process/slices')^` — the last commit
+   that still had them. Check that `git ls-tree -r --name-only "$c" '<canon>/process/slices'`
+   lists them; if the folder had another name, use that.
+2. By script, write each listed summary with `git show "$c:<path>"` to the place step 5 names,
+   under the same first line.
+3. By script, turn every `Built under writ by SL-…` line in the plan into links to those files.
+   Report any writ slice with no file, and any file that no slice names.
+4. `spry check` is clean, then open the pull request.

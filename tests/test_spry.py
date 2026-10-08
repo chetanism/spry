@@ -378,6 +378,22 @@ class Coverage(Base):
             self.assertIn("[M-1 Title of M-1](plan/M-1-m/README.md)", handle.read())
 
 
+class History(Base):
+    KEPT = "> writ slice summary, as written.\n\n# Slice SL-WD2 — summary\n\nA patron can rotate [x](nope.md) the signing secret.\n"
+
+    def test_check_skips_kept_history(self):
+        t = self.tree(**{"spry__history__writ__slices__SL-WD2.md": self.KEPT})
+        self.assertEqual(t.problems(), [])
+
+    def test_find_lists_history_after_current_documents(self):
+        t = self.tree(**{"spry__history__writ__slices__SL-WD2.md": self.KEPT,
+                         "spry__knowledge__secrets.md": "---\ntitle: Secrets\nsummary: s\naudience: 6\n---\n# Secrets\n\n## Rotate\n\nRotate the signing secret.\n"})
+        hits = spry.find(t.project(), "signing secret")
+        self.assertEqual(hits[0][0], "spry/knowledge/secrets.md")
+        self.assertEqual(hits[-1][0], "spry/history/writ/slices/SL-WD2.md")
+        self.assertTrue(hits[-1][2].startswith("history · "))
+
+
 class Related(Base):
     def test_open_slice_on_same_files(self):
         t = self.tree(**{
