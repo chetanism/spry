@@ -104,3 +104,14 @@ Entry format:
   - Closed slices are not re-checked. An open slice's Falsify table needs a row for every control
     `falsify suggest` lists before it merges.
 
+## CH-5 · The trunk is read, not assumed
+
+- **Date:** 2026-10-09 · **Version:** 0.4.1
+- **Touches:** `process/setup.md`
+- **Why:** setup left `main_branch` at the template's `main`. A project whose trunk is another
+  branch (pulse-v2's is `dev`) would branch slices from the wrong place, and falsify, `merge-check`
+  and CI would compare against it.
+- **Adapt:** nothing
+- **Migrate:** check `main_branch` in `spry/spry.config.json` against the repository's default
+  branch.
+

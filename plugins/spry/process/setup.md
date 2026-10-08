@@ -17,8 +17,10 @@ python3 <plugin>/tool/spry.py vendor --root .
 
 Copies `process/` and the tool into `spry/process/` and `spry/tool/`. From then on, every agent
 uses `python3 spry/tool/spry.py`. Then write `spry/spry.config.json` from `templates/spry.config.json`
-at once — the tool needs it from topic d on. The interview fills it in; `<…>` values wait for their
-topic. Team members on another agent run
+at once — the tool needs it from topic d on. Set `main_branch` in it then, to the repository's
+default branch — `gh repo view --json defaultBranchRef -q .defaultBranchRef.name`, else
+`git symbolic-ref --short refs/remotes/origin/HEAD` without `origin/` — never assumed to be `main`.
+The interview fills in the rest; `<…>` values wait for their topic. Team members on another agent run
 `python3 <plugin>/tool/spry.py install --agent <generic|claude|cursor|gemini>` — `generic` writes
 the skills to `spry/skills/` and lists them in `AGENTS.md`, which any agent reads.
 

@@ -406,3 +406,4 @@ in `spry/history/writ.md`, then retires `canon/`.
   criteria changed with code, and turns reasons into a person's call; the PR body opens with a
   page for the reviewer; `gate` and `changed`, fast checks first, and tests only when code changed;
   the merge waits for CI instead of re-running the suite.
+- 2026-10-09 — setup reads the trunk from the repository instead of assuming `main` (CH-5, 0.4.1).
