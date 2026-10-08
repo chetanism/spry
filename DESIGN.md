@@ -80,6 +80,7 @@ spry/
     security.md  performance.md  … # interview outputs, index→item when over budget
   history/writ.md                 # adopted from writ only: old ID → new (process/from-writ.md)
   history/writ/slices/            # writ's slice summaries, as written; check skips, find lists last
+  history/writ/requirements/      # writ's requirement details, as written; their content is in stories
   process/                        # vendored from the plugin: rules + templates
   tool/spry.py
 .spry/                            # gitignored: search index, personal tone, gate stamp, caches
@@ -415,3 +416,4 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-09 — setup reads the trunk from the repository instead of assuming `main` (CH-5, 0.4.1).
 - 2026-10-09 — a coverage page, `spry/COVERAGE.md`, and `spry coverage` (CH-6, 0.5.0).
 - 2026-10-09 — adopt keeps writ's slice summaries in `spry/history/writ/slices/`; `check` skips them, `find` lists them last (CH-7, 0.6.0).
+- 2026-10-09 — adopt splits writ's requirement details into stories, criteria and `checks.md` scenarios, planned by writ's agent in `to-spry.md` §7, and keeps the originals (CH-8, 0.7.0).

@@ -138,3 +138,13 @@ Entry format:
 - **Adapt:** nothing
 - **Migrate:** only for a project adopted from writ: follow `process/from-writ.md` → *Adopted
   before CH-7*.
+
+## CH-8 · writ's requirement details become stories
+
+- **Date:** 2026-10-09 · **Version:** 0.7.0
+- **Touches:** `process/from-writ.md`
+- **Why:** adopt left requirement detail files out. A detail file says what a person would see —
+  job stories, personas, boundary cases, scenarios — and runs to hundreds of lines, so turning only
+  its requirement into a story or criterion lost most of it.
+- **Adapt:** nothing
+- **Migrate:** nothing. It applies only to adopting a writ project that kept detail files.

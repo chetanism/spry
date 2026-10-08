@@ -81,8 +81,8 @@ clean-up and don't appear here.
 
 ### 4. Documents
 
-One row for each file under `<canon>` that isn't a requirement detail, a decision record, a slice
-record or a work order:
+One row for each file under `<canon>` that isn't a requirement detail (§7), a decision record, a
+slice record or a work order:
 
 | path | keep → spry destination, or history | Note |
 |---|---|---|
@@ -101,6 +101,40 @@ registers, scripts, checks, templates and skills.
 
 Numbered, each with a recommendation. Adopt starts only when every question has an answer.
 
+### 7. Requirement details
+
+Only when writ kept detail files: one file per requirement saying what a person would see, with
+job stories, personas, boundary cases and scenarios (usually `<canon>/spec/requirements/`). Each
+can be longer than a story may be, and usually holds several jobs, so writ's agent plans the split.
+
+One row per `##` section of every detail file, in file order. A section whose parts go to different
+places gets one row per part, saying which part in Note.
+
+| detail file | section | goes to | Note |
+|---|---|---|---|
+
+- **section**: the heading as written, such as `Story 3 — a different standing at each place`.
+- **goes to**, each naming a story by its §1 title:
+  - `story: <story>` — the story's *As / I want / So that*. Usually the summary and the personas.
+  - `ac: <story>` — criteria of that story. Each "Story n" of the file is a job: criteria on the
+    requirement's story, or a story of its own under the same feature when it is a separate job,
+    added to the tree in §1. Observable behaviour, and boundary and negative cases, are criteria
+    too. A case that can't be reproduced by hand stays a criterion, proven by a test.
+  - `checks: <story>` — scenarios in that story's `checks.md`: the steps of a job story,
+    mandatory fields, preconditions and data. That file has no line budget, so the detail goes
+    here.
+  - `not-in-story: <story>` — *Not in this story*. Out of scope usually goes here.
+  - `notes: <story>` — the story's Notes: words, examples, which screen or route.
+  - `related: <story>` — `related:` and Notes. Decisions named in it become `D-n` with the rest.
+  - `glossary` — terms the file defines.
+  - `question` — an open question, copied to §6. Its answer lands where §6 says.
+  - `history` — nothing to carry: reconciliation rows, an empty verification table, and the
+    requirement's quoted text, which survives as the criteria. The original is kept anyway (§2
+    step 3).
+- A verification row that records a check by hand goes to `checks: <story>` as a check-log row,
+  for the criterion it checked. Note gives that criterion.
+- The requirement's own row in §2 is `story` or `ac`, as usual; its Note points to this table.
+
 ## 2. Adopt from the mapping
 
 1. **Survey** as in `setup.md`, but skip what `to-spry.md` already says.
@@ -113,10 +147,18 @@ Numbered, each with a recommendation. Adopt starts only when every question has 
    - A `story` row gets the criteria its Note names.
    - A story goes `ready` once every criterion is written. Its `## Conflict check` reads
      `Checked <date> against: <canon>/to-spry.md, approved <date>`.
+   - **Requirement details** follow §7, row by row: criteria, `checks.md` scenarios, *Not in this
+     story*, Notes, `related:` and glossary terms, each where its row says. writ IDs in the text
+     become their spry IDs from the trail.
+   - **Keep each detail file** by script, unchanged, at
+     `spry/history/writ/requirements/<writ ID>.md`, under one first line:
+     `> writ requirement detail, as written. writ IDs → [the trail](../../writ.md).`
+     Every story built from it says so in Notes, with a link. `spry check` skips these files, and
+     `spry find` lists them last.
 4. **The trail**, `spry/history/writ.md`: one table from old to new, `| writ ID | now |`. `now` is
    one of `S-12/AC-3`, `F-2/R-1`, `D-41`, `knowledge/security.md SEC-4`, `M-2 exit` or `dropped`.
-   It also maps writ milestones (`M0` → `M-1`) and writ slices (to the story they built). Add each
-   row when its item is made, not afterwards.
+   It also maps writ milestones (`M0` → `M-1`), writ slices (to the story they built) and detail
+   files (to the stories made from them). Add each row when its item is made, not afterwards.
 5. **Built work.** Every story with at least one `done` row gets one slice, titled `Built under writ`:
    - `state: closed`, and `covers` lists the criteria from its `done` rows;
    - Summary links the writ slices that built it: `- Built under writ by [SL-WD2](<path>), …`;
@@ -164,6 +206,9 @@ Numbered, each with a recommendation. Adopt starts only when every question has 
 10. **Verify.**
     - `spry check` is clean.
     - Every row of §2 is in the trail.
+    - By script: every `##` heading of every detail file has a row in §7, and every story, criterion
+      and `checks.md` scenario that §7 names exists. Report the gaps; fix them before the pull
+      request.
     - The done criteria, set beside the `done` rows, differ only where the pull request explains why
       — a comment-only citation is the usual reason.
 11. **Retire `<canon>`** in the last commit. Ask first, after the person has compared `spry status`
