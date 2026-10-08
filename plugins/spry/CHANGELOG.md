@@ -148,3 +148,14 @@ Entry format:
   its requirement into a story or criterion lost most of it.
 - **Adapt:** nothing
 - **Migrate:** nothing. It applies only to adopting a writ project that kept detail files.
+
+## CH-9 · After a merge, test only what the PR's checks never saw
+
+- **Date:** 2026-10-09 · **Version:** 0.7.1
+- **Touches:** `process/merging.md` (*Merge* steps 7–8), `skills/merge`
+- **Why:** after every merge the full suite ran again, on CI or by hand, even when the main branch
+  had not moved: the merged code was the code the PR's checks had just passed. On a project whose
+  CI runs only on pull requests, that meant a full local gate after each merge.
+- **Adapt:** a project with its own after-merge rule (in `AGENTS.md`, say) words it the same way:
+  run it only when `spry.py changed --base <PR head>` prints `code=true`.
+- **Migrate:** nothing

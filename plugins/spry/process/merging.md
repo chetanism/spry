@@ -54,17 +54,24 @@ changes the code and never merges.**
 6. **Ask:** one line — what merges, the trailer it carries — and each `!` item as something the person
    accepts: a survivor or skipped control with its reason, a criterion with no test. Merge only on
    a yes given in this conversation, for this PR.
-7. **Merge:** squash, with the commit from `spry.py merge-message SL-<n>` — its subject as
+7. **Merge:** first note the PR's head, `head=$(gh pr view <n> --json headRefOid -q .headRefOid)`,
+   for step 8. Squash, with the commit from `spry.py merge-message SL-<n>` — its subject as
    `--subject`, the rest as `--body`; the `Slice:` trailer lives in the commit, because a squash
    keeps nothing else. `gh pr merge <n> --squash --subject "…" --body "…" --delete-branch`.
 8. **After the merge:**
    - `git checkout <main> && git pull --ff-only && git fetch --prune`; delete the local branch with
      `git branch -D` (a squash merge makes `-d` refuse).
-   - **Wait for CI on the main branch** — it runs the full suite there; never run it again here.
-     `gh run list --branch <main> --commit $(git rev-parse HEAD) --json databaseId`, then
-     `gh run watch <id> --exit-status`. A PR green against its base can be red against the main
-     branch it landed on. Red → say so at once, and offer a bug or a revert — never leave it.
-     No CI → say so, and offer `/spry:test-all`.
+   - **Did the main branch move under it?** `python3 spry/tool/spry.py changed --base "$head"`
+     compares the PR's head with the main branch as it is now.
+     - `code=false`: the main branch's code is exactly what the PR's checks passed — the only
+       commits it gained were documents. **Run nothing**, and say so in the report.
+     - `code=true`: it gained code the PR's checks never saw, and a PR green against its base can
+       be red against the main branch it landed on. **Wait for CI on the main branch** — it runs
+       the full suite there; never run it again here.
+       `gh run list --branch <main> --commit $(git rev-parse HEAD) --json databaseId`, then
+       `gh run watch <id> --exit-status`. No CI on push → run the full suite once
+       (`/spry:test-all`), and say why. Red → say so at once, and offer a bug or a revert — never
+       leave it.
    - Report: what merged; what is unblocked now (items whose `blocked_by` named this slice or its
      parent, and the next `planned` slice); each `!` from step 2 as a `[Test]` for QA.
 9. **Never:** force-push the main branch, merge with `--admin` to skip checks, or merge a PR the

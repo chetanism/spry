@@ -246,7 +246,7 @@ first so a slow one never runs only to be thrown away by a lint error.
   - an **affected-only** command used during a slice (`vitest --changed`, turbo filters,
     `pytest-testmon`, …);
   - the full suite in CI on `main` and nightly, and on demand — never by the agent as a routine
-    step: not on a slice, not at close, not after a merge (the merge waits for CI on `main`).
+    step: not on a slice, not at close, not after a merge (the merge waits for CI on `main` only when `main` moved under the PR).
 - **`gate`** runs `spry check` → `checks.fast` (format, lint, types, cheapest first) → affected
   tests, stopping at the first failure. A pass is stamped in `.spry/green` with a fingerprint of the
   code (every file outside `checks.docs`, default `spry/**` and `**/*.md`); while it matches, the
@@ -334,7 +334,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `slice-open` | 8 | Work order (opening with a brief summary of what will be done), conflict check, branch, draft PR with the work order as its body; then builds — asking first only for something hard to undo |
 | `slice-close` | 8 | Close summary from the diff, falsify, AC proof, done list; PR body refreshed with both parts |
 | `review` | 8 | Review a PR against its work order; findings as blocker / should / nit, posted only on a yes |
-| `merge` | 8 | Checks green, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main → what is unblocked |
+| `merge` | 8 | Checks green, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main if main moved under the PR → what is unblocked |
 | `bug` / `task` | 4 / 7 | Record one, attached to its parent |
 | `status` | reader's | Roll-up explained at the asker's tone |
 | `tone` | — | Personal audience override |
@@ -417,3 +417,4 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-09 — a coverage page, `spry/COVERAGE.md`, and `spry coverage` (CH-6, 0.5.0).
 - 2026-10-09 — adopt keeps writ's slice summaries in `spry/history/writ/slices/`; `check` skips them, `find` lists them last (CH-7, 0.6.0).
 - 2026-10-09 — adopt splits writ's requirement details into stories, criteria and `checks.md` scenarios, planned by writ's agent in `to-spry.md` §7, and keeps the originals (CH-8, 0.7.0).
+- 2026-10-09 — after a merge, the full suite runs only when the main branch gained code the PR's checks never saw (`changed --base <PR head>`) (CH-9, 0.7.1).
