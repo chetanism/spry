@@ -231,6 +231,8 @@ Run by `milestone`, `epic`, `feature`, `story` and `slice-open` before a documen
     `pytest-testmon`, …);
   - the full suite in CI on `main` and nightly, and on demand — not on every slice.
 - `spry tests --slowest` reads JUnit XML and names the slowest tests.
+- `test-all` runs the whole suite on demand, part by part (`tests.parts`), starting the local
+  services (`stack`) only when they are down and stopping only what it started. Report only.
 - Fewer conflicts come from §4 (one file per item) and §13 (no generated files on branches).
 
 ## 16. Falsify (kept, optimised)
@@ -305,6 +307,9 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `test-scenarios` | 4 | Scenarios in a story's `checks.md` from its ACs |
 | `record` | 6–7 | A decision, convention or external behaviour, into the right index |
 | `security-audit`, `prelaunch` | 8 | Standalone reviews |
+| `test-all` | 8 | The whole suite on purpose, the local services managed; failures, slow and flaky tests named. Report only |
+| `explore` | 8 | Seeded, replayable exploratory walk over an isolated instance; oracles are the area's ACs. Report only |
+| `compact` | 7 | A file back under budget by moving sections to their owners; a pointer left, no fact lost |
 | `process-change` | 7 | Change the process in every file it touches |
 | `update` | 7 | Offer a project what spry gained since it was set up; port only what is chosen |
 | `contribute` | 7 | Offer spry what a project built; files an issue, never a PR |
@@ -317,7 +322,7 @@ only names its template and level.
 
 | Kept | Changed | Dropped |
 |---|---|---|
-| Skills run the project; slice loop; work order before code; demo; falsify; decisions; chat rules; process-change; security-audit; prelaunch; test-scenarios; update; contribute; adopt | BRD → incremental milestones; registers → item folders; ledger → derived status; CLAUDE.md → AGENTS.md | many-to-many claims, `requirement-verify`, `coverage-review`, `change-request`, velocity, code graph, maintenance/cleanup |
+| Skills run the project; slice loop; work order before code; demo; falsify; decisions; chat rules; process-change; security-audit; prelaunch; test-scenarios; test-all; manual-test → `explore`; context-compact → `compact`; update; contribute; adopt | BRD → incremental milestones; registers → item folders; ledger → derived status; CLAUDE.md → AGENTS.md | many-to-many claims, `requirement-verify`, `coverage-review`, `change-request`, velocity, code graph, maintenance/cleanup |
 
 Later: `product-docs`, `product-guide`, `spry-web` plugin.
 
@@ -328,6 +333,10 @@ Later: `product-docs`, `product-guide`, `spry-web` plugin.
 - 2026-10-08 — `adopt` is built alongside `init`, not after the pilot.
 - 2026-10-08 — a slice file's parts are named `Work order` and `Close summary`; the PR body is copied
   from the file by the skills.
+- 2026-10-08 — `compact` is its own skill, not part of `process-change`: files grow from slices,
+  records and interviews, so the trigger is a budget, not a process change. writ's `manual-test` is
+  `explore` here, so it is not confused with the manual checks in `checks.md`. writ's `survey.py`
+  (history churn) is not ported; adopt reads the code.
 
 ## 21. Built
 
@@ -348,3 +357,5 @@ Later: `product-docs`, `product-guide`, `spry-web` plugin.
   locally; it is replaced whole.
 - 2026-10-08 — `review` and `merge` (`process/merging.md`), with `merge-check` and `merge-message`.
   The merge rules a writ project kept in its always-loaded file now load only when merging.
+- 2026-10-08 — `test-all`, `explore` and `compact` (`process/testing.md`, `process/compacting.md`),
+  with `draw` in the tool (CH-2, 0.2.0).

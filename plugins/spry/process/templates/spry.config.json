@@ -1,6 +1,6 @@
 {
-  "spry": "0.1.0",
-  "spry_baseline": "CH-1",
+  "spry": "0.2.0",
+  "spry_baseline": "CH-2",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -27,7 +27,22 @@
     "match": ["<glob of test files, e.g. **/*.test.ts>"],
     "affected": "<command that runs only tests affected by the working tree>",
     "all": "<command that runs every test, in parallel>",
-    "junit": "<path the runner writes JUnit XML to>"
+    "junit": "<path the runner writes JUnit XML to>",
+    "parts": [
+      {"name": "unit", "run": "<command>", "stack": false},
+      {"name": "integration", "run": "<command>", "stack": true}
+    ]
+  },
+  "stack": {
+    "running": "<command that exits 0 when the local services are up>",
+    "up": "<command that starts them and waits until healthy>",
+    "down": "<command that stops them, keeping their data>"
+  },
+  "explore": {
+    "env": "<file sourced in every shell: ports and data apart from the development instance>",
+    "up": "<command that starts the isolated instance; --fresh resets its data>",
+    "down": "<command that stops it>",
+    "fixture": "<command or script that creates the starting data — two of everything with a boundary>"
   },
   "falsify": {
     "parallel": false,

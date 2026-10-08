@@ -209,6 +209,7 @@ class Check(Base):
         long = GLOSSARY + "\n".join(f"- line {i}" for i in range(40))
         t = self.tree(**{"spry/knowledge/glossary.md".replace("/", "__"): long})
         self.assertProblem(t.problems(), "budget 40")
+        self.assertProblem(t.problems(), "/spry:compact")
 
     def test_bug_breaks_must_exist(self):
         bug = item("B-1", extra="breaks: [S-1/AC-4]\n", check=False)
@@ -422,6 +423,33 @@ class Scrub(Base):
         found = {w.split(" ")[0] for _, w in hits}
         self.assertEqual(found, {"Shelf", "patron", "asha-k", "a@b.io", "member"})
         self.assertNotIn(4, [n for n, _ in hits])
+
+
+class Draw(unittest.TestCase):
+    """A walk is replayable only if (seed, counter) alone decides every choice."""
+
+    CHOICES = [f"operator {i}" for i in range(14)]
+
+    def test_same_seed_and_counter_same_choice(self):
+        self.assertEqual(spry.draw("abc", "3", self.CHOICES, "pick"), spry.draw("abc", "3", self.CHOICES, "pick"))
+
+    def test_counter_changes_the_choice(self):
+        picks = {spry.draw("abc", str(n), self.CHOICES, "pick")[0] for n in range(30)}
+        self.assertGreater(len(picks), 5)
+
+    def test_sample_is_distinct_and_shuffle_is_a_permutation(self):
+        sample = spry.draw("abc", "1", self.CHOICES, "sample", 5)
+        self.assertEqual(len(set(sample)), 5)
+        self.assertEqual(sorted(spry.draw("abc", "1", self.CHOICES, "shuffle")), sorted(self.CHOICES))
+
+    def test_int_in_range(self):
+        self.assertTrue(all(0 <= int(spry.draw("s", str(n), [], "int", 6)[0]) < 6 for n in range(50)))
+
+    def test_cli_needs_no_project(self):
+        out = subprocess.run([sys.executable, spry.__file__, "draw", "abc", "3", "--pick"], input="a\nb\nc\n",
+                             capture_output=True, text=True, cwd=tempfile.gettempdir())
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertEqual(out.stdout.strip(), spry.draw("abc", "3", ["a", "b", "c"], "pick")[0])
 
 
 class Kit(unittest.TestCase):

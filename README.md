@@ -44,6 +44,8 @@ Start at its [`spry/README.md`](docs/example/spry/README.md) and click down.
 | `/spry:bug`, `/spry:task` | Record a bug against what it breaks; plan technical work no story asks for |
 | `/spry:test-scenarios` | The steps QA follows by hand for each acceptance criterion |
 | `/spry:record` | A decision, a convention, or how an external service really behaves |
+| `/spry:test-all`, `/spry:explore` | The whole suite on purpose; a seeded exploratory walk over a real, isolated instance — both report only |
+| `/spry:compact` | A file back under its line budget, sections moved to where they belong, no fact lost |
 | `/spry:security-audit`, `/spry:prelaunch` | Reviews that report and turn findings into bugs and tasks — never fix, never deploy |
 | `/spry:process-change` | Change the process in every file it touches, kept through updates |
 | `/spry:status`, `/spry:tone` | Where things stand, at your tone; how technical replies are for you |

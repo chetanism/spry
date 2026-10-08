@@ -17,6 +17,8 @@
     python3 spry/tool/spry.py check --base origin/main   # also warn on cited criteria whose text changed
     python3 spry/tool/spry.py codeowners [--check]       # .github/CODEOWNERS from team.review
     python3 spry/tool/spry.py tests --slowest    # from the JUnit report in tests.junit
+    python3 spry/tool/spry.py draw --seed        # a fresh seed for an exploratory walk
+    python3 spry/tool/spry.py draw <seed> <n> --pick < choices   # the same choice for ever, per (seed, n)
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
     python3 spry/tool/spry.py merge-message <slice>   # the squash commit: subject, summary, trailers
     python3 <plugin>/tool/spry.py install --agent <generic|claude|cursor|gemini> [--root <project>]
@@ -54,7 +56,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.1.0"
+VERSION = "0.2.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -652,7 +654,7 @@ def check(project: Project):
 
         for regex, limit, pattern in budgets:
             if regex.match(rel) and len(lines) > limit:
-                project.problem(path, len(lines), f"{len(lines)} lines, budget {limit} ({pattern}) — split it into INDEX.md + items")
+                project.problem(path, len(lines), f"{len(lines)} lines, budget {limit} ({pattern}) — /spry:compact moves sections to the files that own them")
 
         unfinished_ok = fm.get("state") in ("draft", "planned")
         if not unfinished_ok:
@@ -1839,6 +1841,35 @@ def codeowners(project: Project) -> str:
     return "\n".join(lines) + "\n"
 
 
+# ---------------------------------------------------------------- draw
+
+def _draw_hash(seed: str, counter: str, salt) -> int:
+    import hashlib
+    return int.from_bytes(hashlib.sha256(f"{seed}:{counter}:{salt}".encode()).digest()[:4], "big")
+
+
+def draw(seed: str, counter: str, choices: list, mode: str, k: int = 1) -> list:
+    """A choice that depends only on (seed, counter), so an exploratory walk can be replayed.
+
+    A hash, not a random stream: no state to carry between shells, and the same pair gives the
+    same answer on any machine, in any order."""
+    if mode == "int":
+        return [str(_draw_hash(seed, counter, "int") % k)]
+    if not choices:
+        raise SystemExit("nothing to draw from — pass one choice per line on stdin")
+    order = list(choices)
+    for i in range(len(order) - 1, 0, -1):
+        j = _draw_hash(seed, counter, i) % (i + 1)
+        order[i], order[j] = order[j], order[i]
+    return {"pick": order[:1], "sample": order[:k], "shuffle": order}[mode]
+
+
+def new_seed() -> str:
+    import hashlib
+    import random
+    return hashlib.sha256(f"{time.time_ns()}:{random.random()}".encode()).hexdigest()[:12]
+
+
 # ---------------------------------------------------------------- tests --slowest
 
 def slowest(project: Project, junit: str | None = None, limit: int = 10) -> str:
@@ -2030,6 +2061,15 @@ def main(argv=None) -> int:
     p.add_argument("--slowest", action="store_true", required=True, help="the slowest tests and files")
     p.add_argument("--junit", help="report file, folder or glob (default: tests.junit)")
     p.add_argument("--limit", type=int, default=10)
+    p = sub.add_parser("draw", help="a replayable choice for an exploratory walk")
+    p.add_argument("seed", nargs="?")
+    p.add_argument("counter", nargs="?", help="the step number; add 1 on every draw")
+    g = p.add_mutually_exclusive_group(required=True)
+    g.add_argument("--seed", dest="new_seed", action="store_true", help="print a fresh seed")
+    g.add_argument("--pick", action="store_true", help="one line from stdin")
+    g.add_argument("--sample", type=int, metavar="K", help="K distinct lines from stdin")
+    g.add_argument("--shuffle", action="store_true", help="every line from stdin, reordered")
+    g.add_argument("--int", type=int, metavar="N", help="a number from 0 to N-1")
     p = sub.add_parser("merge-check", help="is a closed slice ready to merge? exit 1 if anything blocks it")
     p.add_argument("slice")
     p.add_argument("--base", help="git ref the PR merges into, to catch cited criteria that changed")
@@ -2051,6 +2091,21 @@ def main(argv=None) -> int:
     if args.command == "install":
         for path in install(args.install_root or args.root or os.getcwd(), args.agent):
             print("wrote: " + path)
+        return 0
+    if args.command == "draw":
+        if args.new_seed:
+            print(new_seed())
+            return 0
+        if args.seed is None or args.counter is None:
+            print("draw needs <seed> <counter>", file=sys.stderr)
+            return 2
+        if args.int is not None:
+            print("\n".join(draw(args.seed, args.counter, [], "int", args.int)))
+            return 0
+        choices = [line.strip() for line in sys.stdin.read().split("\n")
+                   if line.strip() and not line.strip().startswith("#")]
+        mode = "pick" if args.pick else "shuffle" if args.shuffle else "sample"
+        print("\n".join(draw(args.seed, args.counter, choices, mode, args.sample or 1)))
         return 0
     if args.command == "vendor" and args.diff:
         lines = vendor_diff(args.vendor_root or args.root or os.getcwd())
