@@ -9,6 +9,7 @@ audience: 8
 |---|---|---|
 | `tests.match` | `["**/*.test.ts", "**/*.test.tsx"]` | same |
 | `tests.affected` | `vitest run --changed origin/main` | `jest --changedSince=origin/main` |
+| `tests.retry` | `vitest run --changed origin/main --no-file-parallelism` | `jest --changedSince=origin/main --runInBand` |
 | `tests.all` | `vitest run` (threads by default) | `jest --maxWorkers=50%` |
 | `tests.junit` | `reports/junit.xml` — the runner writes it with `--reporter=junit --outputFile=reports/junit.xml` | the file `jest-junit` writes (`JEST_JUNIT_OUTPUT_FILE`) |
 | falsify runner | `vitest run --bail 1 {files}` | `jest --bail {files}` |
@@ -21,7 +22,8 @@ audience: 8
   A citation in a comment proves nothing.
 
 - **Monorepo:** with Turborepo, `turbo run test --filter=...[origin/main]` runs only changed packages
-  and their dependents; set `cwd: package` on falsify runners.
+  and their dependents; set `cwd: package` on falsify runners. `tests.retry` is the same command with
+  `--concurrency=1`: Turbo's cache skips the packages that passed, so only the timed-out one re-runs.
 - **Integration tests** on a shared database: their own runner entry, matched by
   `**/*.integration.test.ts`, run serially (`--pool=forks --poolOptions.forks.singleFork`), with
   `"parallel": false` so falsify never runs two of them at once.

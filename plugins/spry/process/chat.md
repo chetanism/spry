@@ -22,10 +22,11 @@ audience level; **shape** comes from this file and is the same at every level.
 - Bullets, not prose. No preamble, recap, closing summary or restated question.
 - Group under only the headings the reply needs, in this order:
   - `BLOCKED` — what stops progress, and on whom.
-  - `ASK` — questions for the user.
   - `DONE` — what the agent did.
   - `NEXT` — what the user should do next.
   - `FYI` — facts worth knowing; nothing to do.
+  - `ASK` — questions for the user. Last, so the reader has the findings before the choice, and the
+    question is where the reply ends.
 - One fact per bullet. Add a reason only when leaving it out would mislead.
 - Never quote back a diff or a file just written. Rationale only when asked.
 
@@ -51,15 +52,15 @@ Every bullet starts with one tag in brackets.
 ## Example — audience 2
 
 ```
-ASK
-1. Should a member with an overdue book be allowed to borrow another?
-   a. No — they return the overdue book first (recommended): matches the desk's paper rule today
-   b. Yes, up to the limit — simpler for members, but overdue books pile up
 DONE
 - [Added] Story S-2 Loan limit, with 3 acceptance criteria
 - [Found] S-2 overlaps S-1 Lend a book: S-1 now covers only the allowed case
 NEXT
 - [Review] S-2 Loan limit — the three "Done when" lines are what QA will test
+ASK
+1. Should a member with an overdue book be allowed to borrow another?
+   a. No — they return the overdue book first (recommended): matches the desk's paper rule today
+   b. Yes, up to the limit — simpler for members, but overdue books pile up
 ```
 
 ## Example — audience 8

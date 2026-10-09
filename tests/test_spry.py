@@ -232,6 +232,11 @@ class Check(Base):
         t = self.tree(**{f"{F}/README.md".replace("/", "__"): item("F-1", body="- Lent to <member>\n")})
         self.assertProblem(t.problems(), "placeholder `<member>`")
 
+    def test_a_test_name_in_a_generated_block_is_not_a_placeholder(self):
+        body = "<!-- spry:proof -->\n- `S-1/AC-1` — keyed by <token>\n<!-- /spry:proof -->\n"
+        t = self.tree(**{f"{F}/README.md".replace("/", "__"): item("F-1", body=body)})
+        self.assertFalse([p for p in t.problems() if "placeholder" in str(p)])
+
     def test_ready_needs_conflict_check(self):
         t = self.tree(**{f"{F}/README.md".replace("/", "__"): item("F-1", check=False)})
         self.assertProblem(t.problems(), "without a `Conflict check` section")
@@ -1050,7 +1055,24 @@ class Falsify(unittest.TestCase):
         results = self.run_plan([self.guard("    if overdue:", ["S-1/AC-2"])])
         spry.record_falsify(spry.Project(self.root), "SL-1", spry.falsify_rows(results))
         with open(self.slice_doc) as handle:
-            self.assertIn("| if overdue: | `if overdue:` → `if False and (overdue):` | S-1/AC-2 | survived |", handle.read())
+            self.assertIn("| if overdue: <!-- f:", handle.read())
+        rows = spry.falsify_table(spry.Project(self.root).items["SL-1"])
+        self.assertEqual(rows, [["if overdue:", "`if overdue:` → `if False and (overdue):`", "S-1/AC-2", "survived"]])
+
+    def test_a_row_renamed_in_plain_words_still_counts(self):
+        results = self.run_plan(self.both_guards())
+        rows = [r.replace("| if count >= 3: <!--", "| A fourth book is refused <!--")
+                 .replace("| if overdue: <!--", "| An overdue member is refused <!--") for r in spry.falsify_rows(results)]
+        lines = self.merge_lines("\n".join(rows) + "\n")
+        self.assertIn(("ok", "falsify: all 2 controls the diff adds were run"), lines)
+
+    def test_tests_naming_the_source_run_first(self):
+        self.write({"tests/test_other.py": '"""S-1/AC-1 elsewhere"""\nassert True\n'})
+        entry = {"file": "src/loans.py", "_tests": ["tests/test_limit.py", "tests/test_other.py"]}
+        self.assertEqual(spry.likely_first(spry.Project(self.root), entry),
+                         [["tests/test_limit.py"], ["tests/test_other.py"]])
+        entry["_tests"] = ["tests/test_other.py"]
+        self.assertEqual(spry.likely_first(spry.Project(self.root), entry), [["tests/test_other.py"]])
 
 
     def merge_lines(self, rows):
@@ -1136,6 +1158,26 @@ class Falsify(unittest.TestCase):
         self.assertIn("✗ lint", " ".join(said))
         code, _ = self.gate()
         self.assertEqual(self.ran(log), ["f", "f"], "a failure is never stamped green")
+
+    def test_gate_retries_a_timeout_quietly_but_never_a_real_failure(self):
+        flag = os.path.join(self.root, "busy")
+        retry = "python3 run.py tests/test_limit.py"
+        flaky = f"if [ -f {flag} ]; then rm {flag}; echo 'Test timed out in 5000ms'; exit 1; fi; {retry}"
+        log = self.gate_config("true", affected=flaky)
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["tests"]["retry"] = f"{retry} && echo r >> {log}"
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        open(flag, "w").close()
+        code, said = self.gate()
+        self.assertEqual(code, 0, said)
+        self.assertEqual(self.ran(log), ["r"], "the quiet retry ran, once")
+        self.write({"src/loans.py": "broken(\n"})
+        code, said = self.gate()
+        self.assertEqual(code, 1)
+        self.assertFalse(any("quiet retry" in x for x in said), "an assertion or syntax error is not retried")
 
     def test_gate_refuses_a_placeholder(self):
         self.gate_config("<lint command>")

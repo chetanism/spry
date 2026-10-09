@@ -223,3 +223,23 @@ Entry format:
 - **Adapt:** nothing
 - **Migrate:** run `spry check`: fix each dropped blocker or circle it names, by removing the entry.
   Slices planned earlier keep their order unwritten; add `blocked_by` where one needs another.
+
+## CH-14 · Fewer re-runs, and the question comes last
+
+- **Date:** 2026-10-09 · **Version:** 0.11.0
+- **Touches:** `tool/spry.py` (`gate`, `falsify run`, `falsify --record`, `merge-check`, `check`),
+  `process/slicing.md` (*While building*, *Close*), `process/chat.md`, `templates/agents.md`,
+  `templates/spry.config.json` (`tests.retry`), `stacks/*`
+- **Why:** from the connect pilot, SL-158 to SL-162.
+  - The gate ran 3–5 times a slice: affected packages at full concurrency timed out tests the
+    change never touched, on a loaded laptop.
+  - `merge-check` matched falsify rows by the label `suggest` wrote, so a row renamed in plain words
+    blocked the merge and falsify ran again in full — about ten minutes, three times.
+  - A control whose criterion about 60 files cite ran all 60 when the one test naming its source
+    file would have caught it.
+  - A test title with `<token>` inside a generated proof block was flagged as a leftover placeholder.
+  - Replies put `ASK` first, ahead of the findings the question turns on.
+- **Adapt:** set `tests.retry` — the affected tests with no parallelism (`stacks/<stack>.md`); leave
+  it empty to never retry. `tests.retry_when` overrides what counts as a timeout.
+- **Migrate:** a project that copied the reply order into its `AGENTS.md` moves `ASK` last. Falsify
+  rows recorded earlier have no key and still match by label.

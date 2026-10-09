@@ -1,6 +1,6 @@
 {
-  "spry": "0.10.0",
-  "spry_baseline": "CH-13",
+  "spry": "0.11.0",
+  "spry_baseline": "CH-14",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -34,6 +34,7 @@
   "tests": {
     "match": ["<glob of test files, e.g. **/*.test.ts>"],
     "affected": "<command that runs only tests affected by the working tree>",
+    "retry": "",
     "all": "<command that runs every test, in parallel>",
     "junit": "<path the runner writes JUnit XML to>",
     "parts": [

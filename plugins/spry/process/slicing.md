@@ -75,6 +75,8 @@ alternatives.
   (`checks.fast`: format, lint, types — cheapest first), then the affected tests, and stops at the
   first failure. A pass is stamped against the code; while only documents change it runs `check`
   alone. So fix lint before tests run, and write documents after the gate, never the reverse.
+  With `tests.retry` set, affected tests that fail on a timeout run once more, quietly; a real
+  failure fails both runs, so never re-run the gate to get past a timeout.
 - **Never run the full suite** (`tests.all`). CI runs it on the main branch and nightly;
   `/spry:test-all` runs it when a person asks.
 - **Push once,** at close. Each push runs CI again.
@@ -102,9 +104,14 @@ alternatives.
      each `expect` to the criteria that control serves, and add any the draft missed (same
      `find` / `with` form). A control that cannot run (it needs a clock, a network) gets the row
      `skipped — <reason>`, for a person to accept at the merge.
+   - Rename a `control` in plain words if it helps the reader — before the run or in the table
+     after. The `<!-- f:… -->` in each row names the control by its file and line, so keep it.
    - `falsify run .spry/falsify/SL-<n>.json --dry-run`, then
      `falsify run .spry/falsify/SL-<n>.json --record SL-<n>` — it runs only the tests citing each
-     `expect`, stops at the first failure, restores every file, and writes the table. With
+     `expect` — those naming the control's source file first, the rest only if they do not
+     notice — stops at the first failure, restores every file, and writes the table. A control
+     whose `expect` is cited by many files is named `wide:`; list the files that matter under
+     `files` to cap it. With
      `falsify.parallel` set (or `--jobs N`) it spreads controls over git worktrees and never
      touches this tree; commit first, or it runs serially and says why.
    - `survived` → a new test, then run again until `caught`. Only when no test should catch it,

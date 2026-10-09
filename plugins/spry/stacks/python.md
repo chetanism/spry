@@ -9,6 +9,7 @@ audience: 8
 |---|---|
 | `tests.match` | `["**/test_*.py", "**/*_test.py"]` |
 | `tests.affected` | `pytest --testmon` (pytest-testmon) |
+| `tests.retry` | `pytest --lf -p no:xdist` — only the tests that failed, one at a time |
 | `tests.all` | `pytest -n auto` (pytest-xdist) |
 | `tests.junit` | `reports/junit.xml` — the runner writes it with `--junitxml=reports/junit.xml` |
 | falsify runner | `pytest -x -q {files}` |

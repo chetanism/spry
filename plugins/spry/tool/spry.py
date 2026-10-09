@@ -65,7 +65,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.10.0"
+VERSION = "0.11.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -751,7 +751,7 @@ def check(project: Project):
                     in_fence = not in_fence
                 if not in_fence and "<!-- guide:" in line:
                     project.problem(path, n, "template guide left in a finished document")
-            for n, line in prose(text):
+            for n, line in prose(strip_blocks(text)):
                 for m in PLACEHOLDER.finditer(line):
                     word = m.group(1).split()[0].lower()
                     if word not in HTML_TAGS and not m.group(1).startswith(("http", "/")):
@@ -1788,19 +1788,47 @@ def in_tree(project: Project, root: str, cwd: str) -> str:
     return os.path.join(root, os.path.relpath(cwd, project.root))
 
 
+GENERIC_STEMS = ("index", "__init__", "mod", "main", "lib")
+
+
+def likely_first(project: Project, entry: dict) -> list:
+    """The control's tests in tiers: those that name its source file first, then the rest.
+    One failure is enough, so a cheap tier that catches it saves running a criterion's every test."""
+    tests = entry.get("_tests") or []
+    path = entry.get("file") or ""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    if stem in GENERIC_STEMS:
+        stem = os.path.basename(os.path.dirname(path))
+    if not stem:
+        return [tests]
+    word = re.compile(r"(?<![\w-])" + re.escape(stem) + r"(?![\w-])")
+    first = []
+    for rel in tests:
+        try:
+            if word.search(read(os.path.join(project.root, rel))):
+                first.append(rel)
+        except (OSError, UnicodeDecodeError):
+            pass
+    rest = [rel for rel in tests if rel not in first]
+    return [tier for tier in (first, rest) if tier] or [tests]
+
+
 def run_control(project: Project, entry: dict, table: list, timeout: int, red: dict, root: str) -> tuple:
     """Run the tests one mutated control should fail, in the tree at `root`. Returns (result, note)."""
     outcomes, notes = [], []
-    for key, files in group_files(project, entry["_tests"]).items():
-        if key in red:
-            outcomes.append("unreliable")
-            notes.append(red[key])
-            continue
-        outcome, _tail = run_tests(project, table[key[0]], in_tree(project, root, key[1]), files, timeout, root)
-        outcomes.append({"fail": "caught", "pass": "survived"}.get(outcome, "unreliable"))
-        if outcome == "timeout":
-            notes.append("timed out")
-        if outcome == "fail":
+    for tier in likely_first(project, entry):
+        for key, files in group_files(project, tier).items():
+            if key in red:
+                outcomes.append("unreliable")
+                notes.append(red[key])
+                continue
+            outcome, _tail = run_tests(project, table[key[0]], in_tree(project, root, key[1]), files, timeout, root)
+            outcomes.append({"fail": "caught", "pass": "survived"}.get(outcome, "unreliable"))
+            if outcome == "timeout":
+                notes.append("timed out")
+            if outcome == "fail":
+                break
+        if "caught" in outcomes:
             break
     if "caught" in outcomes:
         return "caught", "; ".join(notes)
@@ -1877,12 +1905,19 @@ def jobs_for(project: Project, wanted, controls: int) -> int:
     return max(1, min(jobs, controls))
 
 
+WIDE_CONTROL = 20
+
+
 def falsify_run(project: Project, plan_path: str, dry: bool = False, say=print, jobs=None) -> list:
     """Run a plan. Returns [(entry, result, note)], result caught | survived | unreliable."""
     plan = load_plan(project, plan_path)
     table = runners(project)
     timeout = int(project.config.get("falsify", {}).get("timeout", 600))
     groups = group_files(project, [f for e in plan for f in e["_tests"]])
+    for entry in plan:
+        if len(entry["_tests"]) > WIDE_CONTROL and not entry.get("files"):
+            say(f"wide: `{entry['control']}` may run {len(entry['_tests'])} test files — the ones naming "
+                f"{os.path.basename(entry['file'])} run first; list the ones that matter under `files` to cap it")
     jobs = jobs_for(project, jobs, len(plan))
     if jobs > 1:
         blocker = parallel_blocker(project, plan)
@@ -2021,11 +2056,22 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
         shutil.rmtree(parent, ignore_errors=True)
 
 
+ROW_KEY = re.compile(r"\s*<!--\s*(f:[0-9a-f]{8})\s*-->")
+
+
+def control_key(path: str, find: str) -> str:
+    """Names a control by where it is, not by its label: a row renamed in plain words still matches."""
+    return "f:" + hashlib.sha1(f"{path}\n{' '.join(find.split())}".encode()).hexdigest()[:8]
+
+
 def falsify_rows(results) -> list:
     rows = []
     for entry, result, note in results:
         expect = ", ".join(entry["expect"])
-        cells = [entry["control"], describe(entry), expect, result + (" — " + note if note else "")]
+        control = entry["control"]
+        if entry.get("file") and entry.get("find"):
+            control += f" <!-- {control_key(entry['file'], entry['find'])} -->"
+        cells = [control, describe(entry), expect, result + (" — " + note if note else "")]
         rows.append("| " + " | ".join(c.replace("|", "\\|") for c in cells) + " |")
     return rows
 
@@ -2552,10 +2598,14 @@ def hooks(project: Project, remove: bool = False) -> list:
 # ---------------------------------------------------------------- merge-check / merge-message
 
 def falsify_table(item: Item) -> list:
-    """Cells of each result row in the slice's Falsify table."""
+    """Cells of each result row in the slice's Falsify table, row keys left out."""
     lines = section_lines(item.text, "Falsify") or []
-    rows = [cells for _i, cells in table_rows(lines)]
+    rows = [[ROW_KEY.sub("", c) for c in cells] for _i, cells in table_rows(lines)]
     return [r for r in rows if r and r[0].lower() != "control"]
+
+
+def falsify_keys(item: Item) -> set:
+    return {m.group(1) for _i, line in section_lines(item.text, "Falsify") or [] for m in ROW_KEY.finditer(line)}
 
 
 def merge_check(project: Project, slice_id: str, base: str | None = None) -> list:
@@ -2620,7 +2670,9 @@ def required_controls(project: Project, item: Item, rows: list, base: str) -> li
     except PlanError as e:
         return [("block", f"falsify: cannot list the controls the diff requires — {e}")]
     have = {" ".join(cells[0].replace("\\|", "|").split()) for cells in rows}
-    missing = [e for e in wanted if " ".join(e["control"].split()) not in have]
+    keys = falsify_keys(item)
+    missing = [e for e in wanted if control_key(e["file"], e["find"]) not in keys
+               and " ".join(e["control"].split()) not in have]
     if not missing:
         return [("ok", f"falsify: all {len(wanted)} control{'s' if len(wanted) != 1 else ''} the diff adds were run")] if wanted else []
     return [("block", f"falsify: `{e['control']}` ({e['file']}) was not run — run it, or record it as "
@@ -2707,6 +2759,9 @@ def gate_steps(project: Project) -> list:
     return steps
 
 
+DEFAULT_RETRY_WHEN = r"timed? ?out|timeout|ETIMEDOUT"
+
+
 def gate(project: Project, force: bool = False, say=print) -> int:
     """`spry check`, then the fast checks, then the affected tests — stopping at the first failure.
     A pass is stamped with the code's fingerprint; while the code is unchanged, only `check` runs again."""
@@ -2727,10 +2782,20 @@ def gate(project: Project, force: bool = False, say=print) -> int:
     if fingerprint and stamp.get("code") == fingerprint and not force:
         say(f"– {', '.join(n for n, _ in steps)} skipped: no code changed since they passed at {stamp.get('at', '?')}")
         return 0
+    tests = project.config.get("tests", {})
+    retry = str(tests.get("retry") or "").strip()
+    retry_when = re.compile(tests.get("retry_when") or DEFAULT_RETRY_WHEN, re.I)
     for name, command in steps:
         started = time.time()
         done = subprocess.run(command, shell=True, cwd=project.root, capture_output=True, text=True)
         say(f"{'✓' if done.returncode == 0 else '✗'} {name} · {time.time() - started:.1f}s")
+        if done.returncode != 0 and name == "affected tests" and retry and retry_when.search(done.stdout + done.stderr):
+            # A test that times out under load and passes on a quiet machine is load, not code.
+            # A real failure fails both runs, so the retry never turns red into green.
+            say(f"  timed out under load — once more, quietly: {retry}")
+            started = time.time()
+            done = subprocess.run(retry, shell=True, cwd=project.root, capture_output=True, text=True)
+            say(f"{'✓' if done.returncode == 0 else '✗'} {name}, quiet retry · {time.time() - started:.1f}s")
         if done.returncode != 0:
             tail = (done.stdout + done.stderr).rstrip().split("\n")[-40:]
             say("\n".join("  " + line for line in tail))

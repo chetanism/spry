@@ -163,7 +163,7 @@ spry/
 Tone (§7) sets the vocabulary; these set the shape, at every level.
 
 - Bullets, not prose. No preamble, recap, closing summary or restated question.
-- Grouped under only the headings a reply needs: `BLOCKED` · `ASK` · `DONE` · `NEXT` · `FYI`.
+- Grouped under only the headings a reply needs: `BLOCKED` · `DONE` · `NEXT` · `FYI` · `ASK`.
 - Every bullet leads with a tag in brackets:
   - **past tense for what the agent did** — `[Added]` `[Changed]` `[Fixed]` `[Ran]` `[Found]`;
   - **to-do verbs for what the user should do** — `[Review]` `[Decide]` `[Run]` `[Approve]`;
@@ -267,7 +267,10 @@ first so a slow one never runs only to be thrown away by a lint error.
 - **`gate`** runs `spry check` → `checks.fast` (format, lint, types, cheapest first) → affected
   tests, stopping at the first failure. A pass is stamped in `.spry/green` with a fingerprint of the
   code (every file outside `checks.docs`, default `spry/**` and `**/*.md`); while it matches, the
-  gate runs `check` alone. So a document fixed after the tests never re-runs them.
+  gate runs `check` alone. So a document fixed after the tests never re-runs them. When the
+  affected tests fail on a timeout (`tests.retry_when`) and `tests.retry` is set, the gate runs that
+  once — the same tests with no parallelism — so load on a busy machine is not a red gate; a real
+  failure fails both runs.
 - **CI** follows the same order: `check` (which also prints `changed --base` → `code=true|false`),
   then fast checks, then tests — and the last two only when `code` is true. Slice close pushes once.
 - `spry tests --slowest` reads JUnit XML and names the slowest tests.
@@ -288,7 +291,8 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   Plan entries use writ's exact `find` / `with` form.
 - **`expect` names acceptance criteria** (`S-1/AC-2`); tests are found by their names.
 - **Runs only those test files**, through per-runner commands with `{files}`, using the runner's
-  fail-fast flag — one failure is enough.
+  fail-fast flag — one failure is enough. Files that name the control's source file run first; the
+  rest run only if those miss it. A control cited by more than 20 files is named `wide:` at the run.
 - **Baseline once** for the union of files; a red baseline marks the group `unreliable`.
 - **Parallel in git worktrees** (`falsify.parallel`: `false`, `true` or a number; `--jobs N`):
   each worker has a detached worktree of `HEAD` outside the repository, so this tree is never
@@ -305,7 +309,8 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   false `caught`, found while building this.
 - **`--record SL-n`** writes the results into the slice's Falsify table.
 - **The diff decides what is falsified, not the agent.** `merge-check --base` runs `suggest` again
-  and blocks when a control it lists has no row. The agent can add controls, never drop one; a
+  and blocks when a control it lists has no row. A row is matched by the `<!-- f:… -->` key the
+  run writes (a hash of file and `find`), so a row renamed in plain words still counts. The agent can add controls, never drop one; a
   control that cannot run is recorded `skipped — <reason>`.
 - Result per control — `caught` · `survived` · `unreliable` · `skipped` — goes into the slice
   file. `survived` only when every group of its tests ran: one red or timed out makes it
@@ -447,3 +452,7 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-09 — backlog rows say what each item is part of, from the top level down (CH-11, 0.8.1).
 - 2026-10-09 — `review` covers any PR and a solo plan item, by fresh eyes, posting one comment per line with suggested changes; `process/reviewing.md` and `review-check` (CH-12, 0.9.0). From pulse's `requirement-review`.
 - 2026-10-09 — backlog rows say what they unblock, and what a blocked row waits on stands where and with whom; `slice` writes `blocked_by` between slices that need each other; `check` refuses a dropped blocker and a circle (CH-13, 0.10.0).
+- 2026-10-09 — from the connect pilot (CH-14, 0.11.0): the gate retries a timeout once, quietly;
+  falsify runs the tests naming the source first and names wide controls; falsify rows keep a key, so
+  renaming one never forces a re-run; a test name in a generated block is not a placeholder; `ASK`
+  comes last in a reply.
