@@ -11,6 +11,7 @@ audience: 2
 - **What we are building, and in what order** → [Roadmap](plan/README.md)
 - **Click down** milestone → epic → feature → story. Each folder's page explains itself and lists
   what is inside, with progress.
+- **What to pick up next** → [Backlog](BACKLOG.md)
 - **How much is built and proven** → [Coverage](COVERAGE.md)
 - **Words we use** → [Glossary](knowledge/glossary.md)
 

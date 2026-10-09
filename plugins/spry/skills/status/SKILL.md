@@ -1,6 +1,6 @@
 ---
 name: status
-description: Show how far the project has got — done versus total at every level, open slices and open bugs — explained at the reader's tone. Use when someone asks where things stand.
+description: Show how far the project has got — done versus total at every level, open slices and open bugs — and what to pick up next, explained at the reader's tone. Use when someone asks where things stand or what to work on next.
 argument-hint: "[ID, or a level such as feature]"
 ---
 
@@ -15,4 +15,7 @@ argument-hint: "[ID, or a level such as feature]"
      proven, open bugs, slices open longer than the rest.
 3. When the person asks how much is done overall, or what is built but not proven, run
    `python3 spry/tool/spry.py coverage` and answer from it.
-4. Never invent progress: everything comes from the tool's output.
+4. When the person asks what to work on next, what is blocked, or what still needs planning, run
+   `python3 spry/tool/spry.py backlog` and answer from it — *Ready to build* for developers,
+   *Needs planning* for product.
+5. Never invent progress: everything comes from the tool's output.

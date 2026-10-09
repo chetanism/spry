@@ -15,7 +15,7 @@ audience: 2
 <!-- spry:children -->
 <!-- /spry:children -->
 
-Done and proven across the whole plan: [Coverage](../COVERAGE.md).
+Done and proven across the whole plan: [Coverage](../COVERAGE.md). What to pick up next: [Backlog](../BACKLOG.md).
 
 ## Later
 

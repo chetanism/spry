@@ -159,3 +159,22 @@ Entry format:
 - **Adapt:** a project with its own after-merge rule (in `AGENTS.md`, say) words it the same way:
   run it only when `spry.py changed --base <PR head>` prints `code=true`.
 - **Migrate:** nothing
+
+## CH-10 · A backlog page, and fresh pages on any branch
+
+- **Date:** 2026-10-09 · **Version:** 0.8.0
+- **Touches:** `tool/spry.py` (`backlog`, `view`, `hooks`, `index --restore`; `index` fills
+  `spry/BACKLOG.md`; `check --base` refuses generated blocks a branch changed),
+  `process/templates/{backlog,project-readme,roadmap,ci-github.yml}`, `process/setup.md`,
+  `process/slicing.md`, `skills/{slice-open,status}`
+- **Why:** choosing the next piece of work meant opening every story, task and bug folder. Nothing
+  listed what was being built, what was ready, what still needed slicing or planning, or what was
+  blocked and on what — the view writ's `SLICE-QUEUE.md` gave, there kept in order by hand. And the
+  generated pages showed the main branch as of CI's last run: running `spry index` locally to see
+  more was the way to a conflicting pull request.
+- **Adapt:** whether to offer `spry hooks` to each person (one run per clone): after a checkout or a
+  pull that changed the plan or a test, they refresh `.spry/view/` and say so.
+- **Migrate:** add `spry/BACKLOG.md` from `templates/backlog.md`; add the Backlog line to
+  `spry/README.md` (*Start here*) and below the milestones block in `spry/plan/README.md`; in
+  `.github/workflows/spry.yml`, add the `git fetch` step before `spry index` in the `index` job, and
+  pass `--base` to `check` on pull requests if the workflow does not already.

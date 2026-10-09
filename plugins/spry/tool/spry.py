@@ -3,7 +3,12 @@
 
     python3 spry/tool/spry.py check              # is the tree consistent? exit 1 if not
     python3 spry/tool/spry.py status [--level story]
-    python3 spry/tool/spry.py index [--check]    # regenerate marker blocks and INDEX.md files
+    python3 spry/tool/spry.py index [--check]    # regenerate marker blocks and INDEX.md files (CI on main)
+    python3 spry/tool/spry.py index --restore origin/main   # on a branch: undo generated blocks it changed
+    python3 spry/tool/spry.py coverage           # defined vs done, and what is built but not proven
+    python3 spry/tool/spry.py backlog            # in progress, ready to build, needs slicing, blocked, needs planning
+    python3 spry/tool/spry.py view [--since <commit>]   # both pages for this working tree → .spry/view/
+    python3 spry/tool/spry.py hooks [--remove]   # refresh .spry/view/ after each checkout and pull
     python3 spry/tool/spry.py related <file>     # candidates for a conflict check
     python3 spry/tool/spry.py next <type>        # next free ID: milestone, story, slice, decision …
     python3 spry/tool/spry.py new <type> --parent <ID> --title "…" [--owner …]
@@ -59,7 +64,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.7.1"
+VERSION = "0.8.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -968,6 +973,118 @@ def coverage_block(project: Project, doc: str) -> str:
     return "\n".join(out)
 
 
+def slice_branches(project: Project) -> dict:
+    """{"SL-2": "origin/sl-2-refuse-over-limit"} — local or remote-tracking branches named for a slice
+    as `slice-open` names them: the slice's file name without `.md`, lower case."""
+    done = git(project.root, "for-each-ref", "--format=%(refname:short)", "refs/heads", "refs/remotes")
+    if done.returncode != 0:
+        return {}
+    refs = sorted(done.stdout.split())
+    out = {}
+    for s in project.of_type("slice"):
+        stem = os.path.basename(s.doc)[:-3].lower()
+        found = next((r for r in refs if r.lower() == stem or r.lower().endswith("/" + stem)), None)
+        if found:
+            out[s.id] = found
+    return out
+
+
+def blockers(project: Project, item: Item) -> list:
+    """Unfinished plan items named in `blocked_by` by the item or anything above it."""
+    out = []
+    for node in [item] + item.ancestors():
+        refs = node.fm.get("blocked_by") if isinstance(node.fm.get("blocked_by"), list) else []
+        out += [project.items[r] for r in refs if r in project.items and not project.done(project.items[r])
+                and project.items[r] not in out]
+    return out
+
+
+def backlog(project: Project) -> dict:
+    """What to pick up, in plan order: by top-level item; inside one, bugs, then tasks, then stories,
+    each in tree order; slices by ID. Nothing here is typed — no priority field, no hand-kept queue."""
+    branches = slice_branches(project)
+    rank = {"bug": 0, "task": 1, "story": 2}
+    out = {"progress": [], "ready": [], "slicing": [], "blocked": [], "planning": []}
+
+    def live(item):
+        return item.state != "dropped" and not any(a.state == "dropped" for a in item.ancestors())
+
+    def walk(item):
+        yield item
+        for child in item.children:
+            yield from walk(child)
+
+    for top in project.top:
+        nodes = [n for n in walk(top) if live(n)]
+        for n in nodes:
+            if n.type == "slice" or any(a.state == "draft" for a in n.ancestors()):
+                continue
+            kind = project.child_level(n.type) if n.type in project.levels else None
+            if n.state == "draft":
+                out["planning"].append((n, "finishing — it is a draft"))
+            elif kind and kind != "slice" and n.state == "ready" and not project.counted(n, kind):
+                out["planning"].append((n, PLURAL[kind]))
+        units = sorted((n for n in nodes if n.type in rank), key=lambda n: rank[n.type])
+        for unit in units:
+            if unit.state != "ready" or any(a.state == "draft" for a in unit.ancestors()) or project.done(unit):
+                continue
+            waiting = blockers(project, unit)
+            slices = sorted(project.counted(unit, "slice"), key=lambda s: s.num)
+            for s in slices:
+                if s.state == "open" or (s.state == "planned" and s.id in branches):
+                    where = s.fm.get("branch") if s.state == "open" else branches[s.id]
+                    pr = s.fm.get("pr", "")
+                    out["progress"].append((s, f"`{where}`" + (f" · PR #{pr}" if str(pr).isdigit() else "")))
+                elif s.state == "planned":
+                    late = waiting + [b for b in blockers(project, s) if b not in waiting]
+                    out["blocked" if late else "ready"].append((s, late))
+            if unit.type == "story":
+                covered = {ac for s in slices for ac in (s.fm.get("covers") or [])}
+                missing = [a for a, v in unit.acs.items() if not v["dropped"] and a not in covered]
+                need = "slices" if not slices else ", ".join(missing) if missing else None
+            else:
+                need = None if slices else "slices"
+            if need:
+                out["blocked" if waiting else "slicing"].append((unit, waiting if waiting else need))
+    return out
+
+
+def backlog_block(project: Project, doc: str) -> str:
+    """The backlog page: what is being built, what to build next, and what stands in the way."""
+    items = backlog(project)
+
+    def owner(item):
+        return item.fm.get("owner") or "—"
+
+    def section(title, intro, head, rows):
+        out = ["", f"### {title}", "", intro, ""]
+        if not rows:
+            return out + ["_None._"]
+        cols = head.count("|") - 1
+        return out + [head, "|" + "---|" * cols] + rows
+
+    out = []
+    out += section("In progress", "Being built now — open, or on a branch named for the slice. Leave these to their owner.",
+                   "| Slice | For | Owner | Where |",
+                   [f"| {link(doc, s)} | {link(doc, s.parent)} | {owner(s)} | {where} |" for s, where in items["progress"]])
+    out += section("Ready to build", "Planned, and nothing they wait for is unfinished. The first row is next; "
+                   "`/spry:slice-open` with no ID offers it.",
+                   "| # | Slice | For | Covers | Owner |",
+                   [f"| {n} | {link(doc, s)} | {link(doc, s.parent)} | {', '.join(s.fm.get('covers') or []) or '—'} | {owner(s)} |"
+                    for n, (s, _) in enumerate(items["ready"], 1)])
+    out += section("Needs slicing", "Ready, but no slice is planned for all of it yet — `/spry:slice <ID>` splits it.",
+                   "| Item | Missing | Owner |",
+                   [f"| {link(doc, i)} | {'slices' if need == 'slices' else 'a slice for ' + need} | {owner(i)} |"
+                    for i, need in items["slicing"]])
+    out += section("Blocked", "Waiting on unfinished work, named here.",
+                   "| Item | Waiting on |",
+                   [f"| {link(doc, i)} | {', '.join(link(doc, b) for b in waits)} |" for i, waits in items["blocked"]])
+    out += section("Needs planning", "Product's next step: finish a draft, or add what an item is still missing.",
+                   "| Item | Needs | Owner |",
+                   [f"| {link(doc, i)} | {need} | {owner(i)} |" for i, need in items["planning"]])
+    return "\n".join(out[1:])
+
+
 def index_block(project: Project, index_path: str) -> str:
     folder = os.path.dirname(index_path)
     lines = []
@@ -1022,6 +1139,8 @@ def index(project: Project, dry: bool):
     apply(front, "children", top_block(project, front, True), False)
     cover = os.path.join(project.spry, "COVERAGE.md")
     apply(cover, "coverage", coverage_block(project, cover), True)
+    queue = os.path.join(project.spry, "BACKLOG.md")
+    apply(queue, "backlog", backlog_block(project, queue), True)
     for dirpath, dirnames, filenames in os.walk(os.path.join(project.spry, "knowledge")):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         if "INDEX.md" in filenames:
@@ -2214,6 +2333,123 @@ def changed_criteria(project: Project, base: str):
                                 "warning")
 
 
+# ---------------------------------------------------------------- generated blocks on a branch
+
+BLOCK = re.compile(r"<!-- spry:(\w+) -->\n(.*?)<!-- /spry:\1 -->", re.S)
+
+
+def block_drift(project: Project, base: str) -> list:
+    """[(path, block name, line, the base's content)] for generated blocks this branch changed.
+
+    Only CI on the main branch writes them, so a branch that commits its own copy conflicts with the
+    next one CI writes. A block may match `base` as it is now or as it was where the branch forked —
+    merging the main branch in brings CI's newer copy, and that is not drift."""
+    if git(project.root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
+        return []
+    fork = git(project.root, "merge-base", base, "HEAD").stdout.strip()
+    refs = [base] + ([fork] if fork else [])
+    touched = git(project.root, "diff", "--relative", "--name-only", fork or base, "--", "spry")
+    out = []
+    for rel in sorted(line for line in touched.stdout.split("\n") if line.endswith(".md")):
+        path = os.path.join(project.root, rel)
+        if not os.path.isfile(path) or rel.startswith(("spry/process/", "spry/history/")):
+            continue
+        olds = [dict(BLOCK.findall(shown.stdout)) for shown in
+                (git(project.root, "show", f"{ref}:./{rel}") for ref in refs) if shown.returncode == 0]
+        if not olds:
+            continue  # new on this branch: nothing on the main branch to conflict with
+        text = read(path)
+        for m in BLOCK.finditer(text):
+            name, content = m.group(1), m.group(2)
+            known = [old[name] for old in olds if name in old]
+            if known and content not in known:
+                out.append((path, name, text[:m.start()].count("\n") + 1, known[0]))
+    return out
+
+
+def changed_blocks(project: Project, base: str):
+    for path, name, line, _ in block_drift(project, base):
+        project.problem(path, line, f"`spry:{name}` block differs from {base} — only CI on the main branch "
+                                    f"writes it; `spry index --restore {base}` puts it back, "
+                                    f"`spry view` shows a fresh copy")
+
+
+def restore_blocks(project: Project, base: str) -> list:
+    """Put back the base's content in every generated block this branch changed. Returns the files."""
+    changed = {}
+    for path, name, _, content in block_drift(project, base):
+        changed[path] = replace_block(changed.get(path) or read(path), name, content)
+    for path, text in changed.items():
+        write(path, text)
+    return sorted(project.rel(p) for p in changed)
+
+
+# ---------------------------------------------------------------- view / hooks
+
+VIEWS = (("BACKLOG.md", "backlog", backlog_block), ("COVERAGE.md", "coverage", coverage_block))
+HOOK_MARK = "# spry: refresh .spry/view/"
+
+
+def view(project: Project, since: str | None = None) -> list:
+    """Write the backlog and coverage pages for this working tree to `.spry/view/`, never committed.
+
+    With `since` (a git hook passes the commit it came from), only when the plan or a test file
+    changed since then, or no view exists yet. Returns the files written."""
+    folder = os.path.join(project.root, ".spry", "view")
+    if since and all(os.path.isfile(os.path.join(folder, name)) for name, _, _ in VIEWS):
+        diff = git(project.root, "diff", "--relative", "--name-only", since, "HEAD", "--", ".")
+        globs = project._test_globs()
+        paths = [p for p in diff.stdout.split("\n") if p]
+        if diff.returncode == 0 and not any(p.startswith("spry/") or any(g.match(p) for g in globs) for p in paths):
+            return []
+    os.makedirs(folder, exist_ok=True)
+    stamp = f"> Local view of this working tree, written {time.strftime('%Y-%m-%d %H:%M')} by `spry view`. Not committed."
+    written = []
+    for name, block, make in VIEWS:
+        target = os.path.join(folder, name)
+        content = make(project, target)
+        source = os.path.join(project.spry, name)
+        frame = read(source) if os.path.isfile(source) else f"# {name[:-3].title()}\n\n<!-- spry:{block} -->\n<!-- /spry:{block} -->\n"
+        text = replace_block(frame, block, content) or frame
+        text = re.sub(r"^(# .*)$", lambda m: m.group(1) + "\n\n" + stamp, text, count=1, flags=re.M)
+        write(target, text)
+        written.append(project.rel(target))
+    return written
+
+
+def hooks(project: Project, remove: bool = False) -> list:
+    """Install (or remove) git hooks that run `spry view --since` after a checkout or a pull.
+    A hook spry did not write is never touched: the line to add is reported instead."""
+    found = git(project.root, "rev-parse", "--git-path", "hooks")
+    prefix = git(project.root, "rev-parse", "--show-prefix")
+    if found.returncode != 0:
+        raise SystemExit("not a git repository — hooks need one")
+    folder = os.path.join(project.root, found.stdout.strip())
+    prefix = prefix.stdout.strip()
+    tool, config = shlex.quote(prefix + "spry/tool/spry.py"), shlex.quote(prefix + "spry/spry.config.json")
+    run = (f"[ -f {config} ] && [ -f {tool} ] && command -v python3 >/dev/null 2>&1 || exit 0\n"
+           f"python3 {tool} --root {shlex.quote(prefix or '.')} view --since \"$since\" || true\n")
+    scripts = {"post-checkout": '[ "$3" = 1 ] || exit 0\nsince="$1"\n', "post-merge": "since=ORIG_HEAD\n"}
+    out = []
+    for name, head in scripts.items():
+        path = os.path.join(folder, name)
+        ours = os.path.isfile(path) and HOOK_MARK in read(path)
+        if remove:
+            if ours:
+                os.remove(path)
+                out.append(f"removed: {name}")
+            continue
+        if os.path.isfile(path) and not ours:
+            out.append(f"kept: {name} is not spry's — add to it: python3 {tool} view --since <previous commit>")
+            continue
+        os.makedirs(folder, exist_ok=True)
+        write(path, f"#!/bin/sh\n{HOOK_MARK} when the plan or a test changed. "
+                    f"Remove: python3 {tool} hooks --remove\n{head}{run}")
+        os.chmod(path, 0o755)
+        out.append(f"wrote: {name}")
+    return out
+
+
 # ---------------------------------------------------------------- merge-check / merge-message
 
 def falsify_table(item: Item) -> list:
@@ -2437,12 +2673,20 @@ def main(argv=None) -> int:
     parser.add_argument("--version", action="version", version=VERSION)
     sub = parser.add_subparsers(dest="command", required=True)
     p = sub.add_parser("check", help="consistency of the plan, knowledge and links")
-    p.add_argument("--base", help="git ref to compare acceptance criteria against (warns on cited ones that changed)")
+    p.add_argument("--base", help="git ref the branch merges into: warns on cited criteria that changed, "
+                                  "refuses generated blocks the branch changed")
     p = sub.add_parser("status", help="done vs total at every level")
     p.add_argument("--level", help="stop at this level, e.g. feature")
     p = sub.add_parser("coverage", help="defined vs done for the whole plan, and what is built but not proven")
+    p = sub.add_parser("backlog", help="what is being built, what to build next, and what stands in the way")
+    p = sub.add_parser("view", help="write the backlog and coverage pages for this working tree to .spry/view/")
+    p.add_argument("--since", help="only when the plan or a test changed since this commit (for git hooks)")
+    p = sub.add_parser("hooks", help="git hooks that refresh .spry/view/ after a checkout or a pull")
+    p.add_argument("--remove", action="store_true", help="remove the hooks spry wrote")
     p = sub.add_parser("index", help="regenerate marker blocks and INDEX.md files")
-    p.add_argument("--check", action="store_true", help="change nothing; exit 1 if anything is stale")
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--check", action="store_true", help="change nothing; exit 1 if anything is stale")
+    g.add_argument("--restore", metavar="BASE", help="on a branch: put back BASE's copy of every generated block it changed")
     p = sub.add_parser("related", help="conflict-check candidates for a document")
     p.add_argument("file")
     p = sub.add_parser("next", help="next free ID for a type")
@@ -2543,6 +2787,7 @@ def main(argv=None) -> int:
     if args.command == "check":
         if args.base:
             changed_criteria(project, args.base)
+            changed_blocks(project, args.base)
         problems = check(project)
         for p in problems:
             print(p)
@@ -2554,6 +2799,21 @@ def main(argv=None) -> int:
         return 0
     if args.command == "coverage":
         print(coverage_block(project, os.path.join(project.spry, "COVERAGE.md")))
+        return 0
+    if args.command == "backlog":
+        print(backlog_block(project, os.path.join(project.spry, "BACKLOG.md")))
+        return 0
+    if args.command == "view":
+        written = view(project, args.since)
+        if written:
+            print(("spry: refreshed " if args.since else "wrote: ") + ", ".join(written))
+        return 0
+    if args.command == "hooks":
+        print("\n".join(hooks(project, args.remove)) or "no spry hooks here")
+        return 0
+    if args.command == "index" and args.restore:
+        for path in restore_blocks(project, args.restore):
+            print("restored: " + path)
         return 0
     if args.command == "index":
         changed = index(project, dry=args.check)

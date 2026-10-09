@@ -18,7 +18,7 @@ audience: 2
 | [M-1 Members can borrow books](M-1-members-borrow-books/README.md) | ready | 0 of 1 epics done · 1 open bug |
 <!-- /spry:children -->
 
-Done and proven across the whole plan: [Coverage](../COVERAGE.md).
+Done and proven across the whole plan: [Coverage](../COVERAGE.md). What to pick up next: [Backlog](../BACKLOG.md).
 
 ## Later
 

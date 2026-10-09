@@ -1,8 +1,8 @@
 # Written by /spry:init. Cheapest first, and tests only when code changed:
 # spry check → fast checks (format, lint, types) → tests. A change to documents alone
 # (checks.docs in spry.config.json) runs spry check and nothing else.
-# Pull requests: affected tests. Main branch: every test, then spry index commits the progress
-# tables. Nightly: every test.
+# Pull requests: affected tests; check --base refuses generated blocks the branch changed.
+# Main branch: every test, then spry index commits the progress tables. Nightly: every test.
 name: spry
 on:
   pull_request:
@@ -67,6 +67,8 @@ jobs:
       contents: write
     steps:
       - uses: actions/checkout@v4
+      # Slice branches, so the backlog lists a slice someone is building as in progress.
+      - run: git fetch --depth=1 origin '+refs/heads/*:refs/remotes/origin/*'
       - run: python3 spry/tool/spry.py index
       - run: |
           git diff --quiet && exit 0

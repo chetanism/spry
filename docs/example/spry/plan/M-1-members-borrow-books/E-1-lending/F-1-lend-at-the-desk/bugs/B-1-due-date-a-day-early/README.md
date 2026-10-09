@@ -35,5 +35,7 @@ related: [SL-1]
 ## Slices
 
 <!-- spry:children -->
-_No slices yet._
+| Slice | State |
+|---|---|
+| [SL-4 Due date in the library's time zone](SL-4-due-date-in-library-time-zone.md) | planned |
 <!-- /spry:children -->

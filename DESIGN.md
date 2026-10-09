@@ -58,6 +58,7 @@ CLAUDE.md                         # one line: @AGENTS.md
 spry/
   spry.config.json                # IDs, levels, team, runners, budgets
   README.md                       # entry point for humans: what's here, where to start
+  COVERAGE.md  BACKLOG.md         # generated pages: done vs defined; what to pick up next
   plan/
     README.md                     # roadmap: the milestones
     M-1-<slug>/
@@ -83,7 +84,7 @@ spry/
   history/writ/requirements/      # writ's requirement details, as written; their content is in stories
   process/                        # vendored from the plugin: rules + templates
   tool/spry.py
-.spry/                            # gitignored: search index, personal tone, gate stamp, caches
+.spry/                            # gitignored: search index, personal tone, gate stamp, caches, view/
 ```
 
 - **The folder tree is the hierarchy.** GitHub shows a folder's `README.md` when you open it, so a
@@ -220,6 +221,16 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
   proven, slices, tasks and bugs; one row per milestone; stories whose slices are all closed with
   criteria still unproven; and unproven criteria cited only in a comment or code. `spry coverage`
   prints it on any branch.
+- `spry/BACKLOG.md` holds a `<!-- spry:backlog -->` block: slices in progress (open, or a branch
+  named `sl-<n>-…` exists), ready to build, items that need slicing (no slice, or criteria no slice
+  covers), blocked items with what they wait on, and what needs planning (drafts, items with no
+  children). **Plan order, never typed:** by top-level item; inside one, bugs, tasks, then stories,
+  in tree order; slices by ID. `slice-open` with no ID offers its first ready row.
+- **On a branch the committed pages show the main branch** as of CI's last run. `spry view` writes
+  both for the working tree to `.spry/view/` (gitignored); `spry hooks` (opt-in, per clone) runs it
+  after a checkout or pull that changed `spry/` or a test. `check --base` refuses a generated block
+  a branch changed — unless it matches the base now or where the branch forked — and
+  `index --restore <base>` puts the base's copy back.
 - **Only CI on `main` regenerates and commits these** (`spry index`, `[skip ci]`). Branches never
   touch them, so they never conflict. `spry check` ignores block contents.
 - A local `spry serve` (stdlib HTTP + minimal Markdown) is deferred; GitHub rendering comes first.
@@ -300,10 +311,13 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 | Command | Does |
 |---|---|
-| `check [--base <ref>]` | front-matter, IDs, placement in the tree, glossary, budgets, links, AC references, QA scenarios, conflict checks, leftover guides; with `--base`, cited ACs whose text changed |
+| `check [--base <ref>]` | front-matter, IDs, placement in the tree, glossary, budgets, links, AC references, QA scenarios, conflict checks, leftover guides; with `--base`, cited ACs whose text changed and generated blocks the branch changed |
 | `status [--level]` | roll-up from §6 |
 | `index` | regenerate marker blocks and `INDEX.md` files (CI on `main`) |
 | `coverage` | the coverage page (§13): defined vs done, built but not proven |
+| `backlog` | the backlog page (§13): in progress, ready to build, needs slicing, blocked, needs planning |
+| `view [--since]` · `hooks [--remove]` | both pages for the working tree in `.spry/view/`; git hooks that refresh them (§13) |
+| `index --restore <base>` | on a branch: put back the base's copy of each generated block it changed |
 | `related <file>` | conflict-check candidates (§10) |
 | `next <type>` | next free ID |
 | `new <type> --parent --title` | create an item from its template, next ID, right folder |
@@ -382,6 +396,10 @@ in `spry/history/writ.md`, then retires `canon/`.
   records and interviews, so the trigger is a budget, not a process change. writ's `manual-test` is
   `explore` here, so it is not confused with the manual checks in `checks.md`. writ's `survey.py`
   (history churn) is not ported; adopt reads the code.
+- 2026-10-09 — the backlog is in plan order, derived — no `priority` field and no hand-kept queue,
+  which writ's `SLICE-QUEUE.md` needed re-editing for. A slice branch counts as in progress, read
+  from git refs (CI fetches them), not from `gh`. Fresh pages on a branch live in `.spry/view/`,
+  never in the tracked file: `skip-worktree` makes a pull refuse once CI updates it.
 
 ## 21. Built
 
@@ -418,3 +436,4 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-09 — adopt keeps writ's slice summaries in `spry/history/writ/slices/`; `check` skips them, `find` lists them last (CH-7, 0.6.0).
 - 2026-10-09 — adopt splits writ's requirement details into stories, criteria and `checks.md` scenarios, planned by writ's agent in `to-spry.md` §7, and keeps the originals (CH-8, 0.7.0).
 - 2026-10-09 — after a merge, the full suite runs only when the main branch gained code the PR's checks never saw (`changed --base <PR head>`) (CH-9, 0.7.1).
+- 2026-10-09 — a backlog page, `spry/BACKLOG.md`, and `spry backlog`; `spry view`, `spry hooks`, `index --restore`, and `check --base` refusing generated blocks a branch changed (CH-10, 0.8.0).

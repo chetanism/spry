@@ -378,6 +378,149 @@ class Coverage(Base):
             self.assertIn("[M-1 Title of M-1](plan/M-1-m/README.md)", handle.read())
 
 
+def git_repo(root):
+    def run(*args):
+        subprocess.run(["git", *args], cwd=root, check=True, capture_output=True)
+    run("init", "-q", "-b", "main")
+    run("config", "user.email", "t@t")
+    run("config", "user.name", "t")
+    run("add", "-A")
+    run("commit", "-qm", "init")
+    return run
+
+
+class Backlog(Base):
+    PAGE = "---\ntitle: Backlog\naudience: 4\n---\n# Backlog\n\n<!-- spry:backlog -->\n<!-- /spry:backlog -->\n"
+    B, T, S2 = f"{F}/bugs/B-1-b", f"{F}/tasks/T-1-t", f"{F}/S-2-x"
+
+    def key(self, path):
+        return path.replace("/", "__")
+
+    def sections(self, t):
+        items = spry.backlog(t.project())
+        return {k: [i.id for i, _ in v] for k, v in items.items()}, items
+
+    def test_plan_order_bugs_then_tasks_then_stories(self):
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): slice_("SL-1", state="planned"),
+                         self.key(f"{self.B}/README.md"): item("B-1", check=False),
+                         self.key(f"{self.B}/SL-3-c.md"): slice_("SL-3", state="planned", covers="[]"),
+                         self.key(f"{self.T}/README.md"): item("T-1"),
+                         self.key(f"{self.T}/SL-2-b.md"): slice_("SL-2", state="planned", covers="[]")})
+        ids, _ = self.sections(t)
+        self.assertEqual(ids["ready"], ["SL-3", "SL-2", "SL-1"])
+
+    def test_needs_slicing_names_criteria_no_slice_covers(self):
+        t = self.tree(**{self.key(f"{S}/README.md"): story("S-1", acs=("AC-1", "AC-2")),
+                         self.key(f"{S}/SL-1-a.md"): slice_("SL-1", state="planned"),
+                         self.key(f"{self.S2}/README.md"): story("S-2")})
+        _, items = self.sections(t)
+        self.assertEqual([(i.id, need) for i, need in items["slicing"]], [("S-1", "AC-2"), ("S-2", "slices")])
+
+    def test_blocked_names_what_it_waits_on(self):
+        blocked = slice_("SL-1", state="planned").replace("pr: 1\n", "pr: 1\nblocked_by: [T-1]\n")
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): blocked, self.key(f"{self.T}/README.md"): item("T-1")})
+        ids, items = self.sections(t)
+        self.assertEqual(ids["blocked"], ["SL-1"])
+        self.assertEqual([b.id for b in items["blocked"][0][1]], ["T-1"])
+        self.assertEqual(ids["slicing"], ["T-1"])
+        self.assertEqual(ids["ready"], [])
+
+    def test_a_branch_named_for_a_planned_slice_is_in_progress(self):
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): slice_("SL-1", state="planned")})
+        run = git_repo(t.root)
+        run("branch", "sl-1-a")
+        _, items = self.sections(t)
+        self.assertEqual([(s.id, where) for s, where in items["progress"]], [("SL-1", "`sl-1-a` · PR #1")])
+        self.assertEqual(items["ready"], [])
+
+    def test_needs_planning_drafts_and_empty_items(self):
+        t = self.tree(**{self.key(f"{E}/F-2-y/README.md"): item("F-2", state="draft", check=False),
+                         self.key(f"{E}/F-3-z/README.md"): item("F-3"),
+                         self.key(f"{E}/F-2-y/S-3-q/README.md"): story("S-3", state="draft", check=False)})
+        _, items = self.sections(t)
+        self.assertEqual([(i.id, need) for i, need in items["planning"]],
+                         [("F-2", "finishing — it is a draft"), ("F-3", "stories")])
+
+    def test_index_fills_the_page(self):
+        t = self.tree(**{"spry__BACKLOG.md": self.PAGE})
+        self.assertIn("spry/BACKLOG.md", spry.index(t.project(), dry=False))
+        with open(os.path.join(t.root, "spry/BACKLOG.md")) as handle:
+            self.assertIn("### Ready to build", handle.read())
+
+
+class Branch(Base):
+    """Generated blocks on a branch: only CI on the main branch writes them."""
+
+    def setUp(self):
+        self.t = self.tree(**{"spry__BACKLOG.md": Backlog.PAGE})
+        spry.index(self.t.project(), dry=False)
+        self.run_git = git_repo(self.t.root)
+        self.run_git("switch", "-qc", "sl-9-x")
+        self.feature = os.path.join(self.t.root, F, "README.md")
+
+    def drift(self):
+        return [(os.path.basename(p), name) for p, name, _, _ in spry.block_drift(self.t.project(), "main")]
+
+    def test_a_block_the_branch_changed_is_refused_and_restored(self):
+        with open(self.feature) as handle:
+            text = handle.read()
+        with open(self.feature, "w") as handle:
+            handle.write(text.replace("| ready |", "| draft |") + "\nWritten on the branch.\n")
+        self.assertEqual(self.drift(), [("README.md", "children")])
+        project = self.t.project()
+        spry.changed_blocks(project, "main")
+        self.assertTrue(any("`spry:children` block differs from main" in str(p) for p in project.problems))
+        self.assertEqual(spry.restore_blocks(self.t.project(), "main"), [f"{F}/README.md"])
+        with open(self.feature) as handle:
+            self.assertEqual(handle.read(), text + "\nWritten on the branch.\n")
+
+    def test_main_branch_merged_in_is_not_drift(self):
+        self.run_git("switch", "-q", "main")
+        with open(self.feature) as handle:
+            text = handle.read()
+        with open(self.feature, "w") as handle:
+            handle.write(text.replace("| ready |", "| draft |"))
+        self.run_git("commit", "-qam", "chore(spry): refresh progress")
+        self.run_git("switch", "-q", "sl-9-x")
+        self.run_git("merge", "-q", "main")
+        self.run_git("switch", "-q", "main")
+        with open(self.feature, "w") as handle:
+            handle.write(text.replace("| ready |", "| dropped |"))
+        self.run_git("commit", "-qam", "chore(spry): refresh progress again")
+        self.run_git("switch", "-q", "sl-9-x")
+        self.assertEqual(self.drift(), [])
+
+    def test_view_writes_both_pages_and_skips_when_nothing_relevant_changed(self):
+        written = spry.view(self.t.project())
+        self.assertEqual(written, [".spry/view/BACKLOG.md", ".spry/view/COVERAGE.md"])
+        with open(os.path.join(self.t.root, ".spry/view/COVERAGE.md")) as handle:
+            text = handle.read()
+        self.assertIn("by `spry view`. Not committed.", text)
+        self.assertIn("(../../spry/plan/M-1-m/README.md)", text)
+        with open(os.path.join(self.t.root, "notes.txt"), "w") as handle:
+            handle.write("x")
+        self.run_git("add", "-A")
+        self.run_git("commit", "-qm", "notes")
+        self.assertEqual(spry.view(self.t.project(), since="HEAD~1"), [])
+        self.assertEqual(len(spry.view(self.t.project(), since="HEAD~1~1~1")), 2)
+
+    def test_hooks_install_keep_others_and_remove(self):
+        os.makedirs(os.path.join(self.t.root, "spry", "tool"))
+        shutil.copy(spry.__file__, os.path.join(self.t.root, "spry", "tool", "spry.py"))
+        hooks = os.path.join(self.t.root, ".git", "hooks")
+        with open(os.path.join(hooks, "post-merge"), "w") as handle:
+            handle.write("#!/bin/sh\necho mine\n")
+        out = spry.hooks(self.t.project())
+        self.assertEqual(out[0], "wrote: post-checkout")
+        self.assertTrue(out[1].startswith("kept: post-merge is not spry's"))
+        with open(os.path.join(hooks, "post-checkout")) as handle:
+            self.assertIn("view --since \"$since\"", handle.read())
+        self.run_git("switch", "-q", "main")
+        self.assertTrue(os.path.isfile(os.path.join(self.t.root, ".spry/view/BACKLOG.md")))
+        self.assertEqual(spry.hooks(self.t.project(), remove=True), ["removed: post-checkout"])
+        self.assertTrue(os.path.isfile(os.path.join(hooks, "post-merge")))
+
+
 class History(Base):
     KEPT = "> writ slice summary, as written.\n\n# Slice SL-WD2 — summary\n\nA patron can rotate [x](nope.md) the signing secret.\n"
 

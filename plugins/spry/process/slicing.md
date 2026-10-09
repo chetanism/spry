@@ -45,7 +45,7 @@ missing. So open, build, test and close run as one piece of work.
 
 ## Open — `/spry:slice-open [SL-n]`
 
-No argument → offer the first `planned` slice whose parent's `blocked_by` are done, and the
+No argument → offer the first row of *Ready to build* in `spry.py backlog`, and the next two as
 alternatives.
 
 1. **Read:** the parent and its feature, every knowledge file the change could touch (conventions,
@@ -75,6 +75,10 @@ alternatives.
 - **Never run the full suite** (`tests.all`). CI runs it on the main branch and nightly;
   `/spry:test-all` runs it when a person asks.
 - **Push once,** at close. Each push runs CI again.
+- **Never run `spry.py index` on a branch.** Generated blocks are written only by CI on the main
+  branch; `check --base` refuses a branch that changed one, and `index --restore origin/<main>`
+  puts them back. For fresh pages, `spry.py backlog`, `spry.py coverage`, or `spry.py view`
+  (writes both to `.spry/view/`, never committed).
 - A test that proves a criterion has `<story>/AC-<n>` in its name — the title string, docstring or
   parametrize id. A citation in a comment or in code proves nothing.
 - A departure from the plan → note it for `What changed`; a new rule learned → `/spry:record` later.

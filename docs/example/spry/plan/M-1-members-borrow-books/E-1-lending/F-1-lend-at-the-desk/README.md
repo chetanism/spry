@@ -56,5 +56,5 @@ related: [F-2]
 
 | Bug | Severity | State | Progress |
 |---|---|---|---|
-| [B-1 Due date a day early on evening receipts](bugs/B-1-due-date-a-day-early/README.md) | major | ready | no slices yet |
+| [B-1 Due date a day early on evening receipts](bugs/B-1-due-date-a-day-early/README.md) | major | ready | 0 of 1 slices done |
 <!-- /spry:children -->

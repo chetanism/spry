@@ -55,6 +55,7 @@ document both work. Everything after is drafted from it, so read it twice.
 | `spry/spry.config.json` | written at §0; check no `<…>` is left that a topic answered |
 | `spry/plan/README.md` | `templates/roadmap.md` |
 | `spry/COVERAGE.md` | `templates/coverage.md` |
+| `spry/BACKLOG.md` | `templates/backlog.md` |
 | `spry/knowledge/{conventions,decisions}/INDEX.md` | `templates/index.md` |
 | `spry/knowledge/process-changes.md` | `templates/process-changes.md` |
 | `AGENTS.md` | `templates/agents.md` — within 150 lines; the admission test stays at the top |
@@ -71,7 +72,10 @@ document both work. Everything after is drafted from it, so read it twice.
    CI on `main` runs `index`); fix what they report.
 2. Show what was written, at the person's tone, grouped: plan · knowledge · process · CI.
 3. Commit `chore(spry): set up spry`, after asking.
-4. `NEXT`: `/spry:milestone M-1` to define the first milestone.
+4. Offer `python3 spry/tool/spry.py hooks` — per clone, so each person runs it once: after a checkout
+   or a pull that changed the plan or a test, it refreshes the backlog and coverage pages in
+   `.spry/view/` and says so. The committed pages show the main branch as of CI's last run.
+5. `NEXT`: `/spry:milestone M-1` to define the first milestone.
 
 ## Adopt — what changes
 
