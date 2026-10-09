@@ -359,8 +359,8 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `slice` | 8 | Split a ready story / task / bug into `planned` slices: one slice is reviewable in one sitting and demos one visible change |
 | `slice-open` | 8 | Work order (opening with a brief summary of what will be done), conflict check, branch, draft PR with the work order as its body; then builds — asking first only for something hard to undo |
 | `slice-close` | 8 | Close summary from the diff, falsify, AC proof, done list; PR body refreshed with both parts |
-| `review` | 8 | Fresh eyes — a new agent, never the author's session — on a slice PR (against its work order), a plan PR or item (against its parent, the code and the glossary), or any other PR; verified findings as blocker / should / nit, posted only on a yes as one inline comment per line with a suggested change for wording; `COMMENT` only on your own PR (`process/reviewing.md`) |
-| `merge` | 8 | Checks green, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main if main moved under the PR → what is unblocked |
+| `review` | 8 | Fresh eyes — a new agent, never the author's session — on a slice PR (against its work order), a plan PR or item (against its parent, the code and the glossary), or any other PR; verified findings as blocker / should / nit, posted only on a yes as one inline comment per line with a suggested change for wording; `COMMENT` only on your own PR; on your own PR one answer can be *post, fix, then merge*, done by this session, never the reviewing agent (`process/reviewing.md`) |
+| `merge` | 8 | Checks green — or, when CI never started, the gate on the PR's head, accepted at the ask and named in a `CI:` trailer —, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main if main moved under the PR → what is unblocked |
 | `bug` / `task` | 4 / 7 | Record one, attached to its parent |
 | `status` | reader's | Roll-up explained at the asker's tone |
 | `tone` | — | Personal audience override |
@@ -456,3 +456,6 @@ in `spry/history/writ.md`, then retires `canon/`.
   falsify runs the tests naming the source first and names wide controls; falsify rows keep a key, so
   renaming one never forces a re-run; a test name in a generated block is not a placeholder; `ASK`
   comes last in a reply.
+- 2026-10-09 — from the connect pilot (CH-15, 0.12.0): a merge when CI never ran — the gate on the
+  PR's head stands in, the person accepts it at the ask, and the squash commit carries a `CI:`
+  trailer; a review's first ask can be *post, fix, then merge*, one answer for the whole way.

@@ -1358,6 +1358,11 @@ class Merge(Base):
         self.assertIn("- Lends a book.", body)
         self.assertTrue(body.rstrip().endswith("Slice: SL-1\nParent: S-1\nCovers: S-1/AC-1"))
 
+    def test_message_says_when_the_gate_stood_in_for_ci(self):
+        t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): self.closed_slice("")})
+        message = spry.merge_message(t.project(), "SL-1", "billing  lock")
+        self.assertRegex(message.rstrip().split("\n")[-1], r"^CI: did not run \(billing lock\); gate green locally at \S+$")
+
 
 class ReviewCheck(unittest.TestCase):
     DIFF = (

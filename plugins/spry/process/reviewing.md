@@ -11,8 +11,10 @@ Run by `review`. Tone of this file: 8. Tone of what is posted: §6.
 write what it reads and carries nothing from the session that did. Solo, it is the second pair of
 eyes there is no teammate for. On a team, it reads before a teammate does, or for them.
 
-**It reads and comments.** It never checks a branch out, edits one, pushes, approves unless told to,
-or merges. The one change it makes is a solo plan item's accepted fixes (§5).
+**It reads and comments.** The reviewing agent never checks a branch out, edits one, pushes,
+approves unless told to, or merges. The one change it makes is a solo plan item's accepted fixes
+(§5). Fixing what it found, and merging, is the session that ran the review — and only on the
+person's answer (§5a).
 
 ## 1. What is reviewed
 
@@ -133,7 +135,18 @@ For a milestone, epic, feature, story, bug, task or `checks.md`.
 - **Report in `chat.md`'s shape:**
   - one `[Found]` bullet per blocker and per `Should`;
   - the `Nit`s as a count, not a list.
-- **Ask 1** is whether to post. On a solo plan item with no PR, it is whether to apply the fixes.
+- **Name what the merge will ask about**, from *For the reviewer*: falsify rows not `caught`, with
+  their reasons, and criteria QA checks by hand. One answer can then cover them.
+- **Ask 1** is what happens next — one choice, so one answer carries the review through:
+  - a. Post, fix every Blocker and Should as found, then merge (§5a);
+  - b. Post, and fix — stop before the merge;
+  - c. Post only;
+  - d. Neither.
+
+  Offer *a* and *b* only where this session may change the branch: a slice or plan PR that is your
+  own. Recommend *a* when every fix is the finding's own suggestion or as local; *c* when a fix is a
+  choice for the author or the owner. On a solo plan item with no PR, Ask 1 is whether to apply the
+  fixes — all, the ones named, or none.
 - **Then one ask per open question the item puts to its owner.** Each one gives the context, the
   options, and a recommendation naming what was read. The answers become comments too (§5).
 
@@ -195,6 +208,22 @@ For a milestone, epic, feature, story, bug, task or `checks.md`.
 - On a yes — to all of them, or to the ones the person names — apply exactly those, on the main
   branch.
 - Run `spry.py check`, then commit `docs(plan): <ID> review fixes`. Change nothing else.
+
+## 5a. Fix, then merge — on answer *a* or *b*
+
+The session that ran the review does this, not the reviewing agent.
+
+1. **Get onto the branch.** Already on it → go on. Otherwise `git switch <branch>`, only with a clean
+   working tree; uncommitted work here → stop and ask.
+2. **Fix exactly what was accepted:** each Blocker and Should, as its finding and suggestion say. A
+   fix that turns out to need more than the finding said — another file, a design choice — is not
+   made: stop and ask about that one.
+3. **Re-run only what the fixes could change**, as `slicing.md` *Close* does: `spry.py gate`; falsify
+   again when code changed (`merge-check` blocks a control with no row); the slice's *What changed*
+   and the PR body when the diff did.
+4. **Commit** `fix(<SL-n>): review findings`, and push once.
+5. **On *a*,** run `/spry:merge` — every step. The answer was its step 6 yes, for the `!` items the
+   report named; anything else it finds, it asks.
 
 ## 6. How comments read
 

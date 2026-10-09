@@ -243,3 +243,18 @@ Entry format:
   it empty to never retry. `tests.retry_when` overrides what counts as a timeout.
 - **Migrate:** a project that copied the reply order into its `AGENTS.md` moves `ASK` last. Falsify
   rows recorded earlier have no key and still match by label.
+
+## CH-15 · A merge when CI never ran, and review to merge in one answer
+
+- **Date:** 2026-10-09 · **Version:** 0.12.0
+- **Touches:** `process/merging.md` (steps 1, 6, 8), `process/reviewing.md` (§4, §5a),
+  `skills/merge`, `skills/review`, `tool/spry.py` (`merge-message --ci-local`)
+- **Why:** from the connect pilot, SL-157 to SL-162.
+  - A GitHub billing lock kept CI from starting for the whole pilot. All six merges went ahead on a
+    rule kept only in the agent's memory, and the merge procedure had no word for a check that never
+    ran — only red, which says stop.
+  - Four of five reviews took three answers — post, fix, merge — where the person wanted one: "fix
+    the two Should items, then merge".
+- **Adapt:** nothing
+- **Migrate:** a project that kept a "CI is down, merge on a local gate" rule in memory or in
+  `AGENTS.md` drops it; step 1 of `merging.md` now holds it.

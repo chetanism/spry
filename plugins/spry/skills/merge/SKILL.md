@@ -10,7 +10,11 @@ argument-hint: "[PR number or slice ID]"
   `chat.md` beside it.
 - **Pull request:** `$ARGUMENTS`, or the current branch's. Never guess between two.
 - **Never merge** a red or pending PR, without a yes for this PR in this conversation, or with
-  `--admin`.
+  `--admin`. A review's *fix, then merge* answer is that yes, unless the merge finds something the
+  review did not report.
+- **CI that never ran** (no step started — billing, minutes, an outage) is neither green nor red:
+  the gate stands in for it on the PR's head, the person accepts that at the ask, and the commit
+  says so (`merge-message --ci-local`).
 - After merging, check whether the main branch moved under the PR (`spry.py changed --base <PR head>`):
   `code=false` → run nothing; `code=true` → wait for CI on the main branch, or with no CI on push,
   run the full suite once.

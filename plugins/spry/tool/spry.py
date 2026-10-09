@@ -25,7 +25,7 @@
     python3 spry/tool/spry.py draw --seed        # a fresh seed for an exploratory walk
     python3 spry/tool/spry.py draw <seed> <n> --pick < choices   # the same choice for ever, per (seed, n)
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
-    python3 spry/tool/spry.py merge-message <slice>   # the squash commit: subject, summary, trailers
+    python3 spry/tool/spry.py merge-message <slice> [--ci-local REASON]   # the squash commit: subject, summary, trailers
     python3 spry/tool/spry.py gate [--force]     # check, fast checks, affected tests; skipped while no code changed
     python3 spry/tool/spry.py changed --base <ref>   # for CI: code=true when anything but docs changed
     python3 spry/tool/spry.py review-check <payload.json> --diff <file|-> [--own]   # would GitHub take this review?
@@ -65,7 +65,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.11.0"
+VERSION = "0.12.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -2695,8 +2695,9 @@ def criteria_and_code(project: Project, item: Item, base: str) -> list:
                       f"after reading it, they add `criteria_approved_by: <name>` to {item.id}")]
 
 
-def merge_message(project: Project, slice_id: str) -> str:
-    """Subject, blank line, body: the slice summary, then the trailers. For `gh pr merge --squash`."""
+def merge_message(project: Project, slice_id: str, ci_local: str | None = None) -> str:
+    """Subject, blank line, body: the slice summary, then the trailers. For `gh pr merge --squash`.
+    `ci_local`: why CI never ran — the trailer says the gate stood in for it, at which commit."""
     item = project.items.get(slice_id)
     if item is None or item.type != "slice":
         raise SystemExit(f"no slice {slice_id}")
@@ -2708,6 +2709,9 @@ def merge_message(project: Project, slice_id: str) -> str:
         trailers.append(f"Parent: {item.parent.id}")
     if item.parent and item.parent.type == "story" and item.fm.get("covers"):
         trailers.append("Covers: " + ", ".join(f"{item.parent.id}/{ac}" for ac in item.fm["covers"]))
+    if ci_local:
+        head = git(project.root, "rev-parse", "--short", "HEAD").stdout.strip() or "?"
+        trailers.append(f"CI: did not run ({' '.join(ci_local.split())}); gate green locally at {head}")
     return f"{item.id} {item.title}{pr}\n\n" + ("\n".join(summary) + "\n\n" if summary else "") + "\n".join(trailers) + "\n"
 
 
@@ -2995,6 +2999,7 @@ def main(argv=None) -> int:
     p.add_argument("--base", help="git ref the PR merges into, to catch cited criteria that changed")
     p = sub.add_parser("merge-message", help="the squash commit for a slice: subject, summary, trailers")
     p.add_argument("slice")
+    p.add_argument("--ci-local", metavar="REASON", help="CI never ran, for this reason; the gate stood in for it")
     p = sub.add_parser("gate", help="spry check, fast checks, affected tests — skipped while no code changed since green")
     p.add_argument("--force", action="store_true", help="run everything even if the code is unchanged")
     p = sub.add_parser("changed", help="for CI: prints code=true when files outside checks.docs changed since --base")
@@ -3157,7 +3162,7 @@ def main(argv=None) -> int:
         print(f"code={'true' if code_changed_since(project, args.base) else 'false'}")
         return 0
     if args.command == "merge-message":
-        print(merge_message(project, args.slice), end="")
+        print(merge_message(project, args.slice, args.ci_local), end="")
         return 0
     if args.command == "falsify":
         try:
