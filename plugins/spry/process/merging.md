@@ -1,34 +1,12 @@
 ---
-title: Reviewing and merging
-summary: How a closed slice's pull request is reviewed against its work order, and how it is merged — never red, never stale, never without a yes.
+title: Merging
+summary: How a closed slice's pull request is merged — never red, never stale, never without a yes.
 audience: 8
 ---
-# Reviewing and merging
+# Merging
 
-Run by `review` and `merge`. Tone: audience 8. The pull request's slice is found from the argument
-(`SL-n` or a PR number), or from the current branch's `open` / `closed` slice.
-
-## Review — `/spry:review`
-
-For whoever reviews: a teammate, or the author before asking for one. **Reads and comments; never
-changes the code and never merges.**
-
-1. **Read *For the reviewer* first** — at the top of the PR body: the criteria in words, any that
-   changed, what falsify could not show, what QA checks by hand. Then the work order, then the diff (`gh pr diff <n>`). The question is not "is this good
-   code" but "is this what the work order said, and nothing it said not to do".
-2. **Check, in order:**
-   - **Plan** — every file it named changed as described; any file changed that it did not name is
-     explained in `What changed`.
-   - **Must not** — each linked rule still holds in the diff.
-   - **Tests** — one per covered criterion at least, each name citing `<story>/AC-<n>`, each
-     asserting what the criterion's *Then* says, not something nearby.
-   - **Falsify** — every row `caught`; a `survived` or `skipped` row has a reason you accept.
-   - **Conventions** — the areas the diff touches (`spry/knowledge/conventions/INDEX.md`).
-   - **Demo** — run it when it can run locally; say so if you did not.
-3. **Write the review** as findings, each `path:line — what — why`, grouped `Blocker` · `Should` ·
-   `Nit`. Show it to the person first.
-4. **Post it only on a yes:** `gh pr review <n> --request-changes` when there is a blocker,
-   `--comment` otherwise, `--approve` only when the person says to approve.
+Run by `merge`; reviewing is `reviewing.md`. Tone: audience 8. The pull request's slice is found
+from the argument (`SL-n` or a PR number), or from the current branch's `open` / `closed` slice.
 
 ## Merge — `/spry:merge`
 

@@ -28,6 +28,7 @@
     python3 spry/tool/spry.py merge-message <slice>   # the squash commit: subject, summary, trailers
     python3 spry/tool/spry.py gate [--force]     # check, fast checks, affected tests; skipped while no code changed
     python3 spry/tool/spry.py changed --base <ref>   # for CI: code=true when anything but docs changed
+    python3 spry/tool/spry.py review-check <payload.json> --diff <file|-> [--own]   # would GitHub take this review?
     python3 <plugin>/tool/spry.py install --agent <generic|claude|cursor|gemini> [--root <project>]
 
 Run from anywhere inside the project, or pass --root. The project root is the nearest directory
@@ -64,7 +65,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.8.1"
+VERSION = "0.9.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -2658,6 +2659,104 @@ def code_changed_since(project: Project, base: str) -> bool:
     return any(not any(g.match(path) for g in docs) for path in done.stdout.split("\n") if path)
 
 
+# ---------------------------------------------------------------- review-check
+
+REVIEW_EVENTS = ("COMMENT", "REQUEST_CHANGES", "APPROVE")
+SUGGESTION = re.compile(r"^(`{3,})suggestion[ \t]*\n(.*?)^\1[ \t]*$", re.S | re.M)
+
+
+def diff_lines(diff: str) -> dict:
+    """{path: {side: {line: (hunk, text)}}} — the lines of a unified diff GitHub lets a comment sit on."""
+    files, old_path, current, hunk, left, right = {}, None, None, 0, 0, 0
+    for raw in diff.split("\n"):
+        if raw.startswith("diff --git "):
+            current = None
+        elif raw.startswith("--- "):
+            old_path = raw[6:] if raw.startswith("--- a/") else None
+        elif raw.startswith("+++ "):
+            path = raw[6:] if raw.startswith("+++ b/") else old_path
+            current = files.setdefault(path, {"LEFT": {}, "RIGHT": {}}) if path else None
+        elif raw.startswith("@@ ") and current is not None:
+            m = re.match(r"@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@", raw)
+            if m:
+                hunk, left, right = hunk + 1, int(m.group(1)), int(m.group(2))
+        elif current is not None and hunk and raw[:1] in (" ", "+", "-"):
+            if raw[0] in " -":
+                current["LEFT"][left] = (hunk, raw[1:])
+                left += 1
+            if raw[0] in " +":
+                current["RIGHT"][right] = (hunk, raw[1:])
+                right += 1
+    return files
+
+
+def review_check(payload, diff: str, own: bool = False) -> list:
+    """What GitHub would refuse, or a reader would trip on, in a review payload — before it is posted."""
+    if not isinstance(payload, dict):
+        return ["the payload is not a JSON object"]
+    problems = []
+    if not isinstance(payload.get("commit_id"), str) or not payload["commit_id"].strip():
+        problems.append("commit_id: missing — use the pull request's headRefOid")
+    event = payload.get("event")
+    if event not in REVIEW_EVENTS:
+        problems.append(f"event: {event!r} is not one of {', '.join(REVIEW_EVENTS)}")
+    elif own and event != "COMMENT":
+        problems.append(f"event: GitHub refuses {event} on your own pull request — use COMMENT")
+    if not isinstance(payload.get("body"), str) or not payload["body"].strip():
+        problems.append("body: empty — one line saying what the review found")
+    comments = payload.get("comments", [])
+    if not isinstance(comments, list):
+        return problems + ["comments: not a list"]
+    files, spans = diff_lines(diff), []
+    for n, c in enumerate(comments, 1):
+        if not isinstance(c, dict):
+            problems.append(f"comment {n}: not a JSON object")
+            continue
+        path, line, start = c.get("path"), c.get("line"), c.get("start_line", c.get("line"))
+        where = f"comment {n} ({path}:{line})"
+        if not isinstance(c.get("body"), str) or not c["body"].strip():
+            problems.append(f"{where}: empty body")
+        if not isinstance(path, str) or type(line) is not int or type(start) is not int:
+            problems.append(f"{where}: needs path, and line (and start_line) as numbers")
+            continue
+        side = c.get("side", "RIGHT")
+        if side not in ("LEFT", "RIGHT") or c.get("start_side", side) != side:
+            problems.append(f"{where}: side and start_side must both be RIGHT, or both LEFT")
+            continue
+        if start >= line and "start_line" in c:
+            problems.append(f"{where}: start_line {start} must be above line {line} — leave it out for one line")
+            continue
+        if path not in files:
+            problems.append(f"{where}: {path} is not in the pull request's diff")
+            continue
+        lines = files[path][side]
+        outside = [k for k in range(start, line + 1) if k not in lines]
+        if outside:
+            problems.append(f"{where}: line {outside[0]} is outside the diff — a comment sits only on lines the diff shows")
+            continue
+        if len({lines[k][0] for k in range(start, line + 1)}) > 1:
+            problems.append(f"{where}: lines {start}–{line} span two parts of the diff — split the comment")
+            continue
+        body = c.get("body") or ""
+        found = SUGGESTION.findall(body)
+        if len(found) != len(re.findall(r"^`{3,}suggestion", body, re.M)):
+            problems.append(f"{where}: a suggestion block is not closed")
+            continue
+        if not found:
+            continue
+        if side == "LEFT":
+            problems.append(f"{where}: a suggestion replaces new lines — anchor it on the RIGHT side")
+        elif len(found) > 1:
+            problems.append(f"{where}: {len(found)} suggestions in one comment — one per comment, on exactly the lines it replaces")
+        elif found[0][1].rstrip("\n") == "\n".join(lines[k][1] for k in range(start, line + 1)) and found[0][1]:
+            problems.append(f"{where}: the suggestion is the same as the lines it replaces")
+        for other, (p, a, b) in spans:
+            if p == path and a <= line and start <= b:
+                problems.append(f"{where}: its suggestion overlaps comment {other}'s — fold one into the other")
+        spans.append((n, (path, start, line)))
+    return problems
+
+
 # ---------------------------------------------------------------- main
 
 def find_root(start: str):
@@ -2752,7 +2851,26 @@ def main(argv=None) -> int:
     q.add_argument("--dry-run", action="store_true", help="validate and list what would run")
     q.add_argument("--record", metavar="SLICE", help="write the results into this slice's Falsify table")
     q.add_argument("--jobs", type=int, help="worktrees to run in parallel (default: falsify.parallel; 1 = serial)")
+    p = sub.add_parser("review-check", help="would GitHub take this review as it stands? exit 1 if not")
+    p.add_argument("payload", help="the review's JSON: commit_id, event, body, comments")
+    p.add_argument("--diff", required=True, help="the pull request's diff (`gh pr diff <n>`), or - for stdin")
+    p.add_argument("--own", action="store_true", help="the reviewer wrote the pull request")
     args = parser.parse_args(argv)
+
+    if args.command == "review-check":
+        try:
+            payload = json.loads(read(args.payload))
+        except (OSError, ValueError) as e:
+            print(f"cannot read {args.payload}: {e}", file=sys.stderr)
+            return 2
+        problems = review_check(payload, sys.stdin.read() if args.diff == "-" else read(args.diff), args.own)
+        for p in problems:
+            print("✗ " + p)
+        comments = payload.get("comments") if isinstance(payload, dict) else None
+        count = len(comments) if isinstance(comments, list) else 0
+        print(f"ready to post: {count} comment{'s' if count != 1 else ''}" if not problems
+              else f"{len(problems)} problem{'s' if len(problems) != 1 else ''} — fix them before posting")
+        return 1 if problems else 0
 
     if args.command == "install":
         for path in install(args.install_root or args.root or os.getcwd(), args.agent):

@@ -52,3 +52,5 @@ fill optional sections for the sake of it — delete them.
 4. On yes: set `state: ready`; run `python3 spry/tool/spry.py check`; fix what it reports.
 5. Commit (`docs(plan): <ID> <title>`). With a team configured and the path under a `review` rule,
    open a pull request for the reviewers instead of committing to the main branch.
+6. Offer `/spry:review <ID>` in one line — a fresh pair of eyes on what was just written
+   (`reviewing.md` §2). Solo, it is the only one.

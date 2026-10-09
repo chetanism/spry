@@ -1259,6 +1259,61 @@ class Merge(Base):
         self.assertTrue(body.rstrip().endswith("Slice: SL-1\nParent: S-1\nCovers: S-1/AC-1"))
 
 
+class ReviewCheck(unittest.TestCase):
+    DIFF = (
+        "diff --git a/story.md b/story.md\n--- a/story.md\n+++ b/story.md\n"
+        "@@ -1,3 +1,4 @@\n # S-1\n-Old line\n+A member borrows.\n+Up to five books.\n end\n"
+        "@@ -20,2 +21,2 @@\n tail\n-old tail\n+new tail\n"
+    )
+
+    def payload(self, *comments, event="COMMENT"):
+        return {"commit_id": "abc", "event": event, "body": "Two fixes.", "comments": list(comments)}
+
+    def suggest(self, line, text, start=None):
+        c = {"path": "story.md", "line": line, "side": "RIGHT", "body": f"Say it plainly.\n```suggestion\n{text}\n```"}
+        if start:
+            c.update(start_line=start, start_side="RIGHT")
+        return c
+
+    def test_a_good_review_passes(self):
+        good = self.payload(self.suggest(3, "A member borrows up to five books.", start=2),
+                            {"path": "story.md", "line": 21, "body": "Why tail?"})
+        self.assertEqual(spry.review_check(good, self.DIFF), [])
+
+    def test_lines_outside_the_diff_or_across_parts_are_refused(self):
+        far = spry.review_check(self.payload(self.suggest(9, "x")), self.DIFF)
+        self.assertIn("outside the diff", far[0])
+        across = spry.review_check(self.payload(self.suggest(21, "x", start=4)), self.DIFF)
+        self.assertIn("outside the diff", across[0])
+        missing = spry.review_check(self.payload({"path": "other.md", "line": 1, "body": "?"}), self.DIFF)
+        self.assertIn("not in the pull request's diff", missing[0])
+
+    def test_suggestions_never_overlap_and_never_repeat_the_lines(self):
+        twice = spry.review_check(self.payload(self.suggest(3, "a", start=2), self.suggest(3, "b")), self.DIFF)
+        self.assertEqual(len(twice), 1)
+        self.assertIn("overlaps comment 1", twice[0])
+        same = spry.review_check(self.payload(self.suggest(2, "A member borrows.")), self.DIFF)
+        self.assertIn("same as the lines", same[0])
+        open_block = self.payload({"path": "story.md", "line": 2, "body": "```suggestion\nx\n"})
+        self.assertIn("not closed", spry.review_check(open_block, self.DIFF)[0])
+
+    def test_your_own_pull_request_takes_only_a_comment(self):
+        own = spry.review_check(self.payload(event="REQUEST_CHANGES"), self.DIFF, own=True)
+        self.assertIn("use COMMENT", own[0])
+        self.assertEqual(spry.review_check(self.payload(event="REQUEST_CHANGES"), self.DIFF), [])
+
+    def test_cli(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for name, text in (("p.json", json.dumps(self.payload(self.suggest(9, "x")))), ("d.diff", self.DIFF)):
+                with open(os.path.join(tmp, name), "w") as handle:
+                    handle.write(text)
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                code = spry.main(["review-check", os.path.join(tmp, "p.json"), "--diff", os.path.join(tmp, "d.diff")])
+            self.assertEqual(code, 1)
+            self.assertIn("fix them before posting", out.getvalue())
+
+
 class Example(unittest.TestCase):
     """The worked example in docs/example must stay clean and freshly indexed."""
 

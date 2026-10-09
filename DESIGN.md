@@ -27,7 +27,7 @@ plugins/spry/                     # the process plugin
   skills/<name>/SKILL.md          # thin entry points
   process/                        # rules every agent follows; vendored into each project
     chat.md  writing.md  conflicts.md  interview.md  planning.md  slicing.md  setup.md
-    from-writ.md  merging.md  qa.md  testing.md  recording.md  audits.md  changing.md
+    from-writ.md  merging.md  reviewing.md  qa.md  testing.md  recording.md  audits.md  changing.md
     compacting.md  updating.md  contributing.md
     templates/                    # every document type, one file each
   tool/spry.py                    # single file, Python stdlib only, 3.10+
@@ -326,6 +326,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `merge-check <slice> [--base]` | ready to merge? closed, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
 | `gate [--force]` | §15 |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
+| `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
 | `vendor` | copy `process/` and the tool into a project (plugin's copy only); `--diff` lists what differs |
 | `scrub <file>` | private words (product, people, glossary terms, emails, URLs) left in text about to leave the project |
@@ -348,7 +349,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `slice` | 8 | Split a ready story / task / bug into `planned` slices: one slice is reviewable in one sitting and demos one visible change |
 | `slice-open` | 8 | Work order (opening with a brief summary of what will be done), conflict check, branch, draft PR with the work order as its body; then builds — asking first only for something hard to undo |
 | `slice-close` | 8 | Close summary from the diff, falsify, AC proof, done list; PR body refreshed with both parts |
-| `review` | 8 | Review a PR against its work order; findings as blocker / should / nit, posted only on a yes |
+| `review` | 8 | Fresh eyes — a new agent, never the author's session — on a slice PR (against its work order), a plan PR or item (against its parent, the code and the glossary), or any other PR; verified findings as blocker / should / nit, posted only on a yes as one inline comment per line with a suggested change for wording; `COMMENT` only on your own PR (`process/reviewing.md`) |
 | `merge` | 8 | Checks green, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main if main moved under the PR → what is unblocked |
 | `bug` / `task` | 4 / 7 | Record one, attached to its parent |
 | `status` | reader's | Roll-up explained at the asker's tone |
@@ -439,3 +440,4 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-09 — after a merge, the full suite runs only when the main branch gained code the PR's checks never saw (`changed --base <PR head>`) (CH-9, 0.7.1).
 - 2026-10-09 — a backlog page, `spry/BACKLOG.md`, and `spry backlog`; `spry view`, `spry hooks`, `index --restore`, and `check --base` refusing generated blocks a branch changed (CH-10, 0.8.0).
 - 2026-10-09 — backlog rows say what each item is part of, from the top level down (CH-11, 0.8.1).
+- 2026-10-09 — `review` covers any PR and a solo plan item, by fresh eyes, posting one comment per line with suggested changes; `process/reviewing.md` and `review-check` (CH-12, 0.9.0). From pulse's `requirement-review`.

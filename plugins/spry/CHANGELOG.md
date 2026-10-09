@@ -187,3 +187,22 @@ Entry format:
   says which milestone, epic or feature it serves, so choosing one meant opening it.
 - **Adapt:** nothing
 - **Migrate:** nothing — CI's next `spry index` rewrites the page.
+
+## CH-12 · Fresh eyes on any pull request, posted line by line
+
+- **Date:** 2026-10-09 · **Version:** 0.9.0
+- **Touches:** `process/reviewing.md` (new; *Review* moves out of `process/merging.md`),
+  `process/interview.md` (*Finishing* offers a review), `process/from-writ.md`, `skills/review`,
+  `tool/spry.py` (`review-check`)
+- **Why:**
+  - `review` knew only slice PRs. A plan PR on a team, or a plan item a solo person committed
+    straight to the main branch, had no second reader at all.
+  - The review could be run by the session that wrote the work, which reads its own reasons back
+    instead of the page.
+  - Findings were posted as one block of text: the author had to find each line and retype each
+    fix. pulse's `requirement-review` showed the better way — one comment per line, a one-click
+    suggested change for wording, each finding verified on its line before anyone sees it.
+  - GitHub refuses `REQUEST_CHANGES` on your own PR, which is every PR when solo, and a comment
+    anchored outside the diff fails only when it is posted.
+- **Adapt:** nothing
+- **Migrate:** a project with its own requirement-review skill (pulse) may retire it for `review`.

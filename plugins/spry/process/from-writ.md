@@ -195,8 +195,8 @@ places gets one row per part, saying which part in Note.
      repository sorts each one into: already in spry, port, project-specific, or drop.
 9. **writ's machinery.** One ask to remove three things:
    - writ's skills. Those with a spry counterpart: `slice-open`, `slice-close`, `test-all`,
-     `test-scenarios`, `security-audit`, `prelaunch`, `process-change`, `manual-test` (→ `explore`)
-     and `context-compact` (→ `compact`). Those spry drops on purpose: `requirement-verify`,
+     `test-scenarios`, `security-audit`, `prelaunch`, `process-change`, `manual-test` (→ `explore`),
+     `context-compact` (→ `compact`) and `requirement-review` (→ `review`). Those spry drops on purpose: `requirement-verify`,
      `coverage-review`, `change-request`, `cleanup` and `maintenance`. Any other skill is in §5
      and is decided there.
    - writ's CI workflows, if there are any (`ledger`, `size`).
