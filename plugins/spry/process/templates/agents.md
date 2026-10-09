@@ -11,6 +11,7 @@ agent breaks by default**, or a **rule that cannot be checked by a tool**. Every
 - <one line: what the product is, for whom>
 - Stack: <languages, frameworks, database>
 - Plan and status: `spry/plan/` · `python3 spry/tool/spry.py status`
+- Config: `spry/spry.config.json` — inside `spry/`, not at the repository root
 
 ## How work is done
 

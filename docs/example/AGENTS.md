@@ -9,6 +9,7 @@ agent breaks by default**, or a **rule that cannot be checked by a tool**. Every
 - Shelf — lending desk and member accounts for small community libraries
 - Stack: TypeScript, Node 24, Postgres 17, Vitest; pnpm workspace
 - Plan and status: `spry/plan/` · `python3 spry/tool/spry.py status`
+- Config: `spry/spry.config.json` — inside `spry/`, not at the repository root
 
 ## How work is done
 

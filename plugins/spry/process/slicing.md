@@ -69,12 +69,12 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
    - **with `slices.issue` on, the issue first:** `spry.py issue-body SL-<n> | gh issue create
      --title "SL-<n> <title>" --body-file -`. Its body is the work order as agreed, saying it is
      never updated — the file goes on changing, and the difference is the record. Set `issue:` to
-     its number; `check` refuses an open slice without one;
+     its number (`spry.py link SL-<n> --issue <n>`); `check` refuses an open slice without one;
    - branch `sl-<n>-<slug>` from the main branch;
-   - set `state: open`, `branch:`; `spry.py check`; commit `docs(slice): SL-<n> work order` —
+   - set `state: open`, and `spry.py link SL-<n> --branch <branch>`; `spry.py check`; commit `docs(slice): SL-<n> work order` —
      the branch's first commit, before any code;
    - push; open a **draft** pull request titled `SL-<n> <title>`, body from
-     `spry.py pr-body SL-<n>`; set `pr:` to its number; commit and push.
+     `spry.py pr-body SL-<n>`; `spry.py link SL-<n> --pr <number>`; commit and push.
 6. **Build**, in this session, unless the person asked to open only. Then close.
 
 ## While building

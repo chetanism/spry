@@ -473,3 +473,6 @@ in `spry/history/writ.md`, then retires `canon/`.
   everything (CH-17, 0.13.1).
 - 2026-10-09 — a GitHub issue per slice, opt-in (`slices.issue`), and `slices.pick: ask` for
   `slice-open` with no ID (CH-18, 0.14.0). From connect and pulse-v2, which both kept writ's issues.
+- 2026-10-09 — small fixes from the connect pilot (CH-19, 0.14.1): `link` sets a slice's `branch`,
+  `pr`, `issue`; a folder's index line shows its count instead of warning; `covers` under a bug or
+  task says what to do; `AGENTS.md` names where the config lives.

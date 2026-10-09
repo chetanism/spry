@@ -302,3 +302,20 @@ Entry format:
   - `slices.pick: ask` — `slice-open` with no ID lists four ready slices and recommends none.
 - **Migrate:** a project that already makes issues sets `slices.issue: true` and drops its local
   rule; slices already open keep their `issue:` (a number, no `#`).
+
+## CH-19 · Small fixes from the pilot
+
+- **Date:** 2026-10-09 · **Version:** 0.14.1
+- **Touches:** `tool/spry.py` (`link`, `index`, `check`), `process/slicing.md` (*Open*),
+  `templates/agents.md`
+- **Why:** from the connect pilot, each seen once or twice.
+  - SL-162's `pr:` was set with `sed`. `spry.py link SL-n --pr N` (also `--branch`, `--issue`) sets
+    them in the front-matter, numbers only.
+  - The agent looked for `spry.config.json` at the repository root three times; `AGENTS.md` now
+    says where it is.
+  - `index` warned about 20 folder indexes with no `summary`, ignored since adoption. A folder's
+    index line now shows its count when it has no summary, and says nothing.
+  - A bug's slice listing a story's criteria under `covers` got "the parent is not a story", which
+    did not say what to do. It now does: `covers: []`, and the test still cites the criterion.
+- **Adapt:** nothing
+- **Migrate:** add the `Config:` line under `## Project` in `AGENTS.md`.

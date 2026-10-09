@@ -360,6 +360,41 @@ class Index(Base):
         with open(os.path.join(t.root, "spry/knowledge/decisions/INDEX.md")) as handle:
             self.assertIn("- [D-1 Keep it](D-1-x.md) — we keep it", handle.read())
 
+    def test_a_folder_index_without_a_summary_shows_its_count_quietly(self):
+        idx = "---\ntitle: {0}\naudience: 6\n---\n# {0}\n\n<!-- spry:index -->\n<!-- /spry:index -->\n"
+        t = self.tree(**{
+            "spry__knowledge__conventions__INDEX.md": idx.format("Conventions"),
+            "spry__knowledge__conventions__auth__INDEX.md": idx.format("Auth"),
+            "spry__knowledge__conventions__auth__a.md": "---\ntitle: A\nsummary: a\n---\n# A\n",
+            "spry__knowledge__conventions__auth__b.md": "---\ntitle: B\nsummary: b\n---\n# B\n",
+        })
+        p = t.project()
+        spry.index(p, dry=False)
+        with open(os.path.join(t.root, "spry/knowledge/conventions/INDEX.md")) as handle:
+            self.assertIn("- [Auth](auth/INDEX.md) — 2 entries", handle.read())
+        self.assertFalse([x for x in p.problems if "summary" in x.message])
+
+
+class Link(Base):
+    def test_link_sets_and_adds_fields_and_refuses_a_non_number(self):
+        t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): slice_("SL-1", state="open")})
+        path = spry.link_slice(t.project(), "SL-1", {"pr": "#42", "issue": "7", "branch": "sl-1-a"})
+        with open(path) as handle:
+            head = handle.read().split("\n---\n")[0]
+        self.assertIn("pr: 42\n", head + "\n")
+        self.assertIn("issue: 7", head)
+        self.assertIn("branch: sl-1-a", head)
+        self.assertEqual(head.count("pr:"), 1)
+        with self.assertRaises(SystemExit):
+            spry.link_slice(t.project(), "SL-1", {"pr": "next"})
+
+    def test_covers_under_a_bug_says_what_to_do(self):
+        bug = item("B-1").replace("state: ready", "state: ready")
+        t = self.tree(**{f"{S}/bugs/B-1-x/README.md".replace("/", "__"): bug,
+                         f"{S}/bugs/B-1-x/SL-1-a.md".replace("/", "__"): slice_("SL-1")})
+        self.assertProblem(t.problems(), "B-1 is a bug, not a story — leave `covers: []`")
+
+
 
 class Coverage(Base):
     PAGE = "---\ntitle: Coverage\naudience: 3\n---\n# Coverage\n\n<!-- spry:coverage -->\n<!-- /spry:coverage -->\n"

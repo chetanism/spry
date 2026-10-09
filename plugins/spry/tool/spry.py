@@ -25,6 +25,7 @@
     python3 spry/tool/spry.py draw --seed        # a fresh seed for an exploratory walk
     python3 spry/tool/spry.py draw <seed> <n> --pick < choices   # the same choice for ever, per (seed, n)
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
+    python3 spry/tool/spry.py link <slice> [--branch B] [--pr N] [--issue N]   # set them in the slice's front-matter
     python3 spry/tool/spry.py issue-body <slice> [--close]   # the slice's issue (slices.issue): work order, or close summary
     python3 spry/tool/spry.py merge-message <slice> [--ci-local REASON]   # the squash commit: subject, summary, trailers
     python3 spry/tool/spry.py gate [--force]     # check, fast checks, affected tests; skipped while no code changed
@@ -66,7 +67,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.14.0"
+VERSION = "0.14.1"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -810,7 +811,10 @@ def check(project: Project):
                     if ac not in item.parent.acs:
                         project.problem(item.doc, 1, f"covers {ac}, which {item.parent.id} does not have")
             elif item.fm["covers"]:
-                project.problem(item.doc, 1, "`covers` lists acceptance criteria, but the parent is not a story")
+                project.problem(item.doc, 1, f"`covers` lists acceptance criteria, but {item.parent.id} is a "
+                                             f"{item.parent.type}, not a story — leave `covers: []`: the slice "
+                                             f"fixes what its {item.parent.type} says, and a test that re-proves a "
+                                             f"story's criterion still cites it in its name")
         if item.type == "bug":
             for ref in item.fm.get("breaks", []) if isinstance(item.fm.get("breaks"), list) else []:
                 story_id, _, ac = ref.partition("/")
@@ -1207,6 +1211,10 @@ def index_block(project: Project, index_path: str) -> str:
         if fm.get("id") and not title.startswith(fm["id"]):
             title = f"{fm['id']} {title}"
         summary = fm.get("summary", "")
+        if not summary and target != path:
+            # A folder's own index: its count says enough, and setup writes these by the dozen.
+            count = sum(1 for n in os.listdir(path) if n != "INDEX.md" and (n.endswith(".md") or os.path.isdir(os.path.join(path, n))))
+            summary = f"{count} entr{'y' if count == 1 else 'ies'}"
         if not summary:
             project.problem(target, 1, "no `summary` in front-matter — the index line needs one", "warning")
         rel = os.path.relpath(target, folder).replace(os.sep, "/")
@@ -1403,6 +1411,31 @@ def next_id(project: Project, kind: str) -> str:
 
 
 # ---------------------------------------------------------------- new
+
+def link_slice(project: Project, slice_id: str, fields: dict) -> str:
+    """Set front-matter fields on a slice — `branch`, `pr`, `issue` — in place. Returns the file."""
+    item = project.items.get(slice_id)
+    if item is None or item.type != "slice":
+        raise SystemExit(f"no slice {slice_id}")
+    if not fields:
+        raise SystemExit("nothing to set — give --branch, --pr or --issue")
+    for key in ("pr", "issue"):
+        if key in fields:
+            fields[key] = str(fields[key]).lstrip("#")
+            if not fields[key].isdigit():
+                raise SystemExit(f"`{key}` is a number, not {fields[key]!r}")
+    lines = item.text.split("\n")
+    end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
+    for key, value in fields.items():
+        at = next((i for i in range(1, end) if lines[i].split(":", 1)[0] == key), None)
+        if at is None:
+            lines.insert(end, f"{key}: {value}")
+            end += 1
+        else:
+            lines[at] = f"{key}: {value}"
+    write(item.doc, "\n".join(lines))
+    return item.doc
+
 
 def slugify(title: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
@@ -3046,6 +3079,11 @@ def main(argv=None) -> int:
     g.add_argument("--restore", metavar="BASE", help="on a branch: put back BASE's copy of every generated block it changed")
     p = sub.add_parser("related", help="conflict-check candidates for a document")
     p.add_argument("file")
+    p = sub.add_parser("link", help="set a slice's branch, pr or issue in its front-matter")
+    p.add_argument("slice")
+    p.add_argument("--branch")
+    p.add_argument("--pr")
+    p.add_argument("--issue")
     p = sub.add_parser("next", help="next free ID for a type")
     p.add_argument("type")
     p = sub.add_parser("new", help="create an item from its template, with the next ID, in the right folder")
@@ -3209,6 +3247,10 @@ def main(argv=None) -> int:
         return 0
     if args.command == "related":
         print(related(project, args.file), end="")
+        return 0
+    if args.command == "link":
+        fields = {k: getattr(args, k) for k in ("branch", "pr", "issue") if getattr(args, k) is not None}
+        print(project.rel(link_slice(project, args.slice, fields)))
         return 0
     if args.command == "next":
         print(next_id(project, args.type))
