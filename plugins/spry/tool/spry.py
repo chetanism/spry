@@ -25,6 +25,7 @@
     python3 spry/tool/spry.py draw --seed        # a fresh seed for an exploratory walk
     python3 spry/tool/spry.py draw <seed> <n> --pick < choices   # the same choice for ever, per (seed, n)
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
+    python3 spry/tool/spry.py issue-body <slice> [--close]   # the slice's issue (slices.issue): work order, or close summary
     python3 spry/tool/spry.py merge-message <slice> [--ci-local REASON]   # the squash commit: subject, summary, trailers
     python3 spry/tool/spry.py gate [--force]     # check, fast checks, affected tests; skipped while no code changed
     python3 spry/tool/spry.py changed --base <ref>   # for CI: code=true when anything but docs changed
@@ -65,7 +66,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.13.1"
+VERSION = "0.14.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -97,7 +98,7 @@ PLACEHOLDER = re.compile(r"<([a-zA-Z][a-zA-Z0-9 ,/|.'_-]*)>")
 FENCE = re.compile(r"^\s*(```|~~~)")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-SCALAR_KEYS = {"id", "title", "summary", "state", "owner", "audience", "branch", "pr"}
+SCALAR_KEYS = {"id", "title", "summary", "state", "owner", "audience", "branch", "pr", "issue"}
 # A citation on one of these lines proves nothing: the test is skipped or not written yet.
 NOT_RUN = re.compile(r"\b(?:it|test|describe|context)\.(?:skip|todo)\b|\bx(?:it|test|describe)\s*\(|"
                      r"@pytest\.mark\.(?:skip|xfail)\b|@unittest\.skip|\bt\.Skip\(")
@@ -786,6 +787,10 @@ def check(project: Project):
             for ref in value:
                 if ref not in known:
                     project.problem(item.doc, 1, f"`{key}` names {ref}, which does not exist")
+        if item.type == "slice" and item.state == "open" and project.config.get("slices", {}).get("issue") \
+                and not str(item.fm.get("issue", "")).isdigit():
+            project.problem(item.doc, 1, "open without an `issue:` number — `slices.issue` is on: "
+                                         "slicing.md *Open* creates the issue before the branch")
         needs_check = (item.type == "slice" and item.state in ("open", "closed")) or \
                       (item.type not in ("slice", "bug") and item.state == "ready")
         if needs_check:
@@ -1529,8 +1534,30 @@ def pr_body(project: Project, slice_id: str, base: str | None = None) -> str:
     body = re.sub(r"<!-- guide:.*?-->\n?", "", "\n".join(lines[start:]), flags=re.S)
     body = re.sub(r"\n{3,}", "\n\n", body).strip()
     parent = f" · {item.parent.label}" if item.parent else ""
+    issue = f" · issue #{item.fm['issue']}" if str(item.fm.get("issue", "")).isdigit() else ""
     review = reviewer_page(project, item, base)
-    return f"**{item.label}**{parent} — `{project.rel(item.doc)}`\n\n{review}{body}\n"
+    return f"**{item.label}**{parent} — `{project.rel(item.doc)}`{issue}\n\n{review}{body}\n"
+
+
+def issue_body(project: Project, slice_id: str, close: bool = False) -> str:
+    """The slice's issue: the work order as agreed, frozen and saying so — or, with `close`, the
+    close summary, posted on the issue as a comment. The file stays the living version."""
+    item = project.items.get(slice_id)
+    if item is None or item.type != "slice":
+        raise SystemExit(f"no slice {slice_id}")
+    part = "Close summary" if close else "Work order"
+    lines = item.text.split("\n")
+    start = next((i for i in range(item.body_start, len(lines)) if lines[i].strip() == f"## {part}"), None)
+    if start is None:
+        raise SystemExit(f"{project.rel(item.doc)} has no `## {part}` section")
+    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
+    body = re.sub(r"<!-- guide:.*?-->\n?", "", "\n".join(lines[start:end]), flags=re.S)
+    body = re.sub(r"\n{3,}", "\n\n", body).strip()
+    rel = project.rel(item.doc)
+    if close:
+        return f"**{item.label}** closed — `{rel}`\n\n{body}\n"
+    return (f"> **This is `{rel}`'s work order as agreed on {time.strftime('%Y-%m-%d')}, and it is never "
+            f"updated.** The file is the living version; where the two differ, the file is right.\n\n{body}\n")
 
 
 def reviewer_page(project: Project, item: Item, base: str | None) -> str:
@@ -2769,6 +2796,8 @@ def merge_message(project: Project, slice_id: str, ci_local: str | None = None) 
         trailers.append(f"Parent: {item.parent.id}")
     if item.parent and item.parent.type == "story" and item.fm.get("covers"):
         trailers.append("Covers: " + ", ".join(f"{item.parent.id}/{ac}" for ac in item.fm["covers"]))
+    if str(item.fm.get("issue", "")).isdigit():
+        trailers.append(f"Closes #{item.fm['issue']}")
     if ci_local:
         head = git(project.root, "rev-parse", "--short", "HEAD").stdout.strip() or "?"
         trailers.append(f"CI: did not run ({' '.join(ci_local.split())}); gate green locally at {head}")
@@ -3025,6 +3054,9 @@ def main(argv=None) -> int:
     p.add_argument("--title", required=True)
     p.add_argument("--owner")
     p.add_argument("--dependency", help="external: the service the behaviour belongs to")
+    p = sub.add_parser("issue-body", help="a slice's issue: the work order as agreed, or with --close its close summary")
+    p.add_argument("slice")
+    p.add_argument("--close", action="store_true", help="the close summary, for a comment on the issue")
     p = sub.add_parser("pr-body", help="a slice's work order and close summary, for its pull request")
     p.add_argument("slice")
     p.add_argument("--base", help="git ref the PR merges into, to show criteria the branch changed")
@@ -3268,6 +3300,9 @@ def main(argv=None) -> int:
             print(f"{args.file}:{n}: {word}")
         print(f"{len(hits)} private word{'s' if len(hits) != 1 else ''}")
         return 1 if hits else 0
+    if args.command == "issue-body":
+        print(issue_body(project, args.slice, args.close), end="")
+        return 0
     if args.command == "pr-body":
         print(pr_body(project, args.slice, args.base), end="")
         return 0

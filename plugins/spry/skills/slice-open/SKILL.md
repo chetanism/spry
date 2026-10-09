@@ -8,8 +8,10 @@ argument-hint: "[slice ID]"
 
 - **Procedure:** `spry/process/slicing.md` → *What a slice is* and *Open*. Read `conflicts.md`,
   `chat.md` and `writing.md` beside it.
-- **Slice:** `$ARGUMENTS`; without one, run `python3 spry/tool/spry.py backlog` and offer the
-  first row of *Ready to build*, with the next two as alternatives.
+- **Slice:** `$ARGUMENTS`; without one, run `python3 spry/tool/spry.py backlog` and ask which row
+  of *Ready to build* to open — the first recommended and the next two as alternatives, or, with
+  `slices.pick: ask`, the first four with none recommended (`slicing.md` → *Open*).
+- **With `slices.issue` on,** the issue comes before the branch, from `spry.py issue-body`.
 - **Ask only** when the plan does something hard to undo or departs from the story (`slicing.md` →
   *When to stop and ask*). Otherwise open the branch and the draft PR, build, and close — unless
   the person said to open only.

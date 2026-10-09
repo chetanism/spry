@@ -1,6 +1,6 @@
 {
-  "spry": "0.13.1",
-  "spry_baseline": "CH-17",
+  "spry": "0.14.0",
+  "spry_baseline": "CH-18",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -60,6 +60,10 @@
     "runners": [
       {"match": ["<glob of test files>"], "cwd": "package", "command": "<runner with fail-fast flag> {files}"}
     ]
+  },
+  "slices": {
+    "issue": false,
+    "pick": "offer"
   },
   "main_branch": "main"
 }

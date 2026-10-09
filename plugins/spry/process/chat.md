@@ -47,7 +47,8 @@ Every bullet starts with one tag in brackets.
 - The stem carries its own context — what is being chosen, and the fact it turns on, quoted
   inline. The reader answers without opening anything: "2b" is a full answer.
 - One line per option, saying why it is or is not the better choice.
-- Exactly one option marked `(recommended)`.
+- Exactly one option marked `(recommended)` — except where config leaves the choice to the person
+  without one (`slices.pick: ask`).
 
 ## Example — audience 2
 

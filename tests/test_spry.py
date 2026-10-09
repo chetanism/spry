@@ -1397,6 +1397,34 @@ class Merge(Base):
         self.assertRegex(message.rstrip().split("\n")[-1], r"^CI: did not run \(billing lock\); gate green locally at \S+$")
 
 
+class Issues(Base):
+    def test_an_open_slice_needs_an_issue_only_when_the_switch_is_on(self):
+        doc = f"{S}/SL-1-a.md".replace("/", "__")
+        t = self.tree(**{doc: slice_("SL-1", state="open")})
+        self.assertFalse([p for p in t.problems() if "issue" in str(p)])
+        on = json.dumps(dict(CONFIG, slices={"issue": True}))
+        t = self.tree(**{doc: slice_("SL-1", state="open"), "spry__spry.config.json": on})
+        self.assertProblem(t.problems(), "open without an `issue:` number")
+        t = self.tree(**{doc: slice_("SL-1", state="open").replace("pr: 1\n", "pr: 1\nissue: 12\n"),
+                         "spry__spry.config.json": on})
+        self.assertFalse([p for p in t.problems() if "issue" in str(p)])
+        t = self.tree(**{doc: slice_("SL-1"), "spry__spry.config.json": on})
+        self.assertFalse([p for p in t.problems() if "issue" in str(p)], "a closed slice is history")
+
+    def test_issue_body_is_the_frozen_work_order_and_the_close_summary(self):
+        text = slice_("SL-1").replace("pr: 1\n", "pr: 1\nissue: 12\n") + "\n## Close summary\n\n### Summary\n\n- Lent.\n"
+        p = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): text}).project()
+        opened = spry.issue_body(p, "SL-1")
+        self.assertIn("never updated", opened.split("\n")[0])
+        self.assertIn("## Work order", opened)
+        self.assertNotIn("## Close summary", opened)
+        closed = spry.issue_body(p, "SL-1", close=True)
+        self.assertIn("- Lent.", closed)
+        self.assertNotIn("## Work order", closed)
+        self.assertTrue(spry.merge_message(p, "SL-1").rstrip().endswith("Closes #12"))
+        self.assertIn("· issue #12", spry.pr_body(p, "SL-1").split("\n")[0])
+
+
 class ReviewCheck(unittest.TestCase):
     DIFF = (
         "diff --git a/story.md b/story.md\n--- a/story.md\n+++ b/story.md\n"

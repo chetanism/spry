@@ -48,8 +48,12 @@ missing. So open, build, test and close run as one piece of work.
 
 ## Open — `/spry:slice-open [SL-n]`
 
-No argument → offer the first row of *Ready to build* in `spry.py backlog`, and the next two as
-alternatives.
+No argument → read *Ready to build* in `spry.py backlog`, and ask which slice to open:
+
+- `slices.pick: offer` (default) — the first row, recommended, and the next two as alternatives.
+- `slices.pick: ask` — the first four rows, none recommended: the order is the plan's and the
+  dependencies', and what else bears on the choice (a design not settled, an outside team's date) is
+  the person's. The one exception to `chat.md`'s single `(recommended)`.
 
 1. **Read:** the parent and its feature, every knowledge file the change could touch (conventions,
    decisions, external behaviour, security, performance), and the code.
@@ -62,6 +66,10 @@ alternatives.
 4. **Show the summary and the plan.** Ask to approve only when the plan does something hard to undo
    (*When to stop and ask*) or departs from the story; otherwise go on.
 5. Then:
+   - **with `slices.issue` on, the issue first:** `spry.py issue-body SL-<n> | gh issue create
+     --title "SL-<n> <title>" --body-file -`. Its body is the work order as agreed, saying it is
+     never updated — the file goes on changing, and the difference is the record. Set `issue:` to
+     its number; `check` refuses an open slice without one;
    - branch `sl-<n>-<slug>` from the main branch;
    - set `state: open`, `branch:`; `spry.py check`; commit `docs(slice): SL-<n> work order` —
      the branch's first commit, before any code;
@@ -128,6 +136,9 @@ alternatives.
 6. Set `state: closed`; `spry.py gate` (only `check` runs — nothing but documents changed); commit
    `docs(slice): SL-<n> close summary` with the trailer `Slice: SL-<n>` in the body; push; replace
    the PR body with `spry.py pr-body SL-<n> --base origin/<main>`; mark the PR ready for review.
+   With an `issue:`, post the close summary on it — `spry.py issue-body SL-<n> --close |
+   gh issue comment <issue> --body-file -` — and leave its body alone. The merge commit's
+   `Closes #<issue>` closes it.
 7. **Never merge here.** Tell the person the PR is ready for `/spry:review`, then `/spry:merge`.
 
 ## Slices side by side

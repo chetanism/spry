@@ -124,7 +124,9 @@ spry/
   Filled by the conflict check (`Dependency`) and by `slice` (a slice that needs an earlier one).
 - `state` for plan items: `draft` | `ready` | `dropped`. For slices: `planned` | `open` |
   `closed` | `dropped`. **`done` is never written** — it is derived (§6).
-- Slices add `covers: [AC-1, AC-2]`, `branch`, `pr`.
+- Slices add `covers: [AC-1, AC-2]`, `branch`, `pr` — and `issue` with `slices.issue` on: a GitHub
+  issue made at open from the work order, frozen and saying so; the close summary is a comment on
+  it, and the merge commit's `Closes #n` closes it. `check` refuses an open slice without one.
 - **A slice file has two parts:** the **Work order** (written at `slice-open`, before any code —
   summary, covers, plan, must-not, tests, demo, conflict check) and the **Close summary** (written at
   `slice-close` — what changed, falsify, follow-ups). The file is the source; the PR body is copied
@@ -233,7 +235,8 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
   in tree order; slices by ID. Every row has a *Part of* column: everything above it, top level
   first, so it works for any `levels`. In-progress and ready rows have *Unblocks* — what waits on
   the slice or on something it is part of; a blocked row names each blocker with where it stands on
-  this page (in progress, ready to build, …) and its owner. `slice-open` with no ID offers its first ready row.
+  this page (in progress, ready to build, …) and its owner. `slice-open` with no ID offers its first ready row — or, with `slices.pick: ask`, lists the first
+  four and recommends none.
 - **On a branch the committed pages show the main branch** as of CI's last run. `spry view` writes
   both for the working tree to `.spry/view/` (gitignored); `spry hooks` (opt-in, per clone) runs it
   after a checkout or pull that changed `spry/` or a test. `check --base` refuses a generated block
@@ -468,3 +471,5 @@ in `spry/history/writ.md`, then retires `canon/`.
   branch adding no source line needs no falsify.
 - 2026-10-09 — `status` fits a big plan in 100 lines, takes an ID for one branch, `--all` for
   everything (CH-17, 0.13.1).
+- 2026-10-09 — a GitHub issue per slice, opt-in (`slices.issue`), and `slices.pick: ask` for
+  `slice-open` with no ID (CH-18, 0.14.0). From connect and pulse-v2, which both kept writ's issues.

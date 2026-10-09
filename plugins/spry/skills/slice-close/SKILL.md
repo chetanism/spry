@@ -10,6 +10,7 @@ argument-hint: "[slice ID]"
 - **Slice:** `$ARGUMENTS`; without one, the `open` slice whose `branch` is the current branch.
 - **Gate with the tool** (`spry.py gate`), never by running test commands by hand, and never the
   full suite.
+- **With an `issue:`,** post the close summary on it (`spry.py issue-body --close`); never edit its body.
 - **Falsify with the tool** (`spry.py falsify suggest`, then `run`) — never by editing files by hand;
   the tool restores every file, even when interrupted. Keep every control the draft lists.
   Confirm `git status` is clean afterwards.

@@ -284,3 +284,21 @@ Entry format:
   lines and says how to go deeper — `status <ID>` for one branch, `--level`, or `--all`.
 - **Adapt:** nothing
 - **Migrate:** nothing
+
+## CH-18 · A GitHub issue per slice, and slice-open that only asks
+
+- **Date:** 2026-10-09 · **Version:** 0.14.0
+- **Touches:** `tool/spry.py` (`check`, `issue-body`, `pr-body`, `merge-message`),
+  `process/slicing.md` (*Open*, *Close*), `process/setup.md` (§2 b), `process/chat.md` (*Asks*),
+  `skills/slice-open`, `skills/slice-close`, `templates/spry.config.json` (`slices`)
+- **Why:** connect and pulse-v2 both kept writ's issue per slice: people outside the repository
+  follow issues, and a frozen copy of the work order as agreed shows how far the slice moved from
+  it. connect also made `slice-open` list slices without recommending one — the plan order knows
+  dependencies, not an unsettled design or another team's date — and "propose, then confirm" made
+  "no, the other one" feel like a correction.
+- **Adapt:**
+  - `slices.issue: true` — `slice-open` makes the issue before the branch (`spry.py issue-body`),
+    the slice gets `issue:`, `slice-close` comments the close summary, the merge closes it.
+  - `slices.pick: ask` — `slice-open` with no ID lists four ready slices and recommends none.
+- **Migrate:** a project that already makes issues sets `slices.issue: true` and drops its local
+  rule; slices already open keep their `issue:` (a number, no `#`).
