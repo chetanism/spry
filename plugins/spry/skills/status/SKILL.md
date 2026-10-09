@@ -6,8 +6,10 @@ argument-hint: "[ID, or a level such as feature]"
 
 # spry — status
 
-1. Run `python3 spry/tool/spry.py status` (add `--level <level>` when `$ARGUMENTS` is a level).
-   With an ID, show only that item's branch of the tree.
+1. Run `python3 spry/tool/spry.py status`, with `$ARGUMENTS` as given: an ID shows only that
+   item's branch, a level is `--level <level>`. A big plan is printed only as deep as fits; show it
+   as printed, and offer one branch (`status <ID>`) for whatever the person asks about next — never
+   `--all` unless they ask for everything.
 2. Reply per `spry/process/chat.md`, at the tone in `.spry/tone`, else 5 (`chat.md`).
    - **Tone 1–4:** a few `[Note]` bullets per milestone in plain words — what is done, what is being
      built, what is stuck and why. Titles, not IDs alone. No tree.

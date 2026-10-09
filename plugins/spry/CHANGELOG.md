@@ -274,3 +274,13 @@ Entry format:
 - **Migrate:** nothing. This update itself still runs from the old copy: update the plugin by hand
   once (`claude plugin marketplace update`, `claude plugin update spry@<marketplace>`,
   `/reload-plugins`); from then on `/spry:update` does it.
+
+## CH-17 · Status fits a big plan
+
+- **Date:** 2026-10-09 · **Version:** 0.13.1
+- **Touches:** `tool/spry.py` (`status`), `skills/status`
+- **Why:** on connect, `status` printed 778 lines, every level down to slices; twice the agent cut
+  it to milestones and epics by hand. Now, with no level, it prints only the levels that fit in 100
+  lines and says how to go deeper — `status <ID>` for one branch, `--level`, or `--all`.
+- **Adapt:** nothing
+- **Migrate:** nothing

@@ -327,6 +327,18 @@ class Status(Base):
         self.assertIn("M-1 Title of M-1", out)
         self.assertIn("slice SL-1", out)
 
+    def test_a_big_plan_is_cut_to_the_levels_that_fit(self):
+        original = spry.STATUS_LINES
+        spry.STATUS_LINES = 3
+        self.addCleanup(setattr, spry, "STATUS_LINES", original)
+        p = self.tree().project()
+        out = spry.status(p, None)
+        self.assertNotIn("slice SL-1", out)
+        self.assertIn("deeper: `status <ID>` for one branch", out)
+        self.assertIn("slice SL-1", spry.status(p, None, everything=True))
+        self.assertIn("slice SL-1", spry.status(p, None, "S-1"))
+        self.assertTrue(spry.status(p, None, "S-1").startswith("S-1 "))
+
 
 class Index(Base):
     def test_fills_blocks_and_is_idempotent(self):

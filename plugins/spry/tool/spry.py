@@ -2,7 +2,7 @@
 """spry — the project tool. Standard library only, Python 3.10+.
 
     python3 spry/tool/spry.py check              # is the tree consistent? exit 1 if not
-    python3 spry/tool/spry.py status [--level story]
+    python3 spry/tool/spry.py status [ID] [--level story | --all]
     python3 spry/tool/spry.py index [--check]    # regenerate marker blocks and INDEX.md files (CI on main)
     python3 spry/tool/spry.py index --restore origin/main   # on a branch: undo generated blocks it changed
     python3 spry/tool/spry.py coverage           # defined vs done, and what is built but not proven
@@ -65,7 +65,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.13.0"
+VERSION = "0.13.1"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -1250,10 +1250,33 @@ def index(project: Project, dry: bool):
 
 # ---------------------------------------------------------------- status
 
-def status(project: Project, level: str | None):
+STATUS_LINES = 100
+
+
+def status(project: Project, level: str | None, item_id: str | None = None, everything: bool = False):
+    """The tree with done/total. With no level, as deep as fits in STATUS_LINES — a big plan is read
+    top down, one branch at a time — unless `everything`."""
     if level and level not in project.levels:
         raise SystemExit(f"unknown level `{level}` — one of {', '.join(project.levels)}")
-    stop = project.levels.index(level) if level else None
+    if item_id and item_id not in project.items:
+        raise SystemExit(f"no item {item_id}")
+    roots = [project.items[item_id]] if item_id else project.top
+    if level or everything:
+        return status_tree(project, roots, project.levels.index(level) if level else None)
+    full = status_tree(project, roots, None)
+    if full.count("\n") < STATUS_LINES:
+        return full
+    for stop in range(len(project.levels) - 1, -1, -1):
+        cut = status_tree(project, roots, stop)
+        if cut.count("\n") < STATUS_LINES or stop == 0:
+            deeper = project.levels[stop + 1] if stop + 1 < len(project.levels) else "slices"
+            return (cut + f"\n\n(down to {project.levels[stop]}s, to fit {STATUS_LINES} lines; deeper: "
+                    f"`status <ID>` for one branch, `--level {deeper}`, or `--all` for all "
+                    f"{full.count(chr(10)) + 1} lines)")
+    return full
+
+
+def status_tree(project: Project, roots: list, stop: int | None) -> str:
     out = []
 
     def show(item: Item, depth: int):
@@ -1267,7 +1290,7 @@ def status(project: Project, level: str | None):
         for child in sorted(item.children, key=lambda c: order.get(c.type, 0)):
             show(child, depth + 1)
 
-    for item in project.top:
+    for item in roots:
         show(item, 0)
     return "\n".join(out) or "No plan yet — spry/plan/ is empty."
 
@@ -2979,7 +3002,9 @@ def main(argv=None) -> int:
     p.add_argument("--base", help="git ref the branch merges into: warns on cited criteria that changed, "
                                   "refuses generated blocks the branch changed")
     p = sub.add_parser("status", help="done vs total at every level")
+    p.add_argument("id", nargs="?", help="only this item's branch")
     p.add_argument("--level", help="stop at this level, e.g. feature")
+    p.add_argument("--all", action="store_true", help="every level, however long")
     p = sub.add_parser("coverage", help="defined vs done for the whole plan, and what is built but not proven")
     p = sub.add_parser("backlog", help="what is being built, what to build next, and what stands in the way")
     p = sub.add_parser("view", help="write the backlog and coverage pages for this working tree to .spry/view/")
@@ -3118,7 +3143,7 @@ def main(argv=None) -> int:
         print(f"{errors} error{'s' if errors != 1 else ''}, {len(problems) - errors} warning{'s' if len(problems) - errors != 1 else ''}")
         return 1 if errors else 0
     if args.command == "status":
-        print(status(project, args.level))
+        print(status(project, args.level, args.id, args.all))
         return 0
     if args.command == "coverage":
         print(coverage_block(project, os.path.join(project.spry, "COVERAGE.md")))

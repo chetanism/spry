@@ -144,6 +144,8 @@ spry/
 - **Feature / Epic / Milestone** done = all counted children done (dropped ones excluded).
 - `spry status` prints, at every level, total vs completed, grouped by parent:
   milestones · epics by milestone · features by epic · stories by feature · slices by story.
+  A plan over 100 lines prints only the levels that fit and says how to go deeper:
+  `status <ID>` for one branch, `--level`, or `--all`.
 - **Editing a story after slicing has started is allowed** — git history is the record. `spry check`
   warns (`check --base <ref>`, which CI passes on pull requests) when a change edits the text of an
   AC that a test already cites. A branch that changes an AC **and** code is blocked by
@@ -464,3 +466,5 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-09 — from the connect pilot (CH-16, 0.13.0): `/spry:update` updates the installed plugin
   before it reads the changelog; `falsify suggest` offers value lines when no guard was added, and a
   branch adding no source line needs no falsify.
+- 2026-10-09 — `status` fits a big plan in 100 lines, takes an ID for one branch, `--all` for
+  everything (CH-17, 0.13.1).
