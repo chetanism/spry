@@ -953,6 +953,27 @@ class Falsify(unittest.TestCase):
         self.assertEqual(plan[1]["with"], "    if False and (overdue):")
         self.assertEqual(plan[0]["expect"], ["S-1/AC-1", "S-1/AC-2"])
 
+    def test_suggest_offers_value_lines_when_no_guard_was_added(self):
+        self.git("checkout", "-q", "-b", "digest")
+        self.write({"src/loans.py": LOANS_AFTER + "\ndef key(org, body):\n    salted = org.secret + body\n    return hash(salted)\n",
+                    "notes.md": "if this were code it would be a guard\n"})
+        self.commit("a keyed digest, no guard")
+        plan = spry.falsify_suggest(spry.Project(self.root), "SL-1", "sl-1")
+        self.assertEqual([e["find"] for e in plan], ["    salted = org.secret + body", "    return hash(salted)"])
+        self.assertTrue(plan[0]["mutation"].startswith("delete the line — no guard was added"))
+        self.assertEqual(spry.falsify_suggest(spry.Project(self.root), "SL-1", "sl-1", fallback=False), [],
+                         "merge-check never requires a fallback line")
+
+    def test_a_branch_that_adds_no_source_needs_no_falsify(self):
+        self.git("checkout", "-q", "-b", "tests-only")
+        self.write({"tests/test_more.py": '"""S-1/AC-1 more"""\nassert True\n'})
+        self.commit("a test only")
+        lines = spry.merge_check(spry.Project(self.root), "SL-1", "sl-1")
+        self.assertIn(("ok", "falsify: the branch adds no source lines — nothing to falsify"), lines)
+        self.assertFalse(any("no falsify results" in x for _s, x in lines))
+        self.assertTrue(any("no falsify results" in x for _s, x in spry.merge_check(spry.Project(self.root), "SL-1")),
+                        "without a base, nothing is waived")
+
     def test_check_base_warns_on_a_cited_criterion_that_changed(self):
         path = os.path.join(self.root, "spry/plan/M-1-m/E-1-e/F-1-f/S-1-s/README.md")
         with open(path) as handle:

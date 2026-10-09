@@ -258,3 +258,19 @@ Entry format:
 - **Adapt:** nothing
 - **Migrate:** a project that kept a "CI is down, merge on a local gate" rule in memory or in
   `AGENTS.md` drops it; step 1 of `merging.md` now holds it.
+
+## CH-16 · Update sees the newest spry; falsify for slices with no guard
+
+- **Date:** 2026-10-09 · **Version:** 0.13.0
+- **Touches:** `process/updating.md` (§0), `skills/update`, `process/slicing.md` (*Close*),
+  `tool/spry.py` (`falsify suggest`, `merge-check`)
+- **Why:** from the connect pilot.
+  - `/spry:update` said "nothing new" twice while a newer spry was published: it read the
+    changelog of the copy installed. The person updated the marketplace and plugin by hand.
+  - `falsify suggest` drafted nothing for SL-161 (a test-only change) and SL-162 (a keyed digest,
+    no guard), and `merge-check` blocked on the empty table, so the agent wrote both plans by hand.
+  - `suggest` read added lines in Markdown outside `spry/` as source.
+- **Adapt:** nothing
+- **Migrate:** nothing. This update itself still runs from the old copy: update the plugin by hand
+  once (`claude plugin marketplace update`, `claude plugin update spry@<marketplace>`,
+  `/reload-plugins`); from then on `/spry:update` does it.

@@ -288,7 +288,9 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   a comparison's boundary flipped (`>=` ↔ `>`; never `==` ↔ `!=`, and never a generic's `<…>`), a
   `throw` / `raise` / error return deleted. **Not negation:**
   negating a guard also breaks the normal path, so any test "catches" it — a false catch.
-  Plan entries use writ's exact `find` / `with` form.
+  Plan entries use writ's exact `find` / `with` form. With no such line in the diff, up to five
+  lines that compute or store something are offered for deletion instead; `merge-check` never
+  requires those. A branch that adds no source line at all (tests, documents) has nothing to falsify.
 - **`expect` names acceptance criteria** (`S-1/AC-2`); tests are found by their names.
 - **Runs only those test files**, through per-runner commands with `{files}`, using the runner's
   fail-fast flag — one failure is enough. Files that name the control's source file run first; the
@@ -459,3 +461,6 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-09 — from the connect pilot (CH-15, 0.12.0): a merge when CI never ran — the gate on the
   PR's head stands in, the person accepts it at the ask, and the squash commit carries a `CI:`
   trailer; a review's first ask can be *post, fix, then merge*, one answer for the whole way.
+- 2026-10-09 — from the connect pilot (CH-16, 0.13.0): `/spry:update` updates the installed plugin
+  before it reads the changelog; `falsify suggest` offers value lines when no guard was added, and a
+  branch adding no source line needs no falsify.

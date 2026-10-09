@@ -99,7 +99,10 @@ alternatives.
    - `python3 spry/tool/spry.py falsify suggest SL-<n>` drafts `.spry/falsify/SL-<n>.json` from the
      source lines the branch added: one candidate per guard, comparison or error line, each with a
      mutation that removes it (a guard made *never true*, a boundary flipped, a `throw` deleted) and
-     `expect` taken from `covers`.
+     `expect` taken from `covers`. **No guard added** — the slice changes a value, a key, a digest —
+     it offers up to five lines that compute or store something, each deleted: keep the ones a test
+     must notice. **No source line added** — only tests or documents — it says so, and there is
+     nothing to falsify: `merge-check --base` accepts the empty table.
    - **Keep every control the draft lists** — `merge-check` blocks when one has no row. Narrow
      each `expect` to the criteria that control serves, and add any the draft missed (same
      `find` / `with` form). A control that cannot run (it needs a clock, a network) gets the row

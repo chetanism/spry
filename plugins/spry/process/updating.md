@@ -8,6 +8,25 @@ audience: 7
 Run by `/spry:update`. **Read this file from the plugin, not the project's copy** — the project's
 copy is the old one. Replies: `chat.md`.
 
+## 0. The newest spry first
+
+An installed plugin is fixed at the version installed. A newer spry on GitHub is invisible to it — the
+changelog read in §2 is the installed one — so "nothing new" means nothing until this step is done.
+
+1. **The copy running:** `version` in `<plugin root>/.claude-plugin/plugin.json`.
+2. **Installed by Claude Code** — the plugin root is `…/plugins/cache/<marketplace>/spry/<version>`:
+   - `claude plugin marketplace update <marketplace>`, then `claude plugin update spry@<marketplace>`.
+   - A newer version installed → **the plugin root for the rest of this procedure is
+     `…/plugins/cache/<marketplace>/spry/<new version>`**. Read this file again from there, and every
+     plugin file after it. No reload is needed for that.
+   - Tell the person to run `/reload-plugins` when the update is done, so the other skills run the
+     new copy too.
+3. **A git checkout** (`claude --plugin-dir`, or `spry.py install` run from a clone):
+   `git -C <checkout> fetch`; behind its upstream → ask to `git pull --ff-only` first.
+4. **Cannot tell** (no network, another agent) → say which version runs, and go on.
+
+Say in the reply which version this update reads.
+
 ## 1. Where the project stands
 
 - `spry_baseline` and `spry` in `spry/spry.config.json`: the last changelog entry considered, and
@@ -17,7 +36,8 @@ copy is the old one. Replies: `chat.md`.
 
 ## 2. What spry gained
 
-Every entry in `<plugin>/CHANGELOG.md` after `spry_baseline`. None → say so, offer
+Every entry in `<plugin>/CHANGELOG.md` after `spry_baseline`, read from the plugin root §0 settled.
+None → say so, offer
 `vendor --diff`'s output if anything differs anyway, and stop.
 
 ## 3. Check each entry before asking

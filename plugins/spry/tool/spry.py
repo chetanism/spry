@@ -65,7 +65,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.12.0"
+VERSION = "0.13.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -2129,37 +2129,64 @@ def mutations_for(line: str) -> list:
     return out
 
 
-def falsify_suggest(project: Project, slice_id: str, base: str) -> list:
-    """A draft plan from the source lines this branch added, for a person to prune."""
+def added_source(project: Project, base: str) -> list:
+    """[(path, line)] — every line this branch added outside tests, `spry/` and `checks.docs`."""
+    diff = git(project.root, "diff", "--relative", "-U0", f"{base}...HEAD", "--", ".", ":(exclude)spry")
+    if diff.returncode != 0:
+        raise PlanError(f"git diff against {base} failed: {diff.stderr.strip()}")
+    skip = project._test_globs() + [glob_regex(g) for g in project.config.get("checks", {}).get("docs") or DEFAULT_DOCS]
+    out, current = [], None
+    for line in diff.stdout.split("\n"):
+        if line.startswith("+++ "):
+            path = line[6:] if line.startswith("+++ b/") else None
+            current = path if path and not any(g.match(path) for g in skip) else None
+        elif current and line.startswith("+"):
+            out.append((current, line[1:]))
+    return out
+
+
+# A line worth deleting when a slice adds no guard: it computes or stores something. Not an import,
+# a declaration's head, a brace, a comment or a bare return.
+STATEMENT_LINE = re.compile(r"^\s*(?!(import|from|export|def|class|function|interface|type|#|//|/\*|\*|return\s*;?$))"
+                            r".*(\w\s*=[^=>]|\w\(|\.\w+\()")
+FALLBACK_CONTROLS = 5
+
+
+def falsify_suggest(project: Project, slice_id: str, base: str, fallback: bool = True) -> list:
+    """A draft plan from the source lines this branch added, for a person to prune.
+    With no guard among them, the lines that compute or store something are offered instead
+    (`fallback`), so a slice that changes a value — a key, a digest — still has candidates."""
     item = project.items.get(slice_id)
     if item is None or item.type != "slice":
         raise PlanError(f"no slice {slice_id}")
     story = item.parent.id if item.parent and item.parent.type == "story" else None
     expect = [f"{story}/{ac}" for ac in item.fm.get("covers") or []] if story else []
-    diff = git(project.root, "diff", "--relative", "-U0", f"{base}...HEAD", "--", ".", ":(exclude)spry")
-    if diff.returncode != 0:
-        raise PlanError(f"git diff against {base} failed: {diff.stderr.strip()}")
-    tests = project._test_globs()
-    plan, current = [], None
-    for line in diff.stdout.split("\n"):
-        if line.startswith("+++ "):
-            path = line[6:] if line.startswith("+++ b/") else None
-            current = path if path and not any(g.match(path) for g in tests) else None
-            continue
-        if not current or not line.startswith("+") or line.startswith("+++"):
-            continue
-        source = line[1:]
-        if not CONTROL_LINE.search(source):
-            continue
-        try:
-            text = read(os.path.join(project.root, current))
-        except (OSError, UnicodeDecodeError):
-            continue
-        if text.count(source) != 1:
-            continue
-        for with_, label in mutations_for(source)[:1]:
-            plan.append({"control": " ".join(source.split())[:70], "file": current, "find": source,
-                         "with": with_, "mutation": label, "expect": list(expect)})
+    added = added_source(project, base)
+    texts: dict = {}
+
+    def once(path, source):
+        if path not in texts:
+            try:
+                texts[path] = read(os.path.join(project.root, path))
+            except (OSError, UnicodeDecodeError):
+                texts[path] = ""
+        return texts[path].count(source) == 1
+
+    plan = []
+    for path, source in added:
+        if CONTROL_LINE.search(source) and once(path, source):
+            for with_, label in mutations_for(source)[:1]:
+                plan.append({"control": " ".join(source.split())[:70], "file": path, "find": source,
+                             "with": with_, "mutation": label, "expect": list(expect)})
+    if plan or not fallback:
+        return plan
+    for path, source in added:
+        if len(plan) == FALLBACK_CONTROLS:
+            break
+        if STATEMENT_LINE.match(source) and once(path, source):
+            plan.append({"control": " ".join(source.split())[:70], "file": path, "find": source, "with": "",
+                         "mutation": "delete the line — no guard was added; keep the lines a test must notice",
+                         "expect": list(expect)})
     return plan
 
 
@@ -2619,7 +2646,9 @@ def merge_check(project: Project, slice_id: str, base: str | None = None) -> lis
     out.append(("ok", f"PR #{item.fm['pr']}") if str(item.fm.get("pr", "")).isdigit()
                else ("block", "no `pr:` number in the slice"))
     rows = falsify_table(item)
-    if not rows:
+    if not rows and base and not added_or_none(project, base):
+        out.append(("ok", "falsify: the branch adds no source lines — nothing to falsify"))
+    elif not rows:
         out.append(("block", "no falsify results — run `falsify run … --record` at close"))
     for cells in rows:
         result = cells[-1].strip()
@@ -2663,10 +2692,18 @@ def merge_check(project: Project, slice_id: str, base: str | None = None) -> lis
     return out
 
 
+def added_or_none(project: Project, base: str) -> bool:
+    """Did the branch add any source line? True when unsure, so an unreadable base never waives falsify."""
+    try:
+        return any(line.strip() for _path, line in added_source(project, base))
+    except PlanError:
+        return True
+
+
 def required_controls(project: Project, item: Item, rows: list, base: str) -> list:
     """Every control `falsify suggest` finds in the diff must have a row: the agent adds, never drops."""
     try:
-        wanted = falsify_suggest(project, item.id, base)
+        wanted = falsify_suggest(project, item.id, base, fallback=False)
     except PlanError as e:
         return [("block", f"falsify: cannot list the controls the diff requires — {e}")]
     have = {" ".join(cells[0].replace("\\|", "|").split()) for cells in rows}
@@ -3172,6 +3209,9 @@ def main(argv=None) -> int:
                 out = args.out or os.path.join(project.root, ".spry", "falsify", f"{args.slice}.json")
                 os.makedirs(os.path.dirname(out), exist_ok=True)
                 write(out, json.dumps(plan, indent=2, ensure_ascii=False) + "\n")
+                if not plan and not added_or_none(project, base):
+                    print("the branch adds no source lines — nothing to falsify; merge-check accepts an empty table")
+                    return 0
                 print(f"{len(plan)} candidate control{'s' if len(plan) != 1 else ''} → {project.rel(out)}")
                 if plan and not plan[0]["expect"]:
                     print("fill in `expect` — the slice covers no story criteria")
