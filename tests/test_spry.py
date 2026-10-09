@@ -408,6 +408,9 @@ class Backlog(Base):
                          self.key(f"{self.T}/SL-2-b.md"): slice_("SL-2", state="planned", covers="[]")})
         ids, _ = self.sections(t)
         self.assertEqual(ids["ready"], ["SL-3", "SL-2", "SL-1"])
+        page = spry.backlog_block(t.project(), os.path.join(t.root, "spry/BACKLOG.md"))
+        self.assertIn("| [M-1 Title of M-1](plan/M-1-m/README.md) › [E-1 Title of E-1](plan/M-1-m/E-1-e/README.md) › "
+                      "[F-1 Title of F-1](plan/M-1-m/E-1-e/F-1-f/README.md) › [S-1 Title of S-1]", page)
 
     def test_needs_slicing_names_criteria_no_slice_covers(self):
         t = self.tree(**{self.key(f"{S}/README.md"): story("S-1", acs=("AC-1", "AC-2")),

@@ -64,7 +64,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.8.0"
+VERSION = "0.8.1"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -1056,6 +1056,10 @@ def backlog_block(project: Project, doc: str) -> str:
     def owner(item):
         return item.fm.get("owner") or "—"
 
+    def trail(item):
+        """Everything the item sits under, from the top: what it is part of, at a glance."""
+        return " › ".join(link(doc, a) for a in reversed(item.ancestors())) or "—"
+
     def section(title, intro, head, rows):
         out = ["", f"### {title}", "", intro, ""]
         if not rows:
@@ -1065,23 +1069,23 @@ def backlog_block(project: Project, doc: str) -> str:
 
     out = []
     out += section("In progress", "Being built now — open, or on a branch named for the slice. Leave these to their owner.",
-                   "| Slice | For | Owner | Where |",
-                   [f"| {link(doc, s)} | {link(doc, s.parent)} | {owner(s)} | {where} |" for s, where in items["progress"]])
+                   "| Slice | Part of | Owner | Where |",
+                   [f"| {link(doc, s)} | {trail(s)} | {owner(s)} | {where} |" for s, where in items["progress"]])
     out += section("Ready to build", "Planned, and nothing they wait for is unfinished. The first row is next; "
                    "`/spry:slice-open` with no ID offers it.",
-                   "| # | Slice | For | Covers | Owner |",
-                   [f"| {n} | {link(doc, s)} | {link(doc, s.parent)} | {', '.join(s.fm.get('covers') or []) or '—'} | {owner(s)} |"
+                   "| # | Slice | Part of | Covers | Owner |",
+                   [f"| {n} | {link(doc, s)} | {trail(s)} | {', '.join(s.fm.get('covers') or []) or '—'} | {owner(s)} |"
                     for n, (s, _) in enumerate(items["ready"], 1)])
     out += section("Needs slicing", "Ready, but no slice is planned for all of it yet — `/spry:slice <ID>` splits it.",
-                   "| Item | Missing | Owner |",
-                   [f"| {link(doc, i)} | {'slices' if need == 'slices' else 'a slice for ' + need} | {owner(i)} |"
+                   "| Item | Part of | Missing | Owner |",
+                   [f"| {link(doc, i)} | {trail(i)} | {'slices' if need == 'slices' else 'a slice for ' + need} | {owner(i)} |"
                     for i, need in items["slicing"]])
     out += section("Blocked", "Waiting on unfinished work, named here.",
-                   "| Item | Waiting on |",
-                   [f"| {link(doc, i)} | {', '.join(link(doc, b) for b in waits)} |" for i, waits in items["blocked"]])
+                   "| Item | Part of | Waiting on |",
+                   [f"| {link(doc, i)} | {trail(i)} | {', '.join(link(doc, b) for b in waits)} |" for i, waits in items["blocked"]])
     out += section("Needs planning", "Product's next step: finish a draft, or add what an item is still missing.",
-                   "| Item | Needs | Owner |",
-                   [f"| {link(doc, i)} | {need} | {owner(i)} |" for i, need in items["planning"]])
+                   "| Item | Part of | Needs | Owner |",
+                   [f"| {link(doc, i)} | {trail(i)} | {need} | {owner(i)} |" for i, need in items["planning"]])
     return "\n".join(out[1:])
 
 

@@ -225,7 +225,8 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
   named `sl-<n>-…` exists), ready to build, items that need slicing (no slice, or criteria no slice
   covers), blocked items with what they wait on, and what needs planning (drafts, items with no
   children). **Plan order, never typed:** by top-level item; inside one, bugs, tasks, then stories,
-  in tree order; slices by ID. `slice-open` with no ID offers its first ready row.
+  in tree order; slices by ID. Every row has a *Part of* column: everything above it, top level
+  first, so it works for any `levels`. `slice-open` with no ID offers its first ready row.
 - **On a branch the committed pages show the main branch** as of CI's last run. `spry view` writes
   both for the working tree to `.spry/view/` (gitignored); `spry hooks` (opt-in, per clone) runs it
   after a checkout or pull that changed `spry/` or a test. `check --base` refuses a generated block
@@ -437,3 +438,4 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-09 — adopt splits writ's requirement details into stories, criteria and `checks.md` scenarios, planned by writ's agent in `to-spry.md` §7, and keeps the originals (CH-8, 0.7.0).
 - 2026-10-09 — after a merge, the full suite runs only when the main branch gained code the PR's checks never saw (`changed --base <PR head>`) (CH-9, 0.7.1).
 - 2026-10-09 — a backlog page, `spry/BACKLOG.md`, and `spry backlog`; `spry view`, `spry hooks`, `index --restore`, and `check --base` refusing generated blocks a branch changed (CH-10, 0.8.0).
+- 2026-10-09 — backlog rows say what each item is part of, from the top level down (CH-11, 0.8.1).

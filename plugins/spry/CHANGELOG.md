@@ -178,3 +178,12 @@ Entry format:
   `spry/README.md` (*Start here*) and below the milestones block in `spry/plan/README.md`; in
   `.github/workflows/spry.yml`, add the `git fetch` step before `spry index` in the `index` job, and
   pass `--base` to `check` on pull requests if the workflow does not already.
+
+## CH-11 · The backlog says what each row is part of
+
+- **Date:** 2026-10-09 · **Version:** 0.8.1
+- **Touches:** `tool/spry.py` (`backlog`)
+- **Why:** a backlog row named only the slice and its story, task or bug. A slice's title rarely
+  says which milestone, epic or feature it serves, so choosing one meant opening it.
+- **Adapt:** nothing
+- **Migrate:** nothing — CI's next `spry index` rewrites the page.
