@@ -65,7 +65,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.9.0"
+VERSION = "0.10.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -812,6 +812,12 @@ def check(project: Project):
                 story = project.items.get(story_id)
                 if story is None or story.type != "story" or ac not in story.acs:
                     project.problem(item.doc, 1, f"`breaks` names {ref}, which does not exist")
+        if not gone(item):
+            for ref in item.fm.get("blocked_by") if isinstance(item.fm.get("blocked_by"), list) else []:
+                if ref in project.items and gone(project.items[ref]):
+                    project.problem(item.doc, 1, f"`blocked_by` names {ref}, which is dropped — it never finishes; remove it")
+    for source, chain in blocked_cycles(project):
+        project.problem(source.doc, 1, f"`blocked_by` goes in a circle, so none of it can start: {chain}")
 
     for ref, hits in sorted(project.tests.items()):
         story_id, ac = ref.split("/")
@@ -990,6 +996,56 @@ def slice_branches(project: Project) -> dict:
     return out
 
 
+def gone(item: Item) -> bool:
+    """Dropped, or under something dropped: it will never be done."""
+    return item.state == "dropped" or any(a.state == "dropped" for a in item.ancestors())
+
+
+def blocked_cycles(project: Project) -> list:
+    """Waits that never end: [(the item whose `blocked_by` starts it, "SL-5 waits on SL-6, …")].
+    An item is done only when what it counts is (`Project.done`), and waits on what it and anything
+    above it names — so a slice that names its own story waits on itself."""
+    live = {i.id: i for i in project.items.values() if not gone(i) and not project.done(i)}
+
+    def edges(item):
+        kind = project.child_level(item.type)
+        out = [(c.id, None) for c in (project.counted(item, kind) if kind else []) if c.id in live]
+        for node in [item] + item.ancestors():
+            refs = node.fm.get("blocked_by") if isinstance(node.fm.get("blocked_by"), list) else []
+            out += [(r, node) for r in refs if r in live]
+        return out
+
+    state, found, seen = {}, [], set()
+    for start in sorted(live, key=natural_key):
+        if start in state:
+            continue
+        state[start] = 1
+        path, via, stack = [start], [], [iter(edges(live[start]))]
+        while stack:
+            step = next(stack[-1], None)
+            if step is None:
+                state[path.pop()] = 2
+                stack.pop()
+                if via:
+                    via.pop()
+            elif state.get(step[0]) == 1:
+                at = path.index(step[0])
+                ring, sources = path[at:] + [step[0]], via[at:] + [step[1]]
+                named = frozenset((s.id, b) for b, s in zip(ring[1:], sources) if s is not None)
+                if named not in seen:
+                    seen.add(named)
+                    chain = ", ".join(f"{a} needs {b}" if s is None else f"{a} waits on {b}" if s.id == a
+                                      else f"{a} waits on {b}, as {s.id} does"
+                                      for a, b, s in zip(ring, ring[1:], sources))
+                    found.append((next(s for s in sources if s is not None), chain))
+            elif step[0] not in state:
+                state[step[0]] = 1
+                path.append(step[0])
+                via.append(step[1])
+                stack.append(iter(edges(live[step[0]])))
+    return found
+
+
 def blockers(project: Project, item: Item) -> list:
     """Unfinished plan items named in `blocked_by` by the item or anything above it."""
     out = []
@@ -1008,7 +1064,7 @@ def backlog(project: Project) -> dict:
     out = {"progress": [], "ready": [], "slicing": [], "blocked": [], "planning": []}
 
     def live(item):
-        return item.state != "dropped" and not any(a.state == "dropped" for a in item.ancestors())
+        return not gone(item)
 
     def walk(item):
         yield item
@@ -1053,9 +1109,44 @@ def backlog(project: Project) -> dict:
 def backlog_block(project: Project, doc: str) -> str:
     """The backlog page: what is being built, what to build next, and what stands in the way."""
     items = backlog(project)
+    order = (("progress", "in progress"), ("ready", "ready to build"), ("slicing", "needs slicing"),
+             ("blocked", "blocked"), ("planning", "needs planning"))
+    where = {}
+    for key, label in reversed(order):
+        where.update({i.id: label for i, _ in items[key]})
+    rank = [label for _, label in order]
+    waiters = {}
+    for i in project.items.values():
+        if not gone(i) and not project.done(i):
+            for ref in i.fm.get("blocked_by") if isinstance(i.fm.get("blocked_by"), list) else []:
+                waiters.setdefault(ref, []).append(i)
 
     def owner(item):
         return item.fm.get("owner") or "—"
+
+    def under(item):
+        yield item
+        for child in item.children:
+            yield from under(child)
+
+    def status(item):
+        """Where a blocker stands, in this page's words, and who owns it."""
+        if gone(item):
+            label = "dropped"
+        elif any(a.state == "draft" for a in [item] + item.ancestors()):
+            label = "needs planning"
+        else:
+            labels = [where[n.id] for n in under(item) if n.id in where]
+            label = min(labels, key=rank.index) if labels else "built, not yet proven"
+        who = item.fm.get("owner")
+        return f"{link(doc, item)} · {label}" + (f" ({who})" if who else "")
+
+    def unblocks(item):
+        """What waits on this slice, or on something it is part of."""
+        out = []
+        for node in [item] + [a for a in item.ancestors() if not project.done(a)]:
+            out += [w for w in waiters.get(node.id, []) if w not in out]
+        return ", ".join(link(doc, w) for w in sorted(out, key=lambda w: natural_key(w.id))) or "—"
 
     def trail(item):
         """Everything the item sits under, from the top: what it is part of, at a glance."""
@@ -1070,20 +1161,23 @@ def backlog_block(project: Project, doc: str) -> str:
 
     out = []
     out += section("In progress", "Being built now — open, or on a branch named for the slice. Leave these to their owner.",
-                   "| Slice | Part of | Owner | Where |",
-                   [f"| {link(doc, s)} | {trail(s)} | {owner(s)} | {where} |" for s, where in items["progress"]])
+                   "| Slice | Part of | Owner | Where | Unblocks |",
+                   [f"| {link(doc, s)} | {trail(s)} | {owner(s)} | {branch} | {unblocks(s)} |"
+                    for s, branch in items["progress"]])
     out += section("Ready to build", "Planned, and nothing they wait for is unfinished. The first row is next; "
-                   "`/spry:slice-open` with no ID offers it.",
-                   "| # | Slice | Part of | Covers | Owner |",
-                   [f"| {n} | {link(doc, s)} | {trail(s)} | {', '.join(s.fm.get('covers') or []) or '—'} | {owner(s)} |"
-                    for n, (s, _) in enumerate(items["ready"], 1)])
+                   "`/spry:slice-open` with no ID offers it. *Unblocks* is what waits on the slice, or on "
+                   "something it is part of — between two rows, the one that frees more.",
+                   "| # | Slice | Part of | Covers | Owner | Unblocks |",
+                   [f"| {n} | {link(doc, s)} | {trail(s)} | {', '.join(s.fm.get('covers') or []) or '—'} | {owner(s)} "
+                    f"| {unblocks(s)} |" for n, (s, _) in enumerate(items["ready"], 1)])
     out += section("Needs slicing", "Ready, but no slice is planned for all of it yet — `/spry:slice <ID>` splits it.",
                    "| Item | Part of | Missing | Owner |",
                    [f"| {link(doc, i)} | {trail(i)} | {'slices' if need == 'slices' else 'a slice for ' + need} | {owner(i)} |"
                     for i, need in items["slicing"]])
-    out += section("Blocked", "Waiting on unfinished work, named here.",
-                   "| Item | Part of | Waiting on |",
-                   [f"| {link(doc, i)} | {trail(i)} | {', '.join(link(doc, b) for b in waits)} |" for i, waits in items["blocked"]])
+    out += section("Blocked", "Waiting on unfinished work, named here with where it stands and who owns it.",
+                   "| Item | Part of | Waiting on | Owner |",
+                   [f"| {link(doc, i)} | {trail(i)} | {'; '.join(status(b) for b in waits)} | {owner(i)} |"
+                    for i, waits in items["blocked"]])
     out += section("Needs planning", "Product's next step: finish a draft, or add what an item is still missing.",
                    "| Item | Part of | Needs | Owner |",
                    [f"| {link(doc, i)} | {trail(i)} | {need} | {owner(i)} |" for i, need in items["planning"]])

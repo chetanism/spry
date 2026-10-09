@@ -16,17 +16,17 @@ Built but not yet proven is on [Coverage](COVERAGE.md).
 
 Being built now — open, or on a branch named for the slice. Leave these to their owner.
 
-| Slice | Part of | Owner | Where |
-|---|---|---|---|
-| [SL-2 Refuse a loan over the limit](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/S-2-loan-limit/SL-2-refuse-over-limit.md) | [M-1 Members can borrow books](plan/M-1-members-borrow-books/README.md) › [E-1 Lending](plan/M-1-members-borrow-books/E-1-lending/README.md) › [F-1 Lend at the desk](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/README.md) › [S-2 Loan limit](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/S-2-loan-limit/README.md) | Ravi | `sl-2-refuse-over-limit` · PR #14 |
+| Slice | Part of | Owner | Where | Unblocks |
+|---|---|---|---|---|
+| [SL-2 Refuse a loan over the limit](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/S-2-loan-limit/SL-2-refuse-over-limit.md) | [M-1 Members can borrow books](plan/M-1-members-borrow-books/README.md) › [E-1 Lending](plan/M-1-members-borrow-books/E-1-lending/README.md) › [F-1 Lend at the desk](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/README.md) › [S-2 Loan limit](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/S-2-loan-limit/README.md) | Ravi | `sl-2-refuse-over-limit` · PR #14 | — |
 
 ### Ready to build
 
-Planned, and nothing they wait for is unfinished. The first row is next; `/spry:slice-open` with no ID offers it.
+Planned, and nothing they wait for is unfinished. The first row is next; `/spry:slice-open` with no ID offers it. *Unblocks* is what waits on the slice, or on something it is part of — between two rows, the one that frees more.
 
-| # | Slice | Part of | Covers | Owner |
-|---|---|---|---|---|
-| 1 | [SL-4 Due date in the library's time zone](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/bugs/B-1-due-date-a-day-early/SL-4-due-date-in-library-time-zone.md) | [M-1 Members can borrow books](plan/M-1-members-borrow-books/README.md) › [E-1 Lending](plan/M-1-members-borrow-books/E-1-lending/README.md) › [F-1 Lend at the desk](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/README.md) › [B-1 Due date a day early on evening receipts](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/bugs/B-1-due-date-a-day-early/README.md) | — | Ravi |
+| # | Slice | Part of | Covers | Owner | Unblocks |
+|---|---|---|---|---|---|
+| 1 | [SL-4 Due date in the library's time zone](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/bugs/B-1-due-date-a-day-early/SL-4-due-date-in-library-time-zone.md) | [M-1 Members can borrow books](plan/M-1-members-borrow-books/README.md) › [E-1 Lending](plan/M-1-members-borrow-books/E-1-lending/README.md) › [F-1 Lend at the desk](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/README.md) › [B-1 Due date a day early on evening receipts](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/bugs/B-1-due-date-a-day-early/README.md) | — | Ravi | [SL-5 Correct due dates on loans already made](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/bugs/B-1-due-date-a-day-early/SL-5-correct-loans-already-made.md) |
 
 ### Needs slicing
 
@@ -36,9 +36,11 @@ _None._
 
 ### Blocked
 
-Waiting on unfinished work, named here.
+Waiting on unfinished work, named here with where it stands and who owns it.
 
-_None._
+| Item | Part of | Waiting on | Owner |
+|---|---|---|---|
+| [SL-5 Correct due dates on loans already made](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/bugs/B-1-due-date-a-day-early/SL-5-correct-loans-already-made.md) | [M-1 Members can borrow books](plan/M-1-members-borrow-books/README.md) › [E-1 Lending](plan/M-1-members-borrow-books/E-1-lending/README.md) › [F-1 Lend at the desk](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/README.md) › [B-1 Due date a day early on evening receipts](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/bugs/B-1-due-date-a-day-early/README.md) | [SL-4 Due date in the library's time zone](plan/M-1-members-borrow-books/E-1-lending/F-1-lend-at-the-desk/bugs/B-1-due-date-a-day-early/SL-4-due-date-in-library-time-zone.md) · ready to build (Ravi) | Ravi |
 
 ### Needs planning
 

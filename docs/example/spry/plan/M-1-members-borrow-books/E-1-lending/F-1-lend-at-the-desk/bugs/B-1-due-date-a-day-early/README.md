@@ -38,4 +38,5 @@ related: [SL-1]
 | Slice | State |
 |---|---|
 | [SL-4 Due date in the library's time zone](SL-4-due-date-in-library-time-zone.md) | planned |
+| [SL-5 Correct due dates on loans already made](SL-5-correct-loans-already-made.md) | planned |
 <!-- /spry:children -->

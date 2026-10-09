@@ -206,3 +206,20 @@ Entry format:
     anchored outside the diff fails only when it is posted.
 - **Adapt:** nothing
 - **Migrate:** a project with its own requirement-review skill (pulse) may retire it for `review`.
+
+## CH-13 · The backlog says what each row unblocks and what holds it up
+
+- **Date:** 2026-10-09 · **Version:** 0.10.0
+- **Touches:** `tool/spry.py` (`backlog`, `check`), `process/slicing.md` (*Split*),
+  `process/conflicts.md`, `skills/slice`
+- **Why:**
+  - Two ready rows looked alike: nothing said that finishing one would free other work.
+  - A blocked row named its blocker but not whether anyone was on it — in progress, ready, or not
+    even sliced.
+  - `slice` ordered slices "each building on the last" without writing it down, so a slice that
+    needed the one before it showed as ready beside it, and two people could pick up both.
+  - A `blocked_by` naming a dropped item, or one going in a circle, kept items blocked forever with
+    no error.
+- **Adapt:** nothing
+- **Migrate:** run `spry check`: fix each dropped blocker or circle it names, by removing the entry.
+  Slices planned earlier keep their order unwritten; add `blocked_by` where one needs another.

@@ -10,4 +10,5 @@ argument-hint: "<story, task or bug ID>"
 - **Parent:** `$ARGUMENTS`; without one, list ready stories, tasks and bugs that have no slices yet
   (`python3 spry/tool/spry.py status`) and ask.
 - Every criterion of a story must be covered by its slices between them; say which slice covers each.
+- A slice that needs an earlier one names it in `blocked_by`; one that merely comes after it does not.
 - Creates `planned` slices only — no branch, no code. `/spry:slice-open` comes next.

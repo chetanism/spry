@@ -118,7 +118,10 @@ spry/
 
 - Restricted subset so the stdlib can parse it: `key: value` and `key: [a, b]` only.
 - Common: `id`, `title`, `state`, `owner`, `audience`, `blocked_by: []`, `related: []`.
-  `parent` is implied by the folder.
+  `parent` is implied by the folder. An item waits on what it and everything above it names in
+  `blocked_by`. `check` refuses a dropped blocker (it never finishes) and a circle — counting that
+  an item is done only when what it counts is (§6), so a slice naming its own story is one.
+  Filled by the conflict check (`Dependency`) and by `slice` (a slice that needs an earlier one).
 - `state` for plan items: `draft` | `ready` | `dropped`. For slices: `planned` | `open` |
   `closed` | `dropped`. **`done` is never written** — it is derived (§6).
 - Slices add `covers: [AC-1, AC-2]`, `branch`, `pr`.
@@ -226,7 +229,9 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
   covers), blocked items with what they wait on, and what needs planning (drafts, items with no
   children). **Plan order, never typed:** by top-level item; inside one, bugs, tasks, then stories,
   in tree order; slices by ID. Every row has a *Part of* column: everything above it, top level
-  first, so it works for any `levels`. `slice-open` with no ID offers its first ready row.
+  first, so it works for any `levels`. In-progress and ready rows have *Unblocks* — what waits on
+  the slice or on something it is part of; a blocked row names each blocker with where it stands on
+  this page (in progress, ready to build, …) and its owner. `slice-open` with no ID offers its first ready row.
 - **On a branch the committed pages show the main branch** as of CI's last run. `spry view` writes
   both for the working tree to `.spry/view/` (gitignored); `spry hooks` (opt-in, per clone) runs it
   after a checkout or pull that changed `spry/` or a test. `check --base` refuses a generated block
@@ -441,3 +446,4 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-09 — a backlog page, `spry/BACKLOG.md`, and `spry backlog`; `spry view`, `spry hooks`, `index --restore`, and `check --base` refusing generated blocks a branch changed (CH-10, 0.8.0).
 - 2026-10-09 — backlog rows say what each item is part of, from the top level down (CH-11, 0.8.1).
 - 2026-10-09 — `review` covers any PR and a solo plan item, by fresh eyes, posting one comment per line with suggested changes; `process/reviewing.md` and `review-check` (CH-12, 0.9.0). From pulse's `requirement-review`.
+- 2026-10-09 — backlog rows say what they unblock, and what a blocked row waits on stands where and with whom; `slice` writes `blocked_by` between slices that need each other; `check` refuses a dropped blocker and a circle (CH-13, 0.10.0).

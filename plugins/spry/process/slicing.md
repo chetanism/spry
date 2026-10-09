@@ -38,9 +38,12 @@ missing. So open, build, test and close run as one piece of work.
 2. Read the parent, its feature's rules, `spry/knowledge/conventions/INDEX.md`, decisions, and the
    code the change will touch.
 3. Propose the slices in one reply: title, the criteria each covers, one line on the visible
-   change. Order them so each builds on the last.
-4. On approval, for each: `spry.py new slice --parent <ID> --title "…"`; fill only `Summary` and
-   `covers`. Everything else waits for `slice-open`.
+   change. Order them so each builds on the last, and say which **need** an earlier one — its code,
+   its data, its screen — and which could be built at the same time.
+4. On approval, for each: `spry.py new slice --parent <ID> --title "…"`; fill only `Summary`,
+   `covers`, and `blocked_by` with the earlier slices it needs — none when it only comes after one.
+   The backlog lists a slice as ready only when those are closed, so two people never pick up a
+   pair that cannot be built side by side. Everything else waits for `slice-open`.
 5. `spry.py check`; commit `docs(plan): slices for <ID>`.
 
 ## Open — `/spry:slice-open [SL-n]`

@@ -31,7 +31,7 @@ Lists candidates; read every one:
 | `Duplicate` | another item already says this | ask: merge, drop, or tell them apart |
 | `Overlap` | part of this is already covered elsewhere | narrow one of them; say which in both |
 | `Contradiction` | this says the opposite of an item, decision or rule | ask: which one wins |
-| `Dependency` | this needs another item first | add it to `blocked_by` |
+| `Dependency` | this needs another item first | add it to `blocked_by` — never a dropped item, or one that waits on this, directly or through what contains it (`check` refuses both) |
 | `Scope` | this is outside its parent's in/out scope | ask: move it, or widen the parent |
 | `Term` | a word clashes with the glossary | use the glossary term, or add a row |
 | `Collision` | slice: touches the same files as an open slice | order them, or merge them |

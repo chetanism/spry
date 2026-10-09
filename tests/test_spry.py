@@ -428,6 +428,64 @@ class Backlog(Base):
         self.assertEqual(ids["slicing"], ["T-1"])
         self.assertEqual(ids["ready"], [])
 
+    def test_rows_say_what_they_unblock_and_where_a_blocker_stands(self):
+        waits = slice_("SL-2", state="planned", covers="[]").replace("pr: 1\n", "pr: 1\nblocked_by: [SL-1]\n")
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): slice_("SL-1", state="planned"),
+                         self.key(f"{self.T}/README.md"): item("T-1", extra="blocked_by: [S-1]\n"),
+                         self.key(f"{self.T}/SL-2-b.md"): waits})
+        page = spry.backlog_block(t.project(), os.path.join(t.root, "spry/BACKLOG.md"))
+        ready = next(line for line in page.splitlines() if line.startswith("| 1 | [SL-1"))
+        self.assertTrue(ready.endswith("| [SL-2 Slice SL-2](plan/M-1-m/E-1-e/F-1-f/tasks/T-1-t/SL-2-b.md), "
+                                       "[T-1 Title of T-1](plan/M-1-m/E-1-e/F-1-f/tasks/T-1-t/README.md) |"), ready)
+        self.assertIn("| [S-1 Title of S-1](plan/M-1-m/E-1-e/F-1-f/S-1-s/README.md) · ready to build (A); "
+                      "[SL-1 Slice SL-1](plan/M-1-m/E-1-e/F-1-f/S-1-s/SL-1-a.md) · ready to build (A) | A |", page)
+
+    def test_check_refuses_a_dropped_blocker(self):
+        blocked = slice_("SL-1", state="planned").replace("pr: 1\n", "pr: 1\nblocked_by: [T-1]\n")
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): blocked, self.key(f"{self.T}/README.md"): item("T-1", state="dropped")})
+        self.assertProblem(t.problems(), "`blocked_by` names T-1, which is dropped")
+
+    def test_check_refuses_a_circle(self):
+        def waits(ident, on):
+            return slice_(ident, state="planned", covers="[]").replace("pr: 1\n", f"pr: 1\nblocked_by: [{on}]\n")
+        t = self.tree(**{self.key(f"{self.T}/README.md"): item("T-1"),
+                         self.key(f"{self.T}/SL-2-b.md"): waits("SL-2", "SL-3"),
+                         self.key(f"{self.T}/SL-3-c.md"): waits("SL-3", "SL-2")})
+        self.assertProblem(t.problems(), "goes in a circle, so none of it can start: SL-2 waits on SL-3, SL-3 waits on SL-2")
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): waits("SL-1", "F-1").replace("covers: []", "covers: [AC-1]")})
+        self.assertProblem(t.problems(), "F-1 needs S-1, S-1 needs SL-1, SL-1 waits on F-1")
+
+    def test_a_circle_is_reported_once_at_the_entry_that_makes_it(self):
+        def waits(ident, on):
+            return story(ident).replace("owner: A\n", f"owner: A\nblocked_by: [{on}]\n")
+        t = self.tree(**{self.key(f"{S}/README.md"): waits("S-1", "S-2"),
+                         self.key(f"{S}/SL-5-e.md"): slice_("SL-5", state="planned"),
+                         self.key(f"{self.S2}/README.md"): waits("S-2", "S-1"),
+                         self.key(f"{self.S2}/SL-2-b.md"): slice_("SL-2", state="planned")})
+        circles = [p for p in t.problems() if "circle" in p]
+        self.assertEqual(len(circles), 1, circles)
+        self.assertNotIn("SL-1 waits on S-2,", circles[0])
+
+    def test_a_bug_under_a_feature_may_wait_on_the_feature(self):
+        # done(F-1) counts its stories, not its bugs: SL-3 starts once S-1 is done
+        waits = slice_("SL-3", state="planned", covers="[]").replace("pr: 1\n", "pr: 1\nblocked_by: [F-1]\n")
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): slice_("SL-1", state="planned"),
+                         self.key(f"{self.B}/README.md"): item("B-1", check=False),
+                         self.key(f"{self.B}/SL-3-c.md"): waits})
+        self.assertFalse([p for p in t.problems() if "circle" in p])
+
+    def test_unblocks_skips_what_is_already_done_and_a_dropped_blocker_says_so(self):
+        t = self.tree(**{self.key(f"{self.B}/README.md"): item("B-1", check=False),
+                         self.key(f"{self.B}/SL-3-c.md"): slice_("SL-3", state="planned", covers="[]"),
+                         "spry/plan/M-1-m/E-2-e/README.md": item("E-2", extra="blocked_by: [F-1]\n"),
+                         self.key(f"{self.S2}/README.md"): story("S-2", state="dropped"),
+                         self.key(f"{self.B}/SL-4-d.md"): slice_("SL-4", state="planned", covers="[]")
+                         .replace("pr: 1\n", "pr: 1\nblocked_by: [S-2]\n")})
+        page = spry.backlog_block(t.project(), os.path.join(t.root, "spry/BACKLOG.md"))
+        ready = next(line for line in page.splitlines() if "| [SL-3" in line)
+        self.assertTrue(ready.endswith("| — |"), ready)
+        self.assertIn("· dropped (A)", page)
+
     def test_a_branch_named_for_a_planned_slice_is_in_progress(self):
         t = self.tree(**{self.key(f"{S}/SL-1-a.md"): slice_("SL-1", state="planned")})
         run = git_repo(t.root)

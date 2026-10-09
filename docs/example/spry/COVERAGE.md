@@ -19,7 +19,7 @@ on any branch, `python3 spry/tool/spry.py coverage` prints it.
 | Features | 0 | 2 | 0% |
 | Stories | 0 | 2 | 0% |
 | Acceptance criteria proven | 2 | 5 | 40% |
-| Slices closed | 2 | 4 | 50% |
+| Slices closed | 2 | 5 | 40% |
 | Tasks | 1 | 1 | 100% |
 | Bugs fixed | 0 | 1 | 0% |
 
