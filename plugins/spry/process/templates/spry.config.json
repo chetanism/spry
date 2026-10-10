@@ -1,6 +1,6 @@
 {
-  "spry": "0.14.1",
-  "spry_baseline": "CH-19",
+  "spry": "0.15.0",
+  "spry_baseline": "CH-20",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -65,5 +65,6 @@
     "issue": false,
     "pick": "offer"
   },
-  "main_branch": "main"
+  "main_branch": "main",
+  "mint": "local"
 }

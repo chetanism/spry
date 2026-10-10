@@ -832,6 +832,193 @@ class Draw(unittest.TestCase):
         self.assertEqual(out.stdout.strip(), spry.draw("abc", "3", ["a", "b", "c"], "pick")[0])
 
 
+class Shared(unittest.TestCase):
+    """`mint: main` — two clones of one remote: IDs taken and slices claimed on the remote main branch."""
+
+    def setUp(self):
+        self.tmp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.remote = os.path.join(self.tmp, "remote.git")
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", self.remote], check=True)
+        files = base()
+        files["spry/spry.config.json"] = json.dumps({**CONFIG, "mint": "main"})
+        files[f"{S}/SL-2-b.md"] = slice_("SL-2", state="planned", check=False)
+        seed = Tree(files).root
+        self.addCleanup(shutil.rmtree, seed, True)
+        shutil.copytree(os.path.join(REPO, "plugins", "spry", "process"), os.path.join(seed, "spry", "process"))
+        run = git_repo(seed)
+        run("push", "-q", self.remote, "main")
+        self.a, self.b = self.clone("a"), self.clone("b")
+
+    def clone(self, name):
+        root = os.path.join(self.tmp, name)
+        subprocess.run(["git", "clone", "-q", self.remote, root], check=True)
+        for key, value in (("user.email", "t@t"), ("user.name", name)):
+            self.git(root, "config", key, value)
+        return root
+
+    def git(self, root, *args):
+        return subprocess.run(["git", *args], cwd=root, check=True, capture_output=True, text=True).stdout.strip()
+
+    def remote_head(self):
+        return self.git(self.remote, "rev-parse", "main")
+
+    def worktrees(self, root):
+        return len(self.git(root, "worktree", "list").splitlines())
+
+    def refused(self, call):
+        with self.assertRaises(SystemExit) as caught, contextlib.redirect_stderr(io.StringIO()):
+            call()
+        return str(caught.exception.code)
+
+    def test_two_sessions_at_once_get_different_numbers_with_one_retry(self):
+        self.git(self.a, "switch", "-qc", "sl-7-a")
+        self.git(self.b, "switch", "-qc", "sl-8-b")
+        real, raced, made = spry.git, [], {}
+
+        def git(root, *args):
+            if args[:1] == ("push",) and not raced:
+                raced.append(True)  # b takes a number between a's commit and a's push
+                made["b"] = spry.mint(spry.Project(self.b), "task", "M-1", "Second")
+            return real(root, *args)
+
+        spry.git = git
+        self.addCleanup(setattr, spry, "git", real)
+        err = io.StringIO()
+        with contextlib.redirect_stderr(err):
+            made["a"] = spry.mint(spry.Project(self.a), "task", "M-1", "First")
+        self.assertIn("trying again (1/5)", err.getvalue())
+        self.assertEqual(err.getvalue().count("trying again"), 1)
+        self.assertEqual((os.path.basename(os.path.dirname(made["b"])), os.path.basename(os.path.dirname(made["a"]))),
+                         ("T-1-second", "T-2-first"))
+        self.assertEqual((self.worktrees(self.a), self.worktrees(self.b)), (1, 1))
+        for root, path in ((self.a, made["a"]), (self.b, made["b"])):
+            with open(path, "a") as handle:
+                handle.write("\nFilled in on the branch.\n")
+            self.git(root, "commit", "-qam", "fill")
+        self.git(self.b, "push", "-q", "origin", "sl-8-b")
+        self.git(self.a, "fetch", "-q")
+        self.git(self.a, "switch", "-q", "main")
+        self.git(self.a, "merge", "-q", "--ff-only", "origin/main")
+        self.git(self.a, "merge", "-q", "--no-edit", "sl-7-a")
+        self.git(self.a, "merge", "-q", "--no-edit", "origin/sl-8-b")
+        self.assertEqual([str(p) for p in spry.check(spry.Project(self.a)) if p.level == "error"], [])
+
+    def test_real_processes_at_once_in_two_worktrees_of_one_clone(self):
+        tool = os.path.join(REPO, "plugins", "spry", "tool", "spry.py")
+        made = []
+        for round_ in range(3):
+            roots = [os.path.join(self.tmp, f"w{round_}{n}") for n in "xy"]
+            for n, root in enumerate(roots):
+                self.git(self.a, "worktree", "add", "-q", "-b", f"sl-{round_}{n}-w", root, "origin/main")
+            procs = [subprocess.Popen([sys.executable, tool, "--root", root, "new", "task", "--parent", "M-1",
+                                       "--title", os.path.basename(root)], stdout=subprocess.PIPE,
+                                      stderr=subprocess.PIPE, text=True) for root in roots]
+            for proc in procs:
+                out, err = proc.communicate(timeout=120)
+                self.assertEqual(proc.returncode, 0, err)
+                made.append(out.strip().split("/tasks/")[1].split("-")[1])
+            self.git(self.a, "fetch", "-q")
+        self.assertEqual(sorted(made, key=int), [str(n) for n in range(1, 7)])
+        self.assertEqual(self.worktrees(self.a), 7)
+
+    def test_staged_files_or_a_main_branch_ahead_refuse_before_pushing(self):
+        head = self.remote_head()
+        with open(os.path.join(self.a, "notes.txt"), "w") as handle:
+            handle.write("x")
+        self.git(self.a, "add", "notes.txt")
+        self.assertIn("files are staged", self.refused(lambda: spry.mint(spry.Project(self.a), "task", "M-1", "X")))
+        self.git(self.a, "commit", "-qm", "local only")
+        self.assertIn("your `main` has commits", self.refused(lambda: spry.mint(spry.Project(self.a), "task", "M-1", "X")))
+        self.assertEqual((self.remote_head(), self.worktrees(self.a)), (head, 1))
+
+    def test_on_the_main_branch_the_new_item_arrives_fast_forward(self):
+        path = spry.mint(spry.Project(self.a), "bug", "F-1", "Wrong date")
+        self.assertTrue(os.path.isfile(path))
+        self.assertEqual(self.git(self.a, "rev-parse", "HEAD"), self.remote_head())
+        self.assertEqual(self.git(self.a, "log", "-1", "--format=%s"), "docs(plan): new B-1 Wrong date")
+
+    def test_offline_or_refused_writes_nothing(self):
+        head, before = self.remote_head(), self.git(self.a, "status", "--porcelain")
+        self.git(self.a, "remote", "set-url", "origin", os.path.join(self.tmp, "nowhere.git"))
+        self.assertIn("cannot fetch `main` from origin", self.refused(lambda: spry.mint(spry.Project(self.a), "task", "M-1", "X")))
+        self.git(self.a, "remote", "set-url", "origin", self.remote)
+        hook = os.path.join(self.remote, "hooks", "pre-receive")
+        with open(hook, "w") as handle:
+            handle.write("#!/bin/sh\necho protected >&2\nexit 1\n")
+        os.chmod(hook, 0o755)
+        self.assertIn("origin refused the push to `main`", self.refused(lambda: spry.mint(spry.Project(self.a), "task", "M-1", "X")))
+        self.assertEqual((self.remote_head(), self.git(self.a, "status", "--porcelain")), (head, before))
+        self.assertFalse(os.path.exists(os.path.join(self.a, M, "tasks")))
+        self.assertEqual(self.worktrees(self.a), 1)
+
+    def test_a_parent_not_yet_on_the_main_branch_is_refused(self):
+        self.assertIn("F-9 is not on origin/main yet", self.refused(lambda: spry.mint(spry.Project(self.a), "story", "F-9", "X")))
+        self.assertEqual(self.worktrees(self.a), 1)
+
+    def test_a_second_claim_is_refused_naming_the_branch_and_release_frees_it(self):
+        self.assertEqual(spry.claim(spry.Project(self.a), "SL-2", owner="Asha"), "sl-2-b")
+        self.assertEqual(self.git(self.a, "branch", "--show-current"), "sl-2-b")
+        self.assertEqual(self.git(self.a, "rev-parse", "HEAD"), self.remote_head())
+        said = self.refused(lambda: spry.claim(spry.Project(self.b), "SL-2"))
+        self.assertIn("SL-2 is taken: claimed on `sl-2-b` by Asha", said)
+        self.assertEqual(self.git(self.b, "branch", "--show-current"), "main")
+        self.git(self.b, "pull", "-q", "--ff-only")
+        project = spry.Project(self.b)
+        self.assertEqual([s.id for s, _ in spry.backlog(project)["progress"]], ["SL-2"])
+        self.assertEqual(spry.release(project, "SL-2"), "sl-2-b")
+        self.assertEqual(spry.claim(spry.Project(self.b), "SL-2", switch=False), "sl-2-b")
+        self.assertEqual(self.git(self.b, "branch", "--show-current"), "main")
+
+    def test_claim_reads_the_main_branch_and_refuses_an_existing_branch_before_pushing(self):
+        spry.mint(spry.Project(self.b), "slice", "S-1", "Fresh")
+        self.assertEqual(spry.claim(spry.Project(self.a), "SL-3", switch=False), "sl-3-fresh")  # a never pulled it
+        head = self.remote_head()
+        self.git(self.b, "branch", "sl-2-b")
+        self.assertIn("a branch `sl-2-b` exists here", self.refused(lambda: spry.claim(spry.Project(self.b), "SL-2")))
+        self.git(self.b, "push", "-q", "origin", "sl-2-b")
+        self.git(self.b, "branch", "-D", "sl-2-b")
+        self.assertIn("`origin/sl-2-b` exists", self.refused(lambda: spry.claim(spry.Project(self.a), "SL-2")))
+        with open(os.path.join(self.a, "notes.txt"), "w") as handle:
+            handle.write("x")
+        self.git(self.a, "add", "notes.txt")
+        self.git(self.a, "commit", "-qm", "n")
+        with open(os.path.join(self.a, "notes.txt"), "w") as handle:
+            handle.write("y")
+        self.assertIn("uncommitted changes", self.refused(lambda: spry.claim(spry.Project(self.a), "SL-1")))
+        self.assertEqual(self.remote_head(), head)
+
+    def test_local_mint_behaves_as_before(self):
+        with open(os.path.join(self.a, "spry", "spry.config.json"), "w") as handle:
+            handle.write(json.dumps({**CONFIG, "mint": "local"}))
+        head = self.remote_head()
+        path = spry.mint(spry.Project(self.a), "task", "M-1", "Local")
+        self.assertTrue(path.endswith("T-1-local/README.md"))
+        self.assertEqual(self.remote_head(), head)
+        self.assertEqual(spry.claim(spry.Project(self.a), "SL-2"), "sl-2-b")
+        self.assertEqual(self.remote_head(), head)
+
+    def test_check_base_names_a_number_both_branches_took(self):
+        for root in (self.a, self.b):
+            with open(os.path.join(root, "spry", "spry.config.json"), "w") as handle:
+                handle.write(json.dumps({**CONFIG, "mint": "local"}))
+            self.git(root, "commit", "-qam", "local")
+        self.git(self.a, "switch", "-qc", "sl-7-a")
+        spry.mint(spry.Project(self.a), "task", "M-1", "Mine")
+        self.git(self.a, "mv", S, f"{F}/S-1-renamed")  # a moved item is not a collision
+        self.git(self.a, "add", "-A")
+        self.git(self.a, "commit", "-qm", "mine")
+        spry.mint(spry.Project(self.b), "task", "M-1", "Theirs")
+        self.git(self.b, "add", "-A")
+        self.git(self.b, "commit", "-qm", "theirs")
+        self.git(self.b, "push", "-q", "--force", "origin", "main")
+        self.git(self.a, "fetch", "-q")
+        project = spry.Project(self.a)
+        spry.id_collisions(project, "origin/main")
+        self.assertEqual([p.message.split(" — ")[0] for p in project.problems],
+                         [f"T-1 is also {M}/tasks/T-1-theirs/README.md on origin/main"])
+
+
 class Kit(unittest.TestCase):
     """Versions and the changelog agree, so /spry:update has something true to compare against."""
 

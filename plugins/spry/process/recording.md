@@ -14,6 +14,10 @@ Run by `record`. Tone: audience 7. One thing per run; ask which kind if it is no
 | external | a fact about how a service we depend on behaves | `spry.py new external --dependency "<service>" --title "<behaviour, as a statement>"` |
 | knowledge rule | a security, performance or constraint rule | a numbered rule in `security.md` / `performance.md` / `constraints.md` |
 
+A decision's `D-n` is an ID: with `mint: main`, `new decision` takes it on the main branch and
+merges it into this one (`slicing.md` → *IDs and claims*). Conventions and external behaviour have no
+number, so they are written here.
+
 ## Write it
 
 - Fill every section of its template; `summary` is the one line the index shows — make it say the fact.

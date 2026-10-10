@@ -40,6 +40,10 @@ from the argument (`SL-n` or a PR number), or from the current branch's `open` /
 5. **The base has not moved under it:** `git fetch`; if the main branch gained commits since the
    branch was cut and they touch any file this PR touches (`git diff --name-only`), the PR's green
    checks are against an old base — ask to rebase, push, and start again at step 1.
+   - **No ID taken twice:** `spry.py check --base origin/<main>` names an ID the branch and the main
+     branch each added for something else. With `mint: main` this cannot happen; with `local` it can,
+     and CI may not have run, so this step looks every time. Found → the branch renames its item
+     (`next <type>` after merging the main branch in) and every place it is cited, then step 1 again.
 6. **Ask:** one line — what merges, the trailer it carries — and each `!` item as something the person
    accepts: a survivor or skipped control with its reason, a criterion with no test, CI that did
    not run. Merge only on a yes given in this conversation, for this PR.

@@ -11,7 +11,9 @@ argument-hint: "[slice ID]"
 - **Slice:** `$ARGUMENTS`; without one, run `python3 spry/tool/spry.py backlog` and ask which row
   of *Ready to build* to open — the first recommended and the next two as alternatives, or, with
   `slices.pick: ask`, the first four with none recommended (`slicing.md` → *Open*).
-- **With `slices.issue` on,** the issue comes before the branch, from `spry.py issue-body`.
+- **Claim first:** `spry.py claim SL-<n>` makes the branch — and with `mint: main` takes the slice
+  on the main branch, or names who holds it (`slicing.md` → *IDs and claims*).
+- **With `slices.issue` on,** the issue comes before `state: open`, from `spry.py issue-body`.
 - **Ask only** when the plan does something hard to undo or departs from the story (`slicing.md` →
   *When to stop and ask*). Otherwise open the branch and the draft PR, build, and close — unless
   the person said to open only.

@@ -11,4 +11,6 @@ argument-hint: "[milestone or epic ID] [the work]"
 - **Template:** `spry/process/templates/task.md` — audience 7.
 - **Parent:** a milestone or epic, from `$ARGUMENTS` or asked. Create with
   `spry.py new task --parent <ID> --title "<the work>"`.
+  With `mint: main` it takes the ID on the main branch and merges it into this one — on a slice
+  branch too.
 - **Is it really a task?** If a user would notice the result, offer `/spry:story` instead.

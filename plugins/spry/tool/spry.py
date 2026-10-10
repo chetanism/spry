@@ -11,7 +11,9 @@
     python3 spry/tool/spry.py hooks [--remove]   # refresh .spry/view/ after each checkout and pull
     python3 spry/tool/spry.py related <file>     # candidates for a conflict check
     python3 spry/tool/spry.py next <type>        # next free ID: milestone, story, slice, decision …
-    python3 spry/tool/spry.py new <type> --parent <ID> --title "…" [--owner …]
+    python3 spry/tool/spry.py new <type> --parent <ID> --title "…" [--owner …]   # mint: main → ID taken on the main branch
+    python3 spry/tool/spry.py claim <slice> [--owner …] [--no-switch]   # take a slice, then cut its branch
+    python3 spry/tool/spry.py release <slice>    # give back a claimed slice nobody is building
     python3 spry/tool/spry.py pr-body <slice ID> [--base origin/main]   # for the PR: reviewer page + work order
     python3 <plugin>/tool/spry.py vendor --root <project>   # copy process/ and the tool into a project
     python3 <plugin>/tool/spry.py vendor --diff --root <project>   # what differs from the plugin
@@ -67,7 +69,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.14.1"
+VERSION = "0.15.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -1097,8 +1099,8 @@ def backlog(project: Project) -> dict:
             waiting = blockers(project, unit)
             slices = sorted(project.counted(unit, "slice"), key=lambda s: s.num)
             for s in slices:
-                if s.state == "open" or (s.state == "planned" and s.id in branches):
-                    where = s.fm.get("branch") if s.state == "open" else branches[s.id]
+                if claimed(s) or (s.state == "planned" and s.id in branches):
+                    where = branch_of(s) or branches.get(s.id, "")
                     pr = s.fm.get("pr", "")
                     out["progress"].append((s, f"`{where}`" + (f" · PR #{pr}" if str(pr).isdigit() else "")))
                 elif s.state == "planned":
@@ -1385,10 +1387,11 @@ def related(project: Project, target_path: str, limit: int = 8):
         mine_paths = plan_paths(text)
         rows = []
         for s in project.of_type("slice"):
-            if s is item or s.state != "open":
+            if s is item or not claimed(s):
                 continue
             shared = sorted(mine_paths & plan_paths(s.text))
-            rows.append(f"- {s.label} — {project.rel(s.doc)}" + (f" · same files: {', '.join(shared)}" if shared else ""))
+            rows.append(f"- {s.label}" + ("" if s.state == "open" else " (claimed, no work order yet)")
+                        + f" — {project.rel(s.doc)}" + (f" · same files: {', '.join(shared)}" if shared else ""))
         section("Open slices", rows)
     return "\n".join(out).rstrip() + "\n"
 
@@ -1429,10 +1432,10 @@ def link_slice(project: Project, slice_id: str, fields: dict) -> str:
     for key, value in fields.items():
         at = next((i for i in range(1, end) if lines[i].split(":", 1)[0] == key), None)
         if at is None:
-            lines.insert(end, f"{key}: {value}")
+            lines.insert(end, f"{key}: {value}".rstrip())
             end += 1
         else:
-            lines[at] = f"{key}: {value}"
+            lines[at] = f"{key}: {value}".rstrip()
     write(item.doc, "\n".join(lines))
     return item.doc
 
@@ -1552,6 +1555,256 @@ def new_item(project: Project, kind: str, parent_id: str | None, title: str,
         raise SystemExit(f"{project.rel(path)} already exists")
     write(path, fill_template(read(template), kind, ident, title, owner, today or date.today().isoformat()))
     return path
+
+
+# ---------------------------------------------------------------- mint and claim on the main branch
+
+# With `"mint": "main"` the main branch on the remote is the counter and the push is the lock: an ID
+# is taken, and a slice claimed, by a commit pushed straight to it from a temporary worktree. Two
+# sessions racing both build on the same tip; one push is refused as behind, and that one fetches,
+# recomputes and tries again. `"mint": "local"` (the default) takes the next number in this tree.
+
+REMOTE = "origin"
+MAIN_TRIES = 5
+
+
+def mint_mode(project: Project) -> str:
+    mode = project.config.get("mint", "local")
+    if mode not in ("main", "local"):
+        raise SystemExit(f"`mint` is `{mode}` in spry/spry.config.json — one of main, local")
+    return mode
+
+
+def main_branch(project: Project) -> str:
+    return project.config.get("main_branch", "main")
+
+
+def remote_tip(project: Project, main: str) -> str | None:
+    """The main branch's commit on the remote now, or None when the remote cannot be read."""
+    done = git(project.root, "ls-remote", REMOTE, f"refs/heads/{main}")
+    return done.stdout.split()[0] if done.returncode == 0 and done.stdout.strip() else None
+
+
+def last_line(done: subprocess.CompletedProcess) -> str:
+    lines = [l.strip() for l in (done.stderr or done.stdout).splitlines() if l.strip()]
+    return lines[-1] if lines else f"exit {done.returncode}"
+
+
+def drop_worktree(root: str, path: str):
+    git(root, "worktree", "remove", "--force", path)
+    if os.path.exists(path):
+        shutil.rmtree(path, ignore_errors=True)
+    git(root, "worktree", "prune")
+
+
+def mid_operation(project: Project) -> str | None:
+    """Why a merge into this tree would fail now — checked before anything is pushed."""
+    for name, what in (("MERGE_HEAD", "a merge"), ("rebase-merge", "a rebase"), ("rebase-apply", "a rebase"),
+                       ("CHERRY_PICK_HEAD", "a cherry-pick")):
+        path = git(project.root, "rev-parse", "--git-path", name).stdout.strip()
+        if path and os.path.exists(os.path.join(project.root, path)):
+            return f"{what} is in progress — finish it first"
+    if git(project.root, "diff", "--cached", "--quiet").returncode != 0:
+        return "files are staged — commit or unstage them first"
+    return None
+
+
+def on_main(project: Project, step, ready=None) -> tuple:
+    """Run `step(project on the remote main branch)` in a temporary worktree, commit what it wrote with
+    the message it returns, and push to the main branch — again from a fresh fetch when the remote moved
+    under the push. `ready(tip)` runs after each fetch and may refuse before anything is written.
+    Returns (step's result, the pushed commit, tries). The worktree is always removed; nothing is
+    written to this tree, and no shared ref is written: two worktrees of one clone can mint at once."""
+    main = main_branch(project)
+    if git(project.root, "rev-parse", "--show-toplevel").returncode != 0:
+        raise SystemExit("`mint: main` needs a git repository — set `mint` to local in spry/spry.config.json")
+    prefix = git_prefix(project.root)
+    url = git(project.root, "remote", "get-url", REMOTE).stdout.strip()
+    if not url:
+        raise SystemExit(f"no remote `{REMOTE}` — nothing written. `mint: main` takes IDs from {REMOTE}/{main}")
+    for attempt in range(1, MAIN_TRIES + 1):
+        # By URL, into FETCH_HEAD alone: FETCH_HEAD is per worktree, while a fetch from the named remote
+        # also updates refs/remotes/…, shared by every worktree, which fails to lock when two fetch at once.
+        done = git(project.root, "fetch", "-q", url, f"refs/heads/{main}")
+        tip = git(project.root, "rev-parse", "-q", "--verify", "FETCH_HEAD^{commit}").stdout.strip()
+        if done.returncode != 0 or not tip:
+            raise SystemExit(f"cannot fetch `{main}` from {REMOTE} ({last_line(done)}) — nothing written. "
+                             f"The ID comes from {REMOTE}/{main}; never from this tree alone while `mint` is main")
+        if ready:
+            ready(tip)
+        tmp = tempfile.mkdtemp(prefix="spry-main-")
+        try:
+            done = git(project.root, "worktree", "add", "-q", "--detach", tmp, tip)
+            if done.returncode != 0:
+                raise SystemExit(f"cannot make a worktree of {REMOTE}/{main}: {last_line(done)} — nothing written")
+            if not os.path.isfile(os.path.join(tmp, prefix, "spry", "spry.config.json")):
+                raise SystemExit(f"spry is not on {REMOTE}/{main} yet — nothing written. Keep `mint` local "
+                                 f"until the setup is merged; IDs are taken on {main} after that")
+            result, message = step(Project(os.path.join(tmp, prefix)))
+            git(tmp, "add", "-A", "--", os.path.join(prefix, "spry") if prefix else "spry")
+            # Hooks are skipped: this commit holds one checked document, and a worktree has no installed tools.
+            done = git(tmp, "commit", "-q", "--no-verify", "-m", message)
+            if done.returncode != 0:
+                raise SystemExit(f"cannot commit on {main}: {last_line(done)} — nothing written")
+            commit = git(tmp, "rev-parse", "HEAD").stdout.strip()
+            done = git(tmp, "push", "-q", "--no-verify", url, f"{commit}:refs/heads/{main}")
+            # Judge by where the remote stands, not by the message: a race reads "fetch first",
+            # "non-fast-forward" or "cannot lock ref" depending on timing and host.
+            now = remote_tip(project, main)
+            if now == commit:
+                return result, commit, attempt
+            if now is None:
+                raise SystemExit(f"cannot reach {REMOTE} to push `{main}` ({last_line(done)}) — nothing written")
+            if now == tip:
+                raise SystemExit(f"{REMOTE} refused the push to `{main}` ({last_line(done)}) — nothing written. "
+                                 f"A project that never commits to {main} directly sets `mint` to local")
+            print(f"{main} moved while writing — fetching and trying again ({attempt}/{MAIN_TRIES})", file=sys.stderr)
+        finally:
+            drop_worktree(project.root, tmp)
+    raise SystemExit(f"`{main}` moved under every one of {MAIN_TRIES} pushes — nothing written; try again")
+
+
+def can_bring_in(project: Project):
+    """A check for `on_main(ready=…)`: refuse before pushing when the pushed commit could not be merged here."""
+    main = main_branch(project)
+
+    def ready(tip: str):
+        why = mid_operation(project)
+        here = git(project.root, "symbolic-ref", "-q", "--short", "HEAD").stdout.strip()
+        if not why and here == main and git(project.root, "merge-base", "--is-ancestor", "HEAD", tip).returncode != 0:
+            why = f"your `{main}` has commits {REMOTE}/{main} does not — push them, or `git pull --rebase`, first"
+        if why:
+            raise SystemExit(f"nothing written: {why}. The new item is merged in here after it is pushed")
+    return ready
+
+
+def bring_in(project: Project, commit: str, what: str):
+    """Merge the pushed commit into this branch, so the file is here to edit and a later edit of it
+    never meets the main branch's copy as a second, different addition."""
+    main = main_branch(project)
+    here = git(project.root, "symbolic-ref", "-q", "--short", "HEAD").stdout.strip()
+    args = ["merge", "-q", "--ff-only", commit] if here == main else ["merge", "-q", "--no-edit", "--no-verify", commit]
+    done = git(project.root, *args)
+    if done.returncode != 0:
+        if git(project.root, "rev-parse", "-q", "--verify", "MERGE_HEAD").returncode == 0:
+            git(project.root, "merge", "--abort")
+        raise SystemExit(f"{what} is on {REMOTE}/{main} ({commit[:7]}) — do not create it again — but bringing it "
+                         f"into `{here or 'HEAD'}` failed: {last_line(done)}. Commit or stash, then `git merge {commit[:12]}`")
+
+
+def mint(project: Project, kind: str, parent_id: str | None, title: str, owner: str | None = None,
+         dependency: str | None = None) -> str:
+    """`new`: with `mint: main`, take the ID on the remote main branch, then bring the file here."""
+    if kind in DOCUMENT_KINDS or mint_mode(project) == "local":
+        return new_item(project, kind, parent_id, title, owner, dependency=dependency)
+    if kind not in project.ids:
+        raise SystemExit(f"unknown type `{kind}` — one of {', '.join([*project.ids, *DOCUMENT_KINDS])}")
+    main = main_branch(project)
+
+    def step(there: Project):
+        if parent_id and parent_id not in there.items:
+            raise SystemExit(f"{parent_id} is not on {REMOTE}/{main} yet — nothing written. Merge it first: "
+                             f"a new item takes its ID on {main}, so its parent must be there")
+        ident = next_id(there, kind)
+        path = new_item(there, kind, parent_id, title, owner, dependency=dependency)
+        rel = there.rel(path)
+        own = there.rel(os.path.dirname(path)) + "/" if path.endswith("README.md") else rel
+        mine = [p for p in check(Project(there.root)) if p.level == "error" and p.path.startswith(own)]
+        if mine:
+            raise SystemExit("the new item fails `check` — nothing written:\n" + "\n".join(map(str, mine)))
+        return (ident, rel), f"docs(plan): new {ident} {title}"
+
+    (ident, rel), commit, _ = on_main(project, step, can_bring_in(project))
+    bring_in(project, commit, ident)
+    return os.path.join(project.root, rel)
+
+
+def branch_of(item: Item) -> str:
+    """A slice's `branch:` — empty while it is still the template's `<sl-n-slug>`."""
+    branch = str(item.fm.get("branch") or "")
+    return "" if branch.startswith("<") else branch
+
+
+def holder(item: Item) -> str | None:
+    """Who holds a slice, in words — None when it is free to open."""
+    branch = branch_of(item)
+    owner = f" by {item.fm['owner']}" if item.fm.get("owner") else ""
+    if item.state == "open":
+        return f"open on `{branch}`{owner}" if branch else "open"
+    if item.state in ("closed", "dropped"):
+        return item.state
+    if branch:
+        return f"claimed on `{branch}`{owner} — `release {item.id}` frees it"
+    return None
+
+
+def claimed(item: Item) -> bool:
+    return item.type == "slice" and (item.state == "open" or (item.state == "planned" and bool(branch_of(item))))
+
+
+def slice_branch(item: Item) -> str:
+    return os.path.basename(item.doc)[:-3].lower()
+
+
+def claim(project: Project, slice_id: str, owner: str | None = None, switch: bool = True) -> str:
+    """`slice-open`'s first step: with `mint: main`, set `branch:` on the slice on the remote main branch —
+    refused when someone holds it — then cut the branch from that commit. Returns the branch."""
+    main = main_branch(project)
+    shared = mint_mode(project) == "main"
+
+    def refuse(s: Item | None, where: str):
+        if s is None or s.type != "slice":
+            raise SystemExit(f"no slice {slice_id}{where}")
+        taken = holder(s)
+        if taken:
+            raise SystemExit(f"{slice_id} is taken: {taken}")
+        branch = slice_branch(s)
+        if git(project.root, "rev-parse", "-q", "--verify", f"refs/heads/{branch}").returncode == 0:
+            raise SystemExit(f"{slice_id} is taken: a branch `{branch}` exists here — someone opened it before "
+                             f"claims, or a release left it. Delete it, or `link {slice_id} --branch {branch}`")
+        if shared and git(project.root, "ls-remote", "--exit-code", "--heads", REMOTE, branch).returncode == 0:
+            raise SystemExit(f"{slice_id} is taken: `{REMOTE}/{branch}` exists — someone is building it")
+        return branch
+
+    if shared and switch and git(project.root, "diff", "--quiet", "HEAD").returncode != 0:
+        raise SystemExit("nothing written: this tree has uncommitted changes, and claim switches to a branch "
+                         f"cut from {REMOTE}/{main} — commit or stash them, or pass --no-switch")
+    if shared:
+        def step(there: Project):
+            branch = refuse(there.items.get(slice_id), f" on {REMOTE}/{main} — merge the slices first")
+            link_slice(there, slice_id, {"branch": branch, **({"owner": owner} if owner else {})})
+            return branch, f"docs(slice): claim {slice_id} for {branch}"
+
+        branch, start, _ = on_main(project, step)
+    else:
+        branch = refuse(project.items.get(slice_id), "")
+        start = main if git(project.root, "rev-parse", "-q", "--verify", main).returncode == 0 else f"{REMOTE}/{main}"
+    make = ["switch", "-q", "--no-track", "-c", branch, start] if switch else ["branch", "--no-track", branch, start]
+    done = git(project.root, *make)
+    if done.returncode != 0:
+        raise SystemExit((f"{slice_id} is yours on {main} — do not claim it again — but " if shared else "")
+                         + f"making `{branch}` failed: {last_line(done)}. Then: `git {' '.join(make[:1] + make[2:])}`")
+    return branch
+
+
+def release(project: Project, slice_id: str) -> str:
+    """Give back a slice nobody is building: `planned` again, `branch:` empty — on the remote main
+    branch with `mint: main`, in this tree otherwise. The branch itself is left for its owner."""
+    main = main_branch(project)
+
+    def free(there: Project):
+        s = there.items.get(slice_id)
+        if s is None or s.type != "slice":
+            raise SystemExit(f"no slice {slice_id}" + (f" on {REMOTE}/{main}" if there is not project else ""))
+        if not claimed(s):
+            raise SystemExit(f"{slice_id} is not held — " + (holder(s) or "planned, with no branch"))
+        was = branch_of(s) or "no branch"
+        link_slice(there, slice_id, {"state": "planned", "branch": ""})
+        return was, f"docs(slice): release {slice_id} from {was}"
+
+    if mint_mode(project) == "main":
+        return on_main(project, free)[0]
+    return free(project)[0]
 
 
 # ---------------------------------------------------------------- pr-body
@@ -2629,6 +2882,51 @@ def changed_blocks(project: Project, base: str):
                                     f"`spry view` shows a fresh copy")
 
 
+def ids_at(project: Project, ref: str) -> dict:
+    """{"T-5": "spry/plan/…/T-5-x/README.md"} — every plan item and decision as committed at `ref`."""
+    plan, decisions = project.rel(project.plan_dir), project.rel(os.path.join(project.spry, "knowledge", "decisions"))
+    done = git(project.root, "ls-tree", "-r", "--name-only", ref, "--", plan, decisions)
+    out = {}
+    for path in done.stdout.splitlines() if done.returncode == 0 else []:
+        name, folder = os.path.basename(path), os.path.basename(os.path.dirname(path))
+        if path.startswith(decisions + "/"):
+            m = re.match(r"^(" + re.escape(project.ids["decision"]) + r"-\d+)\b.*\.md$", name)
+            ident = m.group(1) if m else None
+        elif name == "README.md" and (m := project.item_dir.match(folder)) \
+                and project.type_of_prefix.get(m.group(1)) not in (None, "slice", "decision"):
+            ident = f"{m.group(1)}-{m.group(2)}"
+        else:
+            m = project.slice_file.match(name)
+            ident = f"{project.ids['slice']}-{m.group(1)}" if m else None
+        if ident:
+            out.setdefault(ident, path)
+    return out
+
+
+def id_collisions(project: Project, base: str):
+    """An ID this branch added that `base` also added since they forked, for something else — the
+    duplicate `check` would only see after the merge, when the number is in branch names and trailers."""
+    if git(project.root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
+        return
+    fork = git(project.root, "merge-base", base, "HEAD").stdout.strip()
+    if not fork:
+        return  # a shallow clone or unrelated histories: every moved item would look new
+    theirs, before = ids_at(project, base), ids_at(project, fork)
+    here = {i.id: i.doc for i in project.items.values()} | dict(project.decisions)
+    for ident, doc in sorted(here.items(), key=lambda kv: natural_key(kv[0])):
+        there = theirs.get(ident)
+        if there is None or ident in before:
+            continue
+        mine = project.rel(doc)
+        if there == mine and git(project.root, "rev-parse", f"{base}:./{there}").stdout.strip() == \
+                git(project.root, "hash-object", doc).stdout.strip():
+            continue
+        kind = project.type_of_prefix.get(ident.rsplit("-", 1)[0], "item")
+        project.problem(doc, 1, f"{ident} is also {there} on {base} — both took the number. Merge {base} in, "
+                                f"rename this one to `next {kind}`, and every place it is cited "
+                                f"(`mint: main` takes numbers on the main branch, so this cannot happen)")
+
+
 def restore_blocks(project: Project, base: str) -> list:
     """Put back the base's content in every generated block this branch changed. Returns the files."""
     changed = {}
@@ -2766,6 +3064,7 @@ def merge_check(project: Project, slice_id: str, base: str | None = None) -> lis
             out.append(("warn", f"{ref} — no test cites it; QA must check it by hand after the merge"))
     if base:
         changed_criteria(project, base)
+        id_collisions(project, base)
     errors = [p for p in check(project) if p.level == "error"]
     out.append(("ok", "spry check clean") if not errors
                else ("block", f"spry check: {len(errors)} error{'s' if len(errors) != 1 else ''} — first: {errors[0]}"))
@@ -3084,6 +3383,12 @@ def main(argv=None) -> int:
     p.add_argument("--branch")
     p.add_argument("--pr")
     p.add_argument("--issue")
+    p = sub.add_parser("claim", help="take a slice before opening it: on the main branch with `mint: main`, then cut its branch")
+    p.add_argument("slice")
+    p.add_argument("--owner", help="who is building it (team.members)")
+    p.add_argument("--no-switch", action="store_true", help="make the branch without switching to it (for a worktree)")
+    p = sub.add_parser("release", help="give back a claimed slice nobody is building: planned again, branch cleared")
+    p.add_argument("slice")
     p = sub.add_parser("next", help="next free ID for a type")
     p.add_argument("type")
     p = sub.add_parser("new", help="create an item from its template, with the next ID, in the right folder")
@@ -3206,6 +3511,7 @@ def main(argv=None) -> int:
         if args.base:
             changed_criteria(project, args.base)
             changed_blocks(project, args.base)
+            id_collisions(project, args.base)
         problems = check(project)
         for p in problems:
             print(p)
@@ -3256,7 +3562,18 @@ def main(argv=None) -> int:
         print(next_id(project, args.type))
         return 0
     if args.command == "new":
-        print(project.rel(new_item(project, args.type, args.parent, args.title, args.owner, dependency=args.dependency)))
+        print(project.rel(mint(project, args.type, args.parent, args.title, args.owner, dependency=args.dependency)))
+        return 0
+    if args.command == "claim":
+        branch = claim(project, args.slice, args.owner, switch=not args.no_switch)
+        print(f"{args.slice} claimed" + (f" on {main_branch(project)}" if mint_mode(project) == "main" else "")
+              + f"; branch `{branch}`" + ("" if args.no_switch else ", checked out"))
+        return 0
+    if args.command == "release":
+        was = release(project, args.slice)
+        print(f"{args.slice} released from `{was}` — planned again" + (
+            f" on {main_branch(project)}; the branch is left for its owner to delete" if mint_mode(project) == "main"
+            else "; commit it"))
         return 0
     if args.command == "find":
         hits = find(project, " ".join(args.query), args.limit, args.rebuild)

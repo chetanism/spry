@@ -38,7 +38,7 @@ document both work. Everything after is drafted from it, so read it twice.
 | # | Topic | Writes |
 |---|---|---|
 | a | Product and the people who use it | roadmap `Where we are going`; glossary rows for each role |
-| b | Team — names, GitHub handles, roles (product, developer, qa, …), who reviews what; whether each slice gets a GitHub issue (people outside the repository follow issues), and whether `slice-open` with no ID recommends the next slice or only lists them | `team`, `slices.issue`, `slices.pick` in config; empty team = solo |
+| b | Team — names, GitHub handles, roles (product, developer, qa, …), who reviews what; whether each slice gets a GitHub issue (people outside the repository follow issues), and whether `slice-open` with no ID recommends the next slice or only lists them; whether the main branch takes a direct commit of documents only — then IDs and slice claims are taken there, so two sessions never take one number or one slice (`slicing.md` → *IDs and claims*) | `team`, `slices.issue`, `slices.pick`, `mint` (`main` / `local`) in config; empty team = solo |
 | c | Plan shape — levels (offer dropping Epic for small projects); ID prefixes (offer the defaults, shown as `S-12 · Book a walk-in`) | `levels`, `ids` in config |
 | d | Roadmap — the milestones in order; the next 1–3 in a sentence each | `spry.py new milestone` for each near one (title + `Why` only, `draft`); the rest as `Later` lines |
 | e | Constraints — dates, budget, hosting, regulation, systems that must be used | `knowledge/constraints.md` (`templates/knowledge-topic.md`) |
@@ -71,7 +71,9 @@ document both work. Everything after is drafted from it, so read it twice.
 1. `python3 spry/tool/spry.py check` and `python3 spry/tool/spry.py index` (this once; from here on
    CI on `main` runs `index`); fix what they report.
 2. Show what was written, at the person's tone, grouped: plan · knowledge · process · CI.
-3. Commit `chore(spry): set up spry`, after asking.
+3. Commit `chore(spry): set up spry`, after asking. Keep `mint: local` in it: `mint: main` takes
+   IDs from the main branch, where spry is not yet. When topic b chose `main`, set it once the
+   setup is on the main branch.
 4. Offer `python3 spry/tool/spry.py hooks` — per clone, so each person runs it once: after a checkout
    or a pull that changed the plan or a test, it refreshes the backlog and coverage pages in
    `.spry/view/` and says so. The committed pages show the main branch as of CI's last run.

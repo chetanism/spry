@@ -110,8 +110,10 @@ spry/
 - **Prefixes and levels are chosen in the interview** (suggestions above). Levels are configurable:
   a small project may drop Epic.
 - **IDs are flat per-type counters**, never hierarchical (`M2.E3` breaks when work moves).
-  `spry check` fails on a duplicate — two branches taking the same next number — and the later
-  branch renames.
+  With `mint: main` the main branch on the remote is the counter and the push is the lock: `new`
+  takes the number there and merges it into the current branch, so two sessions never take one
+  number. With `mint: local` (no direct commit to the main branch) `check --base` names a number
+  the branch and the main branch both took, and the later branch renames.
 - **Acceptance criteria live only in stories**, numbered `AC-1…`, cited as `S-1/AC-1`.
 
 ### Front-matter
@@ -329,7 +331,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 | Command | Does |
 |---|---|
-| `check [--base <ref>]` | front-matter, IDs, placement in the tree, glossary, budgets, links, AC references, QA scenarios, conflict checks, leftover guides; with `--base`, cited ACs whose text changed and generated blocks the branch changed |
+| `check [--base <ref>]` | front-matter, IDs, placement in the tree, glossary, budgets, links, AC references, QA scenarios, conflict checks, leftover guides; with `--base`, cited ACs whose text changed, generated blocks the branch changed, and IDs the branch and the base both took |
 | `status [--level]` | roll-up from §6 |
 | `index` | regenerate marker blocks and `INDEX.md` files (CI on `main`) |
 | `coverage` | the coverage page (§13): defined vs done, built but not proven |
@@ -338,7 +340,8 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `index --restore <base>` | on a branch: put back the base's copy of each generated block it changed |
 | `related <file>` | conflict-check candidates (§10) |
 | `next <type>` | next free ID |
-| `new <type> --parent --title` | create an item from its template, next ID, right folder |
+| `new <type> --parent --title` | create an item from its template, next ID, right folder; with `mint: main` the ID is taken on the main branch (§20) |
+| `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it — and cut its branch; give it back |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
 | `gate [--force]` | §15 |
@@ -419,6 +422,13 @@ in `spry/history/writ.md`, then retires `canon/`.
   which writ's `SLICE-QUEUE.md` needed re-editing for. A slice branch counts as in progress, read
   from git refs (CI fetches them), not from `gh`. Fresh pages on a branch live in `.spry/view/`,
   never in the tracked file: `skip-worktree` makes a pull refuse once CI updates it.
+- 2026-10-10 — parallel sessions (CH-20). The minted file reaches the slice branch by **merging the
+  main branch in**, not by writing an identical copy: the branch fills the file in next, and git
+  sees two different additions of one path — a conflict at every merge — unless the merge base
+  holds it. The base moving mid-slice is the smaller cost. **A claim is `branch:` on a `planned`
+  slice**, not `state: open`: `check` refuses an open slice without its work order and conflict
+  check, which the main branch cannot have yet. `mint` defaults to `local`, so nothing pushes to
+  the main branch until a project says it may.
 
 ## 21. Built
 
@@ -476,3 +486,5 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-09 — small fixes from the connect pilot (CH-19, 0.14.1): `link` sets a slice's `branch`,
   `pr`, `issue`; a folder's index line shows its count instead of warning; `covers` under a bug or
   task says what to do; `AGENTS.md` names where the config lives.
+- 2026-10-10 — IDs and slice claims taken on the main branch (`mint: main`): `new`, `claim`,
+  `release`; `check --base` names an ID taken twice (CH-20, 0.15.0). From connect.

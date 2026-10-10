@@ -30,7 +30,8 @@ usually not technical.
 python3 spry/tool/spry.py new <level> --parent <parent ID> --title "<working title>" --owner "<name>"
 ```
 
-The command picks the next ID, the folder and the template. Interview into that file (`interview.md`).
+The command picks the next ID, the folder and the template. With `mint: main` the ID is taken on
+the main branch and pushed at once (`slicing.md` → *IDs and claims*), so the parent must be there. Interview into that file (`interview.md`).
 **An existing `draft`** named in the arguments — for example a milestone `init` created — is continued
 instead: read it, then interview only for its empty sections.
 

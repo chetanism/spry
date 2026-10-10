@@ -40,7 +40,8 @@ missing. So open, build, test and close run as one piece of work.
 3. Propose the slices in one reply: title, the criteria each covers, one line on the visible
    change. Order them so each builds on the last, and say which **need** an earlier one — its code,
    its data, its screen — and which could be built at the same time.
-4. On approval, for each: `spry.py new slice --parent <ID> --title "…"`; fill only `Summary`,
+4. On approval, for each: `spry.py new slice --parent <ID> --title "…"` — with `mint: main` it takes
+   the number on the main branch (*IDs and claims*), so the parent must be there; fill only `Summary`,
    `covers`, and `blocked_by` with the earlier slices it needs — none when it only comes after one.
    The backlog lists a slice as ready only when those are closed, so two people never pick up a
    pair that cannot be built side by side. Everything else waits for `slice-open`.
@@ -55,6 +56,11 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
   dependencies', and what else bears on the choice (a design not settled, an outside team's date) is
   the person's. The one exception to `chat.md`'s single `(recommended)`.
 
+0. **Claim it:** `spry.py claim SL-<n>` (`--owner <name>` when `team.members` is set) — before
+   anything else, so nobody spends an hour on a work order someone else is writing. With
+   `mint: main` it sets the slice's `branch:` on the main branch and pushes; refused when someone
+   holds it, naming the branch — then offer the next ready row. Either way it makes the branch
+   `sl-<n>-<slug>` and switches to it. Not opened after all → `spry.py release SL-<n>`.
 1. **Read:** the parent and its feature, every knowledge file the change could touch (conventions,
    decisions, external behaviour, security, performance), and the code.
 2. **Write the work order** — every `###` under `## Work order`:
@@ -70,7 +76,6 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
      --title "SL-<n> <title>" --body-file -`. Its body is the work order as agreed, saying it is
      never updated — the file goes on changing, and the difference is the record. Set `issue:` to
      its number (`spry.py link SL-<n> --issue <n>`); `check` refuses an open slice without one;
-   - branch `sl-<n>-<slug>` from the main branch;
    - set `state: open`, and `spry.py link SL-<n> --branch <branch>`; `spry.py check`; commit `docs(slice): SL-<n> work order` —
      the branch's first commit, before any code;
    - push; open a **draft** pull request titled `SL-<n> <title>`, body from
@@ -132,7 +137,8 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
 4. **Proof:** every criterion in `covers` has a citing test, or tell QA which need a manual check
    (`[Test]` under `NEXT`).
 5. **Follow-ups:** bugs, tasks, decisions found — create them (`spry.py new …`, `/spry:record`) and
-   list their IDs.
+   list their IDs. With `mint: main` each number is taken on the main branch and the main branch is
+   merged into this one, so the ID is final at once: cite it anywhere.
 6. Set `state: closed`; `spry.py gate` (only `check` runs — nothing but documents changed); commit
    `docs(slice): SL-<n> close summary` with the trailer `Slice: SL-<n>` in the body; push; replace
    the PR body with `spry.py pr-body SL-<n> --base origin/<main>`; mark the PR ready for review.
@@ -147,7 +153,31 @@ Slices of stories that touch different files can be built at the same time, each
 worktree and agent session:
 
 - `spry.py related` on each work order, and the conflict check, show no shared file.
-- `git worktree add ../<repo>-sl-<n> sl-<n>-<slug>`, then start a session there.
+- `spry.py claim SL-<n> --no-switch`, then `git worktree add ../<repo>-sl-<n> sl-<n>-<slug>`, and
+  start a session there.
 - Each worktree has its own `.spry/green`, so one gate never vouches for the other.
 - They merge one at a time; the second rebases if the first touched anything it touches
   (`merging.md` step 5).
+
+## IDs and claims
+
+Several sessions, or several people, work on one repository at once. `mint` in config says where
+an ID is taken and a slice is claimed:
+
+- **`main`** — the main branch on the remote is the counter, and the push is the lock. `spry.py new`
+  (with an ID) fetches it, writes the item in a temporary worktree of `origin/<main>`, checks it,
+  commits `docs(plan): new <ID> <title>` and pushes there; a push refused because someone pushed
+  first fetches and tries again, up to five times. Then it merges that commit into the current
+  branch — the file is there to fill, and the merge base holds it, so the branch's edits never meet
+  the main branch's copy as a second addition. `claim` does the same with `branch:`, reading the
+  slice as the main branch has it, and refuses when a branch for it already exists here or on the
+  remote. Offline, a push refused for any other reason, files staged, or a merge in progress → it
+  stops and writes nothing; it never falls back to a local number. The temporary worktree is
+  removed every time.
+- **`local`** — the next number in this tree, as before. For a main branch that takes no direct
+  commit. Two branches can take the same number; `check --base origin/<main>` names it before the
+  merge, and the later branch renames.
+- **`spry.py release SL-<n>`** gives back a slice nobody is building: `planned` again, `branch:`
+  empty. The branch itself is left for its owner to delete.
+- The backlog's *In progress* lists a claimed slice (a `planned` slice with a `branch:`), and
+  `related` lists it among open slices, whoever claimed it.

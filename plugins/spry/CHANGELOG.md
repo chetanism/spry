@@ -319,3 +319,30 @@ Entry format:
     did not say what to do. It now does: `covers: []`, and the test still cites the criterion.
 - **Adapt:** nothing
 - **Migrate:** add the `Config:` line under `## Project` in `AGENTS.md`.
+
+## CH-20 · IDs and slice claims taken on the main branch
+
+- **Date:** 2026-10-10 · **Version:** 0.15.0
+- **Touches:** `tool/spry.py` (`new`, `claim`, `release`, `check --base`, `merge-check`, `backlog`,
+  `related`), `process/slicing.md` (*Split*, *Open*, *Close*, *Slices side by side*, *IDs and
+  claims*), `process/merging.md` (step 5), `process/planning.md`, `process/recording.md`,
+  `process/setup.md` (§2 b, §4), `skills/{slice-open,slice-close,record,bug,task}`,
+  `templates/spry.config.json` (`mint`), `templates/ci-github.yml` (comment)
+- **Why:** from connect, running sessions side by side on one repository.
+  - Two branches each ran `new task` and took the same number. `check` saw it only after the
+    merge, when the number was already in branch names, PR titles, `blocked_by`, trailers and test
+    names. Most came from bugs, tasks and decisions found mid-slice.
+  - `slice-open` set `state: open` on the slice branch, so the main branch's backlog still offered
+    the slice, and a second session opened it too.
+- **Adapt:** `mint` in config.
+  - `main` — the main branch is the counter and the push is the lock. `new` (any type with an ID)
+    takes the number in a temporary worktree of `origin/<main>`, pushes `docs(plan): new <ID> …`
+    there, retrying when someone pushed first, then merges it into the current branch. `claim
+    SL-n` sets `branch:` on the slice there and cuts the branch from that commit; a second claim is
+    refused, naming the branch. Offline or refused → it stops and writes nothing. Needs a main
+    branch that takes a direct commit of documents.
+  - `local` (the default when the key is missing) — as 0.14.1. `check --base origin/<main>` and
+    `merge-check --base` now name an ID the branch and the main branch both took, before the merge.
+- **Migrate:** add `"mint": "main"` or `"mint": "local"` to `spry/spry.config.json`. A slice already
+  being built on a branch needs nothing: `claim` refuses it, because its branch exists. To show it
+  as claimed on the main branch too, `spry.py link SL-n --branch <branch>` there and commit.

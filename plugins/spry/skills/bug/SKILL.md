@@ -11,4 +11,6 @@ argument-hint: "[feature or story ID] [what goes wrong]"
 - **Template:** `spry/process/templates/bug.md` — audience 4.
 - **Parent:** from `$ARGUMENTS`, or find it: `spry.py related` on a draft, or ask which screen or
   story it is about. Create with `spry.py new bug --parent <ID> --title "<what goes wrong>"`.
+  With `mint: main` it takes the ID on the main branch and merges it into this one — on a slice
+  branch too.
 - **Duplicates first:** read the open bugs under the same feature before writing anything.

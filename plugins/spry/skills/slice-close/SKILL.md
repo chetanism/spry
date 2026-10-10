@@ -14,4 +14,6 @@ argument-hint: "[slice ID]"
 - **Falsify with the tool** (`spry.py falsify suggest`, then `run`) — never by editing files by hand;
   the tool restores every file, even when interrupted. Keep every control the draft lists.
   Confirm `git status` is clean afterwards.
+- **Follow-ups** are created with `spry.py new` (or `/spry:record`), never by copying a file and
+  picking a number — with `mint: main` that takes the ID on the main branch.
 - **Never merge** the pull request.
