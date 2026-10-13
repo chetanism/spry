@@ -496,3 +496,6 @@ in `spry/history/writ.md`, then retires `canon/`.
   (CH-21, 0.16.0). From connect, for pulse-v2.
 - 2026-10-14 — falsify of a bug's slice expects the bug: a `B-n` in a test's name selects it (CH-22,
   0.16.1). From issue #1.
+- 2026-10-14 — falsify works on Windows: `/` paths quoted for cmd, `taskkill /T` on a timeout, a
+  junction when a symlink is refused, serial with pnpm; files are written with LF (CH-23, 0.16.2).
+  From pulse-v2's Windows users.

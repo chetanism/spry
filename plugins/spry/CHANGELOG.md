@@ -378,3 +378,27 @@ Entry format:
   slices in a row (issue #1).
 - **Adapt:** nothing
 - **Migrate:** nothing
+
+## CH-23 · falsify on Windows
+
+- **Date:** 2026-10-14 · **Version:** 0.16.2
+- **Touches:** `tool/spry.py` (`shell_quote`, `run_tests`, `stop_group`, `borrow`, `unborrow`,
+  `parallel_blocker`, parallel falsify cleanup, `write`)
+- **Why:** pulse-v2 has people on Windows (its #475), and none of this had run there.
+  - Test paths went to the runner with `\`, so `shlex.quote` wrapped each in single quotes, which
+    cmd.exe passes on literally: the runner found no files, and every control failed. Paths now go
+    with `/`, double-quoted for cmd when needed; a path with `%` or `"` is refused.
+  - Windows has no process groups: a timeout stopped the shell and left its test workers running
+    against the mutated file. `taskkill /T /F` now stops the whole tree.
+  - Parallel falsify links `node_modules` into each worktree. A symlink needs Developer Mode or an
+    administrator there; a junction is now made instead, and when that fails too the refusal says
+    what to do.
+  - Cleanup now removes every borrowed link itself before `git worktree remove`. Git on Windows
+    walks into a junction as if it were a folder, so it would have deleted the main tree's
+    dependencies through it.
+  - pnpm links a package's dependencies with junctions on Windows, which a copy follows, so a
+    worktree would test the unmutated packages. With pnpm, Windows runs falsify one control at a
+    time.
+  - Files were written with CRLF on Windows; now always LF.
+- **Adapt:** nothing
+- **Migrate:** nothing

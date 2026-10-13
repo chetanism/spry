@@ -1019,6 +1019,72 @@ class Shared(unittest.TestCase):
                          [f"T-1 is also {M}/tasks/T-1-theirs/README.md on origin/main"])
 
 
+class Windows(unittest.TestCase):
+    """The Windows paths, taken on any machine by setting `spry.WINDOWS`."""
+
+    def setUp(self):
+        from unittest import mock
+        self.mock = mock
+        patcher = mock.patch.object(spry, "WINDOWS", True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_cmd_takes_double_quotes_not_single(self):
+        self.assertEqual(spry.shell_quote("tests/a.py"), "tests/a.py")
+        self.assertEqual(spry.shell_quote("tests/a b.py"), '"tests/a b.py"')
+        self.assertEqual(spry.shell_quote("tests/a&b.py"), '"tests/a&b.py"')
+        with self.assertRaises(spry.PlanError):
+            spry.shell_quote("tests/%PATH%.py")
+
+    def test_a_timeout_stops_the_whole_tree(self):
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"])
+        with self.mock.patch.object(spry.subprocess, "run") as run:
+            spry.stop_group(proc)
+        self.assertEqual(run.call_args[0][0], ["taskkill", "/T", "/F", "/PID", str(proc.pid)])
+        self.assertIsNotNone(proc.returncode, "the shell itself is stopped too")
+
+    def test_a_refused_symlink_becomes_a_junction_or_says_what_to_do(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        source, link = os.path.join(root, "node_modules"), os.path.join(root, "w1", "node_modules")
+        os.makedirs(source)
+        refused = OSError("A required privilege is not held by the client")
+        with self.mock.patch.object(spry.os, "symlink", side_effect=refused), \
+                self.mock.patch.object(spry.subprocess, "run") as run:
+            run.return_value = subprocess.CompletedProcess([], 0, "", "")
+            spry.borrow(source, link, "node_modules", pnpm=False)
+            self.assertEqual(run.call_args[0][0], ["cmd", "/c", "mklink", "/J", os.path.normpath(link),
+                                                   os.path.normpath(source)])
+            run.return_value = subprocess.CompletedProcess([], 1, "", "no")
+            with self.assertRaises(spry.PlanError) as caught:
+                spry.borrow(source, link, "node_modules", pnpm=False)
+            self.assertIn("Developer Mode", str(caught.exception))
+            with self.mock.patch.object(spry, "WINDOWS", False), self.assertRaises(OSError):
+                spry.borrow(source, link, "node_modules", pnpm=False)
+
+    def test_cleanup_removes_a_borrowed_link_never_what_it_points_at(self):
+        root = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, root)
+        source, link = os.path.join(root, "node_modules"), os.path.join(root, "w1", "node_modules")
+        os.makedirs(source)
+        open(os.path.join(source, "kept"), "w").close()
+        os.makedirs(os.path.dirname(link))
+        os.symlink(source, link)
+        self.assertTrue(spry.unborrow(link))
+        self.assertFalse(os.path.lexists(link))
+        self.assertTrue(os.path.isfile(os.path.join(source, "kept")))
+        self.assertTrue(spry.unborrow(link), "nothing borrowed is nothing to remove")
+        os.makedirs(link)
+        self.assertFalse(spry.unborrow(link), "a real folder on Windows: leave it to rmtree, not git")
+
+    def test_written_files_keep_lf(self):
+        path = os.path.join(tempfile.mkdtemp(), "a.md")
+        self.addCleanup(shutil.rmtree, os.path.dirname(path))
+        spry.write(path, "one\ntwo\n")
+        with open(path, "rb") as handle:
+            self.assertEqual(handle.read(), b"one\ntwo\n")
+
+
 class Kit(unittest.TestCase):
     """Versions and the changelog agree, so /spry:update has something true to compare against."""
 

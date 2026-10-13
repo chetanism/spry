@@ -69,7 +69,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.16.1"
+VERSION = "0.16.2"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -115,13 +115,26 @@ def natural_key(name: str):
     return [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", name)]
 
 
+WINDOWS = os.name == "nt"  # a name, so tests can take the Windows paths on any machine
+
+
+def shell_quote(arg: str) -> str:
+    """One argument for `shell=True`: POSIX quoting for sh, double quotes for cmd.exe, which takes
+    single quotes literally."""
+    if not WINDOWS:
+        return shlex.quote(arg)
+    if "%" in arg or '"' in arg:  # cmd expands %…% even inside quotes
+        raise PlanError(f"cmd.exe cannot be given {arg} safely — rename it without % or \"")
+    return f'"{arg}"' if any(c in arg for c in " \t&|<>^()") else arg
+
+
 def read(path: str) -> str:
     with open(path, encoding="utf-8") as handle:
         return handle.read()
 
 
 def write(path: str, text: str) -> None:
-    with open(path, "w", encoding="utf-8") as handle:
+    with open(path, "w", encoding="utf-8", newline="\n") as handle:  # LF on Windows too
         handle.write(text)
 
 
@@ -2080,8 +2093,9 @@ def load_plan(project: Project, path: str) -> list:
 def run_tests(project: Project, runner: dict, cwd: str, files: list, timeout: int, root: str | None = None):
     """('pass' | 'fail' | 'timeout', last lines of output). `root` is the tree the files live in."""
     base = root or project.root
-    rels = [os.path.relpath(os.path.join(base, f), cwd) for f in files]
-    command = runner["command"].replace("{files}", " ".join(shlex.quote(r) for r in rels))
+    # `/` on every platform: test runners take it on Windows, and a `\` would need quoting
+    rels = [os.path.relpath(os.path.join(base, f), cwd).replace(os.sep, "/") for f in files]
+    command = runner["command"].replace("{files}", " ".join(shell_quote(r) for r in rels))
     # Its own process group, so a timeout or Ctrl-C stops the runner's children too (pnpm → vitest
     # workers) — none may keep running against a mutated file.
     proc = subprocess.Popen(command, shell=True, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -2099,12 +2113,17 @@ def run_tests(project: Project, runner: dict, cwd: str, files: list, timeout: in
 
 def stop_group(proc: subprocess.Popen):
     try:
-        if hasattr(os, "killpg"):
-            os.killpg(proc.pid, signal.SIGKILL)
+        if WINDOWS:  # no process groups: stop the shell and everything under it
+            subprocess.run(["taskkill", "/T", "/F", "/PID", str(proc.pid)], capture_output=True)
         else:
-            proc.kill()
-    except (ProcessLookupError, PermissionError):
+            os.killpg(proc.pid, signal.SIGKILL)
+    except (ProcessLookupError, PermissionError, OSError):
         pass
+    finally:
+        try:
+            proc.kill()
+        except OSError:
+            pass
     proc.wait()
 
 
@@ -2234,8 +2253,41 @@ def borrow(source: str, link: str, rel: str, pnpm: bool):
     nested = os.path.basename(source) == "node_modules" and os.path.dirname(rel.replace(os.sep, "/")) != ""
     if pnpm and nested:
         shutil.copytree(source, link, symlinks=True)
-    else:
-        os.symlink(source, link)
+        return
+    try:
+        os.symlink(source, link, target_is_directory=os.path.isdir(source))
+    except OSError:
+        if not WINDOWS:
+            raise
+        # A symlink needs Developer Mode or an administrator on Windows; a junction needs neither.
+        done = subprocess.run(["cmd", "/c", "mklink", "/J", os.path.normpath(link),
+                               os.path.normpath(os.path.abspath(source))], capture_output=True, text=True)
+        if done.returncode != 0:
+            raise PlanError(f"cannot link {rel} into a worktree ({done.stdout.strip() or done.stderr.strip()}) — "
+                            "turn on Developer Mode, or set falsify.parallel to false")
+
+
+def is_link(path: str) -> bool:
+    """A symlink or a Windows junction — anything whose removal must not reach what it points at."""
+    try:
+        st = os.lstat(path)
+    except OSError:
+        return False
+    return os.path.islink(path) or getattr(st, "st_reparse_tag", 0) == 0xA0000003  # a mount point
+
+
+def unborrow(link: str) -> bool:
+    """Remove a borrowed link itself, never its target. False when it could not be removed."""
+    if not is_link(link):
+        return not os.path.lexists(link) or not WINDOWS  # a pnpm copy holds only links on POSIX
+    try:
+        os.unlink(link)
+    except OSError:
+        try:
+            os.rmdir(link)  # a junction or a directory symlink on Windows
+        except OSError:
+            return False
+    return True
 
 
 def parallel_blocker(project: Project, plan: list):
@@ -2248,6 +2300,12 @@ def parallel_blocker(project: Project, plan: list):
     for path in sorted({f for e in plan for f in e["_tests"]}):
         if git(project.root, "ls-files", "--error-unmatch", "--", path).returncode != 0:
             return f"{path} is not committed, so a worktree would not have it"
+    if WINDOWS and os.path.isdir(os.path.join(project.root, "node_modules", ".pnpm")) and any(
+            os.path.basename(rel) == "node_modules" and os.path.dirname(rel.replace(os.sep, "/"))
+            for rel in shared_paths(project)):
+        # pnpm links packages with junctions there, which a copy follows: a worktree would test the
+        # main tree's unmutated packages — a false `survived`
+        return "Windows: pnpm's package links cannot be copied into a worktree safely"
     return None
 
 
@@ -2407,8 +2465,13 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
                 say(f"{results[i][1]}: {entry['control']} (serial runner)")
         return [results[i] for i in range(len(plan))]
     finally:
-        for tree in made:
-            git(project.root, "worktree", "remove", "--force", tree)
+        # Take the borrowed links out first: git on Windows walks into a junction as if it were a
+        # folder, and would delete the main tree's dependencies through it.
+        for made_tree, tree in zip(made, trees):
+            if all(unborrow(os.path.join(tree, rel)) for rel in share):
+                git(project.root, "worktree", "remove", "--force", made_tree)
+        for made_tree in made[len(trees):]:
+            git(project.root, "worktree", "remove", "--force", made_tree)
         git(project.root, "worktree", "prune")
         shutil.rmtree(parent, ignore_errors=True)
 
