@@ -1187,6 +1187,28 @@ class Falsify(unittest.TestCase):
         self.assertEqual(plan[1]["with"], "    if False and (overdue):")
         self.assertEqual(plan[0]["expect"], ["S-1/AC-1", "S-1/AC-2"])
 
+    def test_a_bugs_slice_expects_the_bug(self):
+        bug = "spry/plan/M-1-m/E-1-e/F-1-f/bugs/B-1-limit"
+        self.write({f"{bug}/README.md": "---\nid: B-1\ntitle: limit\nstate: open\n---\n# B-1\n",
+                    f"{bug}/SL-2-fix.md": "---\nid: SL-2\ntitle: Fix\nstate: open\ncovers: []\n---\n# SL-2\n",
+                    "tests/test_bug.py": TEST_LIMIT.replace('"""S-1/AC-1', '"""B-1'),
+                    "tests/test_note.py": "# B-1 only in a comment\n" + TEST_OVERDUE.replace("S-1/AC-2", "nothing")})
+        self.commit("a bug and its test")
+        project = spry.Project(self.root)
+        self.assertEqual(sorted(p for p, _, _ in project.bug_tests["B-1"]), ["tests/test_bug.py"],
+                         "a bug cited only in a comment selects nothing")
+        self.assertEqual(spry.falsify_suggest(project, "SL-2", "main")[0]["expect"], ["B-1"])
+        results = self.run_plan([self.guard("    if count >= 3:", ["B-1"])])
+        self.assertEqual(results[0][1], "caught")
+        for fragment, expect in {"neither a criterion nor a bug": ["B-9"],
+                                 "outside a test's name: tests/test_note.py:1": ["B-1"]}.items():
+            if expect == ["B-1"]:
+                self.write({"tests/test_bug.py": TEST_LIMIT.replace('"""S-1/AC-1', '"""fixtures/B-1.json, B-1.json')})
+                self.commit("only data names the bug")
+            with self.assertRaises(spry.PlanError) as caught:
+                self.run_plan([self.guard("    if count >= 3:", expect)])
+            self.assertIn(fragment, str(caught.exception))
+
     def test_suggest_offers_value_lines_when_no_guard_was_added(self):
         self.git("checkout", "-q", "-b", "digest")
         self.write({"src/loans.py": LOANS_AFTER + "\ndef key(org, body):\n    salted = org.secret + body\n    return hash(salted)\n",

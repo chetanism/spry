@@ -112,7 +112,8 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
    - `python3 spry/tool/spry.py falsify suggest SL-<n>` drafts `.spry/falsify/SL-<n>.json` from the
      source lines the branch added: one candidate per guard, comparison or error line, each with a
      mutation that removes it (a guard made *never true*, a boundary flipped, a `throw` deleted) and
-     `expect` taken from `covers`. **No guard added** — the slice changes a value, a key, a digest —
+     `expect` taken from `covers` — or, for a bug's slice, the bug (`["B-4"]`), which its tests
+     name, since a bug has no criteria. **No guard added** — the slice changes a value, a key, a digest —
      it offers up to five lines that compute or store something, each deleted: keep the ones a test
      must notice. **No source line added** — only tests or documents — it says so, and there is
      nothing to falsify: `merge-check --base` accepts the empty table.

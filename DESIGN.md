@@ -298,7 +298,8 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   Plan entries use writ's exact `find` / `with` form. With no such line in the diff, up to five
   lines that compute or store something are offered for deletion instead; `merge-check` never
   requires those. A branch that adds no source line at all (tests, documents) has nothing to falsify.
-- **`expect` names acceptance criteria** (`S-1/AC-2`); tests are found by their names.
+- **`expect` names acceptance criteria** (`S-1/AC-2`), or the bug for a bug's slice (`B-4`); tests
+  are found by their names.
 - **Runs only those test files**, through per-runner commands with `{files}`, using the runner's
   fail-fast flag — one failure is enough. Files that name the control's source file run first; the
   rest run only if those miss it. A control cited by more than 20 files is named `wide:` at the run.
@@ -493,3 +494,5 @@ in `spry/history/writ.md`, then retires `canon/`.
   Every case of a detail file lands somewhere, scenario files get their own table, a fresh agent
   compares each original with what it became, and reasoning moves into the decisions it explains
   (CH-21, 0.16.0). From connect, for pulse-v2.
+- 2026-10-14 — falsify of a bug's slice expects the bug: a `B-n` in a test's name selects it (CH-22,
+  0.16.1). From issue #1.

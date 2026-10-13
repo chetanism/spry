@@ -366,3 +366,15 @@ Entry format:
 - **Adapt:** nothing
 - **Migrate:** a project adopted from writ before 0.16.0 follows `from-writ.md` *Adopted before
   CH-21*.
+
+## CH-22 · Falsify for a bug's slice
+
+- **Date:** 2026-10-14 · **Version:** 0.16.1
+- **Touches:** `tool/spry.py` (test scan, `falsify run`, `falsify suggest`), `process/slicing.md`
+  (*Close*)
+- **Why:** a bug has no criteria, so its tests name the bug (`B-40 …`). `falsify run` looked up
+  `expect` only among `S-n/AC-m` citations and refused the plan ("no test cites B-40"), so every
+  control of a bug's slice was probed by hand and accepted at the merge — 7 and 5 controls on two
+  slices in a row (issue #1).
+- **Adapt:** nothing
+- **Migrate:** nothing
