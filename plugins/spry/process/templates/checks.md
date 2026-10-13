@@ -8,6 +8,8 @@ audience: 4
 
 ## Scenarios
 
+<!-- guide: optional, first: `### Before you start` — accounts, data and who provides them, shared by every scenario below. Several scenarios may check one AC; each heading starts with it. -->
+
 ### <AC-1> · <short name>
 
 <!-- guide: numbered steps a tester follows by hand, each with what they should see. Include the data to use. -->

@@ -346,3 +346,23 @@ Entry format:
 - **Migrate:** add `"mint": "main"` or `"mint": "local"` to `spry/spry.config.json`. A slice already
   being built on a branch needs nothing: `claim` refuses it, because its branch exists. To show it
   as claimed on the main branch too, `spry.py link SL-n --branch <branch>` there and commit.
+
+## CH-21 · writ's documents move into spry, not into history
+
+- **Date:** 2026-10-14 · **Version:** 0.16.0
+- **Touches:** `process/from-writ.md` (§1.4 with a `kind` column, §1.7, §1.8 new, §2 steps 3, 4,
+  7 and 10, *Adopted before CH-21*), `process/qa.md`, `templates/checks.md` (`### Before you
+  start`, several scenarios per AC, `## Runs under writ`)
+- **Why:** from connect, before pulse-v2's adopt.
+  - Requirement details, QA scenarios and specs are written for people who don't build software,
+    and they won't dig through writ's history. `history` had no limit, so connect sent 17 of its 46
+    documents there, among them 231 amendments holding the reasoning behind decisions still in
+    force.
+  - Only each `##` heading of a detail file was checked, so a case could be lost inside a section,
+    or summarised away to fit a story's line budget.
+  - Manual test scenarios had no row of their own.
+  - writ's recorded runs, imported as check-log rows, would prove criteria writ never satisfied, or
+    un-prove ones a test proves. They now sit in `## Runs under writ`, which proves nothing.
+- **Adapt:** nothing
+- **Migrate:** a project adopted from writ before 0.16.0 follows `from-writ.md` *Adopted before
+  CH-21*.

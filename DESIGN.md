@@ -399,7 +399,8 @@ Later: `product-docs`, `product-guide`, `spry-web` plugin.
 **Adopting a writ project** (`process/from-writ.md`): writ's agent first cleans up in writ's terms
 and writes `canon/to-spry.md` — the tree as titles, every traceable ID with what it becomes (`ac`,
 `story`, `rule`, `knowledge`, `milestone`, `drop`) and whether it is done, unbuilt queue rows,
-documents, local process changes. The person approves it; adopt builds the plan from it, gives each
+documents (each into spry; history only for records of what happened), local process changes,
+requirement details and test scenarios split into stories and `checks.md`. The person approves it; adopt builds the plan from it, gives each
 built story one closed `Built under writ` slice, rewrites test citations to `S-n/AC-m` from the trail
 in `spry/history/writ.md`, then retires `canon/`.
 
@@ -488,3 +489,7 @@ in `spry/history/writ.md`, then retires `canon/`.
   task says what to do; `AGENTS.md` names where the config lives.
 - 2026-10-10 — IDs and slice claims taken on the main branch (`mint: main`): `new`, `claim`,
   `release`; `check --base` names an ID taken twice (CH-20, 0.15.0). From connect.
+- 2026-10-14 — adopt moves writ's documents into spry; history holds only records of what happened.
+  Every case of a detail file lands somewhere, scenario files get their own table, a fresh agent
+  compares each original with what it became, and reasoning moves into the decisions it explains
+  (CH-21, 0.16.0). From connect, for pulse-v2.
