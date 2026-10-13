@@ -401,7 +401,7 @@ Later: `product-docs`, `product-guide`, `spry-web` plugin.
 and writes `canon/to-spry.md` — the tree as titles, every traceable ID with what it becomes (`ac`,
 `story`, `rule`, `knowledge`, `milestone`, `drop`) and whether it is done, unbuilt queue rows,
 documents (each into spry; history only for records of what happened), local process changes,
-requirement details and test scenarios split into stories and `checks.md`. The person approves it; adopt builds the plan from it, gives each
+requirement details (a file with several jobs is a feature) and test scenarios split into features, stories and `checks.md`. The person approves it; adopt builds the plan from it, gives each
 built story one closed `Built under writ` slice, rewrites test citations to `S-n/AC-m` from the trail
 in `spry/history/writ.md`, then retires `canon/`.
 
@@ -499,3 +499,7 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-14 — falsify works on Windows: `/` paths quoted for cmd, `taskkill /T` on a timeout, a
   junction when a symlink is refused, serial with pnpm; files are written with LF (CH-23, 0.16.2).
   From pulse-v2's Windows users.
+- 2026-10-14 — a writ detail file with several jobs becomes a feature: summary, personas, fence and
+  open questions go to it, each *May not* and each non-refusal blank-field outcome is a criterion,
+  unsettled reconciliation rows become bugs or open questions and stay out of `Built under writ`,
+  and stories from an unreviewed file stay `draft` (CH-24, 0.17.0). For pulse-v2.

@@ -131,35 +131,132 @@ Only when writ kept detail files: one file per requirement saying what a person 
 job stories, personas, boundary cases and scenarios (usually `<canon>/spec/requirements/`). Each
 can be longer than a story may be, and usually holds several jobs, so writ's agent plans the split.
 
-One row per `##` section of every detail file, in file order. A section whose parts go to different
-places gets one row per part, saying which part in Note. Every story, case, scenario and
-field of the file lands somewhere: nothing in it is summarised away. The file is for people who
-don't build software, and in spry they will read only the stories.
+**A file with two or more separate jobs becomes a feature**, and each job a story under it, all
+added to the tree in §1.1: what the file says about the whole requirement (its summary, its
+personas, its fence, its open questions) is the feature's, and only the jobs are stories. A file
+with one job becomes a story under its **area's feature** — the feature in §1.1 that holds the
+area's requirements without a detail file, added there when there is none — and its feature-level
+parts go to that feature. When they would take that feature over its line budget, the file becomes
+a feature of its own, with one story.
+
+A feature's content can't move to `checks.md`, so it is never cut to fit: a feature that would
+still run over its budget is a question in §1.6, never a summary.
+
+One row for the file's front matter, one for its title line, then one row per `##` section of
+every detail file, in file order. A section whose parts go to different places gets one row per
+part, saying which part in Note; so does any paragraph after a section's table. Every story, case,
+scenario and field of the file lands somewhere: nothing in it is summarised away. The file is for
+people who don't build software, and in spry they will read only the features and stories.
 
 | detail file | section | goes to | Note |
 |---|---|---|---|
 
-- **section**: the heading as written, such as `Story 3 — a different standing at each place`.
-- **goes to**, each naming a story by its §1.1 title:
-  - `story: <story>` — the story's *As / I want / So that*. Usually the summary and the personas.
-  - `ac: <story>` — criteria of that story. Each "Story n" of the file is a job: criteria on the
-    requirement's story, or a story of its own under the same feature when it is a separate job,
-    added to the tree in §1.1. Observable behaviour, and boundary and negative cases, are criteria
-    too. A case that can't be reproduced by hand stays a criterion, proven by a test.
-  - `checks: <story>` — scenarios in that story's `checks.md`: the steps of a job story,
-    mandatory fields, preconditions and data. That file has no line budget, so the detail goes
-    here. A case is never only a step: it is a criterion (`ac:`) first, and its steps come here.
-  - `not-in-story: <story>` — *Not in this story*. Out of scope usually goes here.
-  - `notes: <story>` — the story's Notes: words, examples, which screen or route.
-  - `related: <story>` — `related:` and Notes. Decisions named in it become `D-n` with the rest.
+- **section**: the heading as written, such as `Story 3 — a different standing at each place`, or
+  `front matter` or `title`.
+- **goes to**, each naming a feature or story by its §1.1 title:
+  - `feature: <feature>, <section>` — that section of the feature: *Summary*, *Who uses it*,
+    *How it works*, *Rules* (`R-n`), *Where it appears*, *Out of scope* or *Open questions*.
+  - `story: <story>` — the story's *As / I want / So that*, from the job's own *When … I want …
+    so …* line.
+  - `ac: <story>` — criteria of that story. Observable behaviour, and boundary and negative cases,
+    are criteria too. A case that can't be reproduced by hand stays a criterion, proven by a test.
+  - `checks: <story>` — scenarios in that story's `checks.md`: the steps of a job story, fields
+    tables, preconditions and data. That file has no line budget, so the detail goes here. A case
+    is never only a step: it is a criterion (`ac:`) first, and its steps come here.
+  - `not-in-story: <story>` — *Not in this story*: a fence between two stories of one feature.
+  - `notes: <story>` — the story's Notes: words, examples, which screen or route, what is built.
+  - `related: <feature or story>` — `related:` and Notes. Decisions named in it become `D-n` with
+    the rest.
+  - `blocked_by: <story>` — what the story waits for, by §1.1 title or §1.3 row.
+  - `bug: <story>` — an open bug under that story (*Reconciliation* below).
   - `glossary` — terms the file defines.
-  - `question` — an open question, copied to §1.6. Its answer lands where §1.6 says.
-  - `history` — nothing to carry: reconciliation rows, an empty verification table, and the
-    requirement's quoted text, which survives as the criteria. The original is kept anyway (§2
+  - `history` — nothing to carry: settled reconciliation rows, an empty verification table, and
+    the requirement's quoted text, which survives as the criteria. The original is kept anyway (§2
     step 3).
-- A verification row that records a check by hand goes to `checks: <story>`, under
-  `## Runs under writ` (§2 step 3), for the criterion it checked. Note gives that criterion.
-- The requirement's own row in §1.2 is `story` or `ac`, as usual; its Note points to this table.
+- **Section by section**:
+  - *front matter* — `status: reviewed` makes the file's feature and stories `ready` once written;
+    any other status keeps them `draft`, so the owner still reviews them in spry (Note gives the
+    status). `approved_by`, or else `drafted_by`, is their `owner`. `surface` goes to the Notes of
+    each story. `priority` is not carried, because spry's plan order replaces it; the rest is
+    `history`.
+  - *title* — the `# <ID> — <words>` line: the words title the feature, or the story of a one-job
+    file, in plain words.
+  - *Summary* — each part where it belongs:
+    - *Covers*, what the requirement lets someone do, and a multi-job file's *When … needs to …
+      so that* → `feature: …, Summary`;
+    - *Not covered* → `feature: …, Out of scope`, naming the owner of each thing;
+    - where people meet the job today → `feature: …, Where it appears`;
+    - the normal path, step by step → `feature: …, How it works`;
+    - words it defines ("words used here") → `glossary`;
+    - what holds across the whole requirement, including tables of it → `feature: …, Rules`, and
+      `ac:` too wherever a test or a person could show it;
+    - what is built and what is not → `notes:` each story it concerns, naming the §1.3 row that
+      builds the rest;
+    - a one-job file's *When … needs to … so that* → `story:`.
+  - *Personas* — each persona, with its relation and its **May**, to `feature: …, Who uses it`.
+    Each **May not** is a permission criterion, `ac:` on the story of the act refused: who tries,
+    and what they are refused. A May not is never only a note — except `—`, or one that only names
+    the requirement that owns it, which is `feature: …, Out of scope`. A May that no story states and a
+    person could show ("keeps reading their department's records after it closes") is `ac:` too.
+  - *Mandatory and non-mandatory fields* — each table, whole, to `checks:` the story of its act.
+    An act another requirement owns (*Out of scope* names it) goes, table and criteria, to that
+    requirement's story; only an act nobody owns gets a story of its own in §1.1. Every outcome in the table is a
+    criterion first, `ac:` on that story: a blank that is refused (and what the person is told),
+    every other "if it is left blank" outcome (a default, a different meaning per kind), and every
+    limit in the *Mandatory?* column (a length, a range, a format, set once and never edited). One
+    that holds across several stories is `feature: …, Rules` as well. A struck-through row is
+    `history` when its change is in the BRD, otherwise a §1.6 question. The line on who has no
+    fields here goes to `feature: …, Who uses it`; lines about the command line go to that
+    story's Notes.
+  - *Preconditions and data* — `checks:` each story, at the head of its `### Before you start`
+    (§1.8 adds a scenario file's table under it).
+  - *Story n* — `story:` and `ac:` on its own story, or `ac:` on another story's when it is the
+    same job in a different situation. Its tag places the story: `[MVP]` under the milestone that
+    tag names, `[P1 — BR-…]` under the later release that holds it, as §1.1 lists it. A wait
+    written beside it (*waits for branches*, *not built — change request in pull request #188*)
+    is `blocked_by:` or `notes:` naming the §1.3 row; an undecided change request is also a
+    `feature: …, Open questions` entry, and "needed in MVP" there keeps the story in that
+    milestone.
+  - *Observable behaviour* and *Boundary and negative cases* — each item `ac:` on the story whose
+    act it is about. One about no single act is `ac:` on a platform story (§1.2, *nothing proves a
+    rule*), and `feature: …, Rules` too. One that only says where something belongs is
+    `feature: …, Out of scope`. `None — the stories cover it` is `history`.
+  - *Out of scope* — `feature: …, Out of scope`, naming the feature or story that owns each thing
+    (by §1.1 title); `not-in-story:` when it fences off another story of the same feature.
+  - *Open questions* — each question still open goes to `feature: …, Open questions`, as one line
+    `question · who answers · —`, with its answers (a), (b) indented under it as written. They are
+    not copied to §1.6, so adopt doesn't wait for them: the owner answers them in spry. A question
+    already answered (struck through, *closed* or *settled*) is not open: its answer is `ac:` or
+    `feature: …, Rules` like any other behaviour, and the decision or CR it names goes into that
+    decision's Context (§2 step 7).
+  - *Reconciliation* — one row per row of it, reading later rows first. A later `holds` row whose
+    *Against* is the slice in an earlier row's *Where* (or the slice that built its `CR-*`) settles
+    that row, unless the later row says it doesn't. **Unsettled** means every `fix`,
+    `change-request` or `open` row no later row settles, whatever its destination below.
+    - `holds`, `ratified`, or settled by a later row → `history`. A `ratified` criterion is written
+      as built, and its story's Notes say who ratified it and when.
+    - `fix` whose slice is in §1.3 → `history`; the §1.3 row carries it, naming the criterion in
+      Note.
+    - `fix` whose slice is done, or `change-request` applied, with no later row → `history` when the
+      slice's summary or the applied CR shows it built; otherwise a §1.6 question.
+    - `fix` with no slice queued → `bug: <story>`, in plain words: what the requirement says, and
+      what the build does, with `severity` and `breaks` (the criterion) in Note. A severity the
+      row doesn't make clear is a §1.6 question.
+    - `change-request` not yet applied, or `open` → `feature: …, Open questions`, naming the `CR-*`
+      or `OPN-*` and its owner.
+    - Every criterion an unsettled row names is left out of the story's `Built under writ` slice
+      (§2 step 5), even when its §1.2 row is `done`: Note names the criterion.
+    - Text after the table gets its own row; where it disagrees with the table, it is a §1.6
+      question.
+  - *Related* — each ID to `related:` of the feature or story it concerns. Its plain sentence goes
+    with it: to that story's Notes, or the feature's *Rules* or *Out of scope* by what it says.
+    Slices that built it go to the trail (§2 step 4); oracles (`areas.md` sections) go to
+    `checks:` as a line under `### Before you start`.
+  - *Verification* — a row that records a check by hand goes to `checks: <story>`, under
+    `## Runs under writ` (§2 step 3), for the criterion it checked; Note gives that criterion.
+    An empty table is `history`.
+- The requirement's own row in §1.2 is `story` or `ac` on one of the file's stories, as usual; its
+  Note names the feature and points to this table.
 
 ### 8. Test scenarios
 
@@ -170,13 +267,26 @@ manual regression list. One row per scenario, in file order:
 |---|---|---|---|---|
 
 - **scenario**: its heading or ID as written, such as `S3 — correcting a department` or `MR-12`.
-- **story** and **AC**: the story by its §1.1 title, and the criterion the scenario checks, as the
-  writ ID of its §1.2 row or the §1.7 row it comes from. Several scenarios may check one criterion.
-  A scenario that checks no criterion is a finding: put `new:` and the criterion, in plain words,
-  in AC. Adopt adds it to the story (§2 step 3).
-- A file's *Before you start* (accounts, data, who provides them) goes, whole, into each
-  `checks.md` its scenarios land in, as `### Before you start`, first under `## Scenarios`.
-  *Not testable yet* goes to Note.
+- **story** and **AC**: the story by its §1.1 title, and the criteria the scenario checks, as the
+  writ ID of its §1.2 row or the §1.7 row it comes from. Several scenarios may check one criterion,
+  and one scenario may check several, listed in AC. A scenario that checks criteria of several
+  stories gets one row per story, and lands in each one's `checks.md`. A scenario that checks no
+  criterion is a finding: put `new:` and the criterion, in plain words, in AC. Adopt adds it to
+  the story (§2 step 3).
+- A file's *Before you start* (accounts, data, who provides them, and what can't be done through
+  the screen) goes, whole and as written, into each `checks.md` its scenarios land in, under
+  `### Before you start`, first under `## Scenarios` — after the detail file's preconditions when
+  §1.7 put them there. One section per file, never two.
+- Each scenario keeps its *Type* and *Where* as its first line. One that is *Not testable yet*
+  says so on that line, with what it waits for, as the story or §1.3 row that builds it; Note
+  repeats it. A *Not testable yet* row that names scenarios kept outside the file (in a pull
+  request, say) is a §1.6 question: bring them in, or drop them.
+- The file's front matter and intro go under the `checks.md` title, beside the source line (§2
+  step 3): who wrote it, its `areas`, and — when `status` isn't `reviewed` — that it is a draft and
+  who still has to review it. Scenarios the intro says are held back elsewhere are a §1.6 question.
+  *The requirement* is `history`.
+- Each *Related* line goes to `related:` of the stories; one that limits what a scenario proves
+  goes under that scenario, as written.
 - Recorded runs go to that `checks.md` under `## Runs under writ`. Note says how many.
 
 ## 2. Adopt from the mapping
@@ -189,16 +299,22 @@ manual regression list. One row per scenario, in file order:
    - Each `ac` row becomes one criterion row (Given / When / Then) in plain words. It keeps the
      requirement's meaning, but not its wording when that wording is technical.
    - A `story` row gets the criteria its Note names.
-   - A story goes `ready` once every criterion is written. Its `## Conflict check` reads
+   - A story goes `ready` once every criterion is written, unless §1.7 keeps it `draft` because its
+     detail file was never reviewed. Its `## Conflict check` reads
      `Checked <date> against: <canon>/to-spry.md, approved <date>`.
-   - **Requirement details** follow §1.7, row by row: criteria, `checks.md` scenarios, *Not in this
-     story*, Notes, `related:` and glossary terms, each where its row says. writ IDs in the text
-     become their spry IDs from the trail.
+   - **Requirement details** follow §1.7, row by row: feature sections, criteria, `checks.md`
+     scenarios, *Not in this story*, Notes, `related:`, bugs and glossary terms, each where its row
+     says. writ IDs in the text become their spry IDs from the trail.
+   - **A feature's open questions** from §1.7 go in its *Open questions* as
+     `question · who answers · —`, with their answers indented under it, and the pull request
+     lists them by owner. Adopt doesn't answer them.
    - **Never cut to fit.** When a story would run over its line budget, split it into stories
      under the same feature. Only steps, fields, data and preconditions move to `checks.md`, which
-     has no budget; a case stays a criterion. Never summarise a case away.
+     has no budget; a case stays a criterion. Never summarise a case away. A feature over its
+     budget is §1.7's: its own feature, or a §1.6 question.
    - **Test scenarios** follow §1.8, row by row, as `checks.md` scenarios under their criterion.
-     Each heading keeps its writ name: `### AC-3 · correcting a department (writ S3)`. Scenarios
+     Each heading keeps its writ name with its file: `### AC-3 · correcting a department (writ
+     BR-ORG-008 S3)`, or `### AC-3, AC-5 · …` when it checks several. Scenarios
      from a §1.7 `checks:` row do the same: `(writ BR-IAM-014 Story 3)`.
    - **Runs under writ**: writ's recorded runs and manual verification rows go in a
      `## Runs under writ` section of `checks.md`, after the check log, as they were written. They
@@ -206,9 +322,9 @@ manual regression list. One row per scenario, in file order:
      un-prove a criterion a test proves. The next run by hand starts the check log.
    - **New criteria**: every criterion named in a §1.3 Note or a §1.8 `new:` row is added to its
      story, marked *added at adoption* in Notes.
-   - **Tasks and bugs**: each §1.4 `task:` or `bug:` row becomes one, `spry.py new task|bug`, under
-     its parent.
-   - Every story, `checks.md` and knowledge page built from a writ document says where it came
+   - **Tasks and bugs**: each §1.4 `task:` or `bug:` row, and each §1.7 `bug:` row, becomes one,
+     `spry.py new task|bug`, under its parent.
+   - Every feature, story, `checks.md` and knowledge page built from a writ document says where it came
      from, in one line of Notes (or under the title of a page with no Notes), linking the kept
      original or naming the path in git history:
      `From writ [BR-IAM-014](../../history/writ/requirements/BR-IAM-014.md), Stories 3–4.` The
@@ -225,10 +341,12 @@ manual regression list. One row per scenario, in file order:
    pages or items it became, as a list, or `history`). Add each row when its item is made, not
    afterwards.
 5. **Built work.** Every story with at least one `done` row gets one slice, titled `Built under writ`:
-   - `state: closed`, and `covers` lists the criteria from its `done` rows;
+   - `state: closed`, and `covers` lists the criteria from its `done` rows, less those an
+     unsettled §1.7 reconciliation row names;
    - Summary links the writ slices that built it: `- Built under writ by [SL-WD2](<path>), …`;
    - Close summary reads: imported — built, reviewed and falsified under writ.
-   The story counts as done once the step 6 renames make its tests cite it.
+   The story counts as done once the step 6 renames make its tests cite it — and, when §1.7 kept it
+   `draft`, once its owner has reviewed it and set it `ready`.
 
    **Keep the slice summaries.** By script, copy every writ slice summary (the `*.md` under
    `<canon>`'s slices folder, not its README, not `*.falsify.json`, not work orders) to
@@ -273,19 +391,24 @@ manual regression list. One row per scenario, in file order:
 10. **Verify.**
     - `spry check` is clean.
     - Every row of §1.2 is in the trail.
-    - By script: every `##` heading of every detail file has a row in §1.7, and every story,
-      criterion and `checks.md` scenario that §1.7 names exists. Every §1.8 row has a scenario
-      heading ending `(writ <scenario>)` in its story's `checks.md`. Every §1.4 `content` row is in
-      the trail with at least one page or item. Report the gaps; fix them before the pull request.
+    - By script: every detail file has `front matter` and `title` rows and every `##` heading a
+      row in §1.7, and every feature, story, criterion, bug and `checks.md` scenario that §1.7
+      names exists. Every *May not* of a persona is a criterion, unless §1.7 sent it to *Out of
+      scope*, and every reconciliation row is accounted for. Every §1.8 row has a scenario heading
+      ending `(writ <file ID> <scenario>)` in its story's `checks.md`. Every §1.4 `content` row is
+      in the trail with at least one page or item. Report the gaps; fix them before the pull
+      request.
     - By script: every §1.4 row that goes to `history` has a kind other than `content`.
     - **Fresh eyes on the content.** A new agent — not a fork, and not the one that wrote the
       plan — reads each detail file, scenario file and split §1.4 document (the BRD, the milestone
       plan, the specs) beside the pages it became, and lists every case, field, scenario or
       sentence of meaning that is lost or changed. Fix each one before the pull request, and say
       in it how many were found and fixed.
-    - The pull request asks each requirement owner to read the stories built from their files.
+    - The pull request asks each requirement owner to read the features and stories built from
+      their files, and lists the ones left `draft` for their review.
     - The done criteria, set beside the `done` rows, differ only where the pull request explains why
-      — a comment-only citation is the usual reason.
+      — a comment-only citation, an unsettled reconciliation row, or a story left `draft` are the
+      usual reasons.
 11. **Retire `<canon>`** in the last commit. Ask first, after the person has compared `spry status`
     with writ's last ledger. The trail, the kept summaries and git history keep everything.
 

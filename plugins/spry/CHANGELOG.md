@@ -402,3 +402,32 @@ Entry format:
   - Files were written with CRLF on Windows; now always LF.
 - **Adapt:** nothing
 - **Migrate:** nothing
+
+## CH-24 · A writ detail file becomes a feature, and nothing in it is lost
+
+- **Date:** 2026-10-14 · **Version:** 0.17.0
+- **Touches:** `process/from-writ.md` (§1.7 rewritten, §1.8, §2 steps 3, 5 and 10)
+- **Why:** checked against pulse-v2's 26 detail files (188 jobs) before its pre-work.
+  - §1.7 could send content only to a story, so a file holding about seven jobs had no place for
+    what it says about the whole requirement: summary, personas, fence, open questions.
+  - Personas went to the story's *As*, which holds one role: every *May not*, the permission
+    cases, had nowhere to go.
+  - Fields tables went to `checks.md` whole, so a default for a blank field was a test step, never
+    a criterion.
+  - Open questions went to §1.6, and adopt waits until every §1.6 question has an answer: 21 files
+    carry some, all for the requirement owner.
+  - Reconciliation went to history whole, including 22 `fix`, 8 `change-request` and 4 `open`
+    rows: known defects and pending changes vanished, and a criterion with an open defect was
+    counted as built.
+  - Front matter had no row: a story from a draft nobody reviewed went `ready`.
+  - A scenario's *Not testable yet* reached only the mapping file.
+  - A fresh-eyes read against two real files found more with no place: the title line, the
+    summary's definitions, rules and build state, field limits and refused blanks (a case left as
+    only a step), story tags (`[MVP]`, `[P1 — …]`) and waits, items about no single act, answered
+    questions read as open, two *Before you start* sections in one `checks.md`, scenarios that
+    check several criteria, a bug with no severity, *Related* with no rule, scenario headings
+    that collide across files, and conflicts settled by a fix slice's later `holds` row read as
+    still open. A feature had no budget rule, so a large
+    one could only be summarised.
+- **Adapt:** nothing
+- **Migrate:** nothing — the only project adopted from writ had no detail files.
