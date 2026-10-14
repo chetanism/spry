@@ -7,7 +7,8 @@
     python3 spry/tool/spry.py index --restore origin/main   # on a branch: undo generated blocks it changed
     python3 spry/tool/spry.py coverage           # defined vs done, and what is built but not proven
     python3 spry/tool/spry.py backlog            # in progress, ready to build, needs slicing, blocked, needs planning
-    python3 spry/tool/spry.py view [--since <commit>]   # both pages for this working tree → .spry/view/
+    python3 spry/tool/spry.py done               # finished stories, tasks and bugs, newest first
+    python3 spry/tool/spry.py view [--since <commit>]   # the generated pages for this working tree → .spry/view/
     python3 spry/tool/spry.py hooks [--remove]   # refresh .spry/view/ after each checkout and pull
     python3 spry/tool/spry.py related <file>     # candidates for a conflict check
     python3 spry/tool/spry.py next <type>        # next free ID: milestone, story, slice, decision …
@@ -69,7 +70,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.17.0"
+VERSION = "0.18.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -101,7 +102,7 @@ PLACEHOLDER = re.compile(r"<([a-zA-Z][a-zA-Z0-9 ,/|.'_-]*)>")
 FENCE = re.compile(r"^\s*(```|~~~)")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-SCALAR_KEYS = {"id", "title", "summary", "state", "owner", "audience", "branch", "pr", "issue"}
+SCALAR_KEYS = {"id", "title", "summary", "state", "owner", "audience", "branch", "pr", "issue", "closed"}
 # A citation on one of these lines proves nothing: the test is skipped or not written yet.
 NOT_RUN = re.compile(r"\b(?:it|test|describe|context)\.(?:skip|todo)\b|\bx(?:it|test|describe)\s*\(|"
                      r"@pytest\.mark\.(?:skip|xfail)\b|@unittest\.skip|\bt\.Skip\(")
@@ -818,6 +819,8 @@ def check(project: Project):
             for ref in value:
                 if ref not in known:
                     project.problem(item.doc, 1, f"`{key}` names {ref}, which does not exist")
+        if item.type == "slice" and item.fm.get("closed") and not closed_on(item):
+            project.problem(item.doc, 1, f"`closed: {item.fm['closed']}` is not a date — YYYY-MM-DD, the day the slice closed")
         if item.type == "slice" and item.state == "open" and project.config.get("slices", {}).get("issue") \
                 and not str(item.fm.get("issue", "")).isdigit():
             project.problem(item.doc, 1, "open without an `issue:` number — `slices.issue` is on: "
@@ -1095,6 +1098,25 @@ def blockers(project: Project, item: Item) -> list:
     return out
 
 
+def part_of(doc: str, item: Item) -> str:
+    """Everything the item sits under, from the top: what it is part of, at a glance."""
+    return " › ".join(link(doc, a) for a in reversed(item.ancestors())) or "—"
+
+
+def work_type(item: Item) -> str:
+    """What kind of work a row is: a slice's is what it builds — story, task or bug."""
+    return item.parent.type if item.type == "slice" and item.parent is not None else item.type
+
+
+DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+
+
+def closed_on(item: Item) -> str:
+    """A slice's `closed:` date, or "" when it has none yet."""
+    value = str(item.fm.get("closed") or "")
+    return value if DATE.match(value) else ""
+
+
 def backlog(project: Project) -> dict:
     """What to pick up, in plan order: by top-level item; inside one, bugs, then tasks, then stories,
     each in tree order; slices by ID. Nothing here is typed — no priority field, no hand-kept queue."""
@@ -1188,39 +1210,67 @@ def backlog_block(project: Project, doc: str) -> str:
         return ", ".join(link(doc, w) for w in sorted(out, key=lambda w: natural_key(w.id))) or "—"
 
     def trail(item):
-        """Everything the item sits under, from the top: what it is part of, at a glance."""
-        return " › ".join(link(doc, a) for a in reversed(item.ancestors())) or "—"
+        return part_of(doc, item)
 
     def section(title, intro, head, rows):
+        """A table whose rows are numbered from 1, so "SL-4, row 2 of Blocked" is easy to say."""
         out = ["", f"### {title}", "", intro, ""]
         if not rows:
             return out + ["_None._"]
         cols = head.count("|") - 1
-        return out + [head, "|" + "---|" * cols] + rows
+        return out + ["| # " + head, "|--:|" + "---|" * cols] + [f"| {n} {row}" for n, row in enumerate(rows, 1)]
 
     out = []
     out += section("In progress", "Being built now — open, or on a branch named for the slice. Leave these to their owner.",
-                   "| Slice | Part of | Owner | Where | Unblocks |",
-                   [f"| {link(doc, s)} | {trail(s)} | {owner(s)} | {branch} | {unblocks(s)} |"
+                   "| Slice | Type | Part of | Owner | Where | Unblocks |",
+                   [f"| {link(doc, s)} | {work_type(s)} | {trail(s)} | {owner(s)} | {branch} | {unblocks(s)} |"
                     for s, branch in items["progress"]])
     out += section("Ready to build", "Planned, and nothing they wait for is unfinished. The first row is next; "
                    "`/spry:slice-open` with no ID offers it. *Unblocks* is what waits on the slice, or on "
                    "something it is part of — between two rows, the one that frees more.",
-                   "| # | Slice | Part of | Covers | Owner | Unblocks |",
-                   [f"| {n} | {link(doc, s)} | {trail(s)} | {', '.join(s.fm.get('covers') or []) or '—'} | {owner(s)} "
-                    f"| {unblocks(s)} |" for n, (s, _) in enumerate(items["ready"], 1)])
+                   "| Slice | Type | Part of | Covers | Owner | Unblocks |",
+                   [f"| {link(doc, s)} | {work_type(s)} | {trail(s)} | {', '.join(s.fm.get('covers') or []) or '—'} | {owner(s)} "
+                    f"| {unblocks(s)} |" for s, _ in items["ready"]])
     out += section("Needs slicing", "Ready, but no slice is planned for all of it yet — `/spry:slice <ID>` splits it.",
-                   "| Item | Part of | Missing | Owner |",
-                   [f"| {link(doc, i)} | {trail(i)} | {'slices' if need == 'slices' else 'a slice for ' + need} | {owner(i)} |"
+                   "| Item | Type | Part of | Missing | Owner |",
+                   [f"| {link(doc, i)} | {work_type(i)} | {trail(i)} | {'slices' if need == 'slices' else 'a slice for ' + need} | {owner(i)} |"
                     for i, need in items["slicing"]])
     out += section("Blocked", "Waiting on unfinished work, named here with where it stands and who owns it.",
-                   "| Item | Part of | Waiting on | Owner |",
-                   [f"| {link(doc, i)} | {trail(i)} | {'; '.join(status(b) for b in waits)} | {owner(i)} |"
+                   "| Item | Type | Part of | Waiting on | Owner |",
+                   [f"| {link(doc, i)} | {work_type(i)} | {trail(i)} | {'; '.join(status(b) for b in waits)} | {owner(i)} |"
                     for i, waits in items["blocked"]])
     out += section("Needs planning", "Product's next step: finish a draft, or add what an item is still missing.",
-                   "| Item | Part of | Needs | Owner |",
-                   [f"| {link(doc, i)} | {trail(i)} | {need} | {owner(i)} |" for i, need in items["planning"]])
+                   "| Item | Type | Part of | Needs | Owner |",
+                   [f"| {link(doc, i)} | {work_type(i)} | {trail(i)} | {need} | {owner(i)} |" for i, need in items["planning"]])
     return "\n".join(out[1:])
+
+
+def finished(project: Project) -> list:
+    """[(item, date)] — every finished story, task and bug, newest first; undated ones last, in plan
+    order. The date is the day its last slice closed, or "" when a slice it counts has no `closed:`."""
+    def walk(item):
+        yield item
+        for child in item.children:
+            yield from walk(child)
+
+    out = []
+    for top in project.top:
+        for n in walk(top):
+            if n.type in ("story", "task", "bug") and not gone(n) and project.done(n):
+                dates = [closed_on(s) for s in project.counted(n, "slice")]
+                out.append((n, max(dates) if all(dates) else ""))
+    return sorted(out, key=lambda row: row[1], reverse=True)
+
+
+def done_block(project: Project, doc: str) -> str:
+    """The done page: what is finished, newest first."""
+    rows = finished(project)
+    if not rows:
+        return "_Nothing done yet._"
+    out = ["| # | Item | Type | Part of | Closed |", "|--:|---|---|---|---|"]
+    out += [f"| {n} | {link(doc, i)} | {i.type} | {part_of(doc, i)} | {date or '—'} |"
+            for n, (i, date) in enumerate(rows, 1)]
+    return "\n".join(out)
 
 
 def index_block(project: Project, index_path: str) -> str:
@@ -1283,6 +1333,8 @@ def index(project: Project, dry: bool):
     apply(cover, "coverage", coverage_block(project, cover), True)
     queue = os.path.join(project.spry, "BACKLOG.md")
     apply(queue, "backlog", backlog_block(project, queue), True)
+    finish = os.path.join(project.spry, "DONE.md")
+    apply(finish, "done", done_block(project, finish), True)
     for dirpath, dirnames, filenames in os.walk(os.path.join(project.spry, "knowledge")):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         if "INDEX.md" in filenames:
@@ -1483,7 +1535,7 @@ def fill_template(template: str, kind: str, ident: str, title: str, owner: str |
                 break
             key = lines[i].split(":", 1)[0]
             value = {"id": ident, "title": title, "state": "planned" if kind == "slice" else "draft",
-                     "covers": "[]", "breaks": "[]", "branch": "", "pr": "", "date": today}.get(key)
+                     "covers": "[]", "breaks": "[]", "branch": "", "pr": "", "closed": "", "date": today}.get(key)
             if key == "owner" and owner:
                 value = owner
             if value is not None:
@@ -3025,12 +3077,13 @@ def restore_blocks(project: Project, base: str) -> list:
 
 # ---------------------------------------------------------------- view / hooks
 
-VIEWS = (("BACKLOG.md", "backlog", backlog_block), ("COVERAGE.md", "coverage", coverage_block))
+VIEWS = (("BACKLOG.md", "backlog", backlog_block), ("COVERAGE.md", "coverage", coverage_block),
+         ("DONE.md", "done", done_block))
 HOOK_MARK = "# spry: refresh .spry/view/"
 
 
 def view(project: Project, since: str | None = None) -> list:
-    """Write the backlog and coverage pages for this working tree to `.spry/view/`, never committed.
+    """Write the backlog, coverage and done pages for this working tree to `.spry/view/`, never committed.
 
     With `since` (a git hook passes the commit it came from), only when the plan or a test file
     changed since then, or no view exists yet. Returns the files written."""
@@ -3110,6 +3163,8 @@ def merge_check(project: Project, slice_id: str, base: str | None = None) -> lis
     out = []
     out.append(("ok", "state is closed") if item.state == "closed"
                else ("block", f"state is `{item.state}` — run /spry:slice-close first"))
+    out.append(("ok", f"closed {closed_on(item)}") if closed_on(item)
+               else ("block", "no `closed:` date — set it to the day the slice closed (YYYY-MM-DD)"))
     out.append(("ok", f"PR #{item.fm['pr']}") if str(item.fm.get("pr", "")).isdigit()
                else ("block", "no `pr:` number in the slice"))
     rows = falsify_table(item)
@@ -3454,7 +3509,8 @@ def main(argv=None) -> int:
     p.add_argument("--all", action="store_true", help="every level, however long")
     p = sub.add_parser("coverage", help="defined vs done for the whole plan, and what is built but not proven")
     p = sub.add_parser("backlog", help="what is being built, what to build next, and what stands in the way")
-    p = sub.add_parser("view", help="write the backlog and coverage pages for this working tree to .spry/view/")
+    p = sub.add_parser("done", help="finished stories, tasks and bugs, newest first, with the day each closed")
+    p = sub.add_parser("view", help="write the backlog, coverage and done pages for this working tree to .spry/view/")
     p.add_argument("--since", help="only when the plan or a test changed since this commit (for git hooks)")
     p = sub.add_parser("hooks", help="git hooks that refresh .spry/view/ after a checkout or a pull")
     p.add_argument("--remove", action="store_true", help="remove the hooks spry wrote")
@@ -3612,6 +3668,9 @@ def main(argv=None) -> int:
         return 0
     if args.command == "backlog":
         print(backlog_block(project, os.path.join(project.spry, "BACKLOG.md")))
+        return 0
+    if args.command == "done":
+        print(done_block(project, os.path.join(project.spry, "DONE.md")))
         return 0
     if args.command == "view":
         written = view(project, args.since)

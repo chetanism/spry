@@ -431,3 +431,22 @@ Entry format:
     one could only be summarised.
 - **Adapt:** nothing
 - **Migrate:** nothing — the only project adopted from writ had no detail files.
+
+## CH-25 · A done page, and a type and a number on every backlog row
+
+- **Date:** 2026-10-14 · **Version:** 0.18.0
+- **Touches:** `tool/spry.py` (`done`; `index` and `view` write `spry/DONE.md`; the backlog's *Type*
+  column and numbered rows; `check` and `merge-check` on `closed:`),
+  `process/templates/{done,backlog,slice,project-readme,roadmap}.md`,
+  `process/{setup,slicing,reviewing,from-writ}.md`
+- **Why:** the backlog said what was left and the coverage page how much was done, but nothing listed
+  what was finished, or when. On the backlog, telling a bug's slice from a story's meant reading to
+  the end of *Part of*, and only *Ready to build* numbered its rows, so no other row could be named
+  by its place.
+  - A slice carries no date, and a merge date read from git differs by clone: CI's index job checks
+    out one commit. The date is now `closed:` in the slice, set with `state: closed`.
+- **Adapt:** nothing
+- **Migrate:** add `spry/DONE.md` from `templates/done.md`; add the Done line to `spry/README.md`
+  (*Start here*) and after the Backlog link in `spry/plan/README.md`; add the *Type* sentence to the
+  intro in `spry/BACKLOG.md`. Closed slices may get `closed:` from their merge commit
+  (`git log -1 --format=%cs --grep "^Slice: SL-<n>$"`); one without it dates its item `—`.

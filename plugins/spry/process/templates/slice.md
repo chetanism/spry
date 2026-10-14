@@ -7,6 +7,7 @@ audience: 8
 covers: [<AC-1>]
 branch: <sl-n-slug>
 pr: <number, once opened>
+closed: <YYYY-MM-DD, set at close>
 blocked_by: []
 related: []
 ---

@@ -140,7 +140,8 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
 5. **Follow-ups:** bugs, tasks, decisions found — create them (`spry.py new …`, `/spry:record`) and
    list their IDs. With `mint: main` each number is taken on the main branch and the main branch is
    merged into this one, so the ID is final at once: cite it anywhere.
-6. Set `state: closed`; `spry.py gate` (only `check` runs — nothing but documents changed); commit
+6. Set `state: closed` and `closed: <today, YYYY-MM-DD>` — the Done page dates the item by it, and
+   `merge-check` blocks without it; `spry.py gate` (only `check` runs — nothing but documents changed); commit
    `docs(slice): SL-<n> close summary` with the trailer `Slice: SL-<n>` in the body; push; replace
    the PR body with `spry.py pr-body SL-<n> --base origin/<main>`; mark the PR ready for review.
    With an `issue:`, post the close summary on it — `spry.py issue-body SL-<n> --close |

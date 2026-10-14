@@ -56,6 +56,7 @@ document both work. Everything after is drafted from it, so read it twice.
 | `spry/plan/README.md` | `templates/roadmap.md` |
 | `spry/COVERAGE.md` | `templates/coverage.md` |
 | `spry/BACKLOG.md` | `templates/backlog.md` |
+| `spry/DONE.md` | `templates/done.md` |
 | `spry/knowledge/{conventions,decisions}/INDEX.md` | `templates/index.md` |
 | `spry/knowledge/process-changes.md` | `templates/process-changes.md` |
 | `AGENTS.md` | `templates/agents.md` — within 150 lines; the admission test stays at the top |
@@ -75,7 +76,7 @@ document both work. Everything after is drafted from it, so read it twice.
    IDs from the main branch, where spry is not yet. When topic b chose `main`, set it once the
    setup is on the main branch.
 4. Offer `python3 spry/tool/spry.py hooks` — per clone, so each person runs it once: after a checkout
-   or a pull that changed the plan or a test, it refreshes the backlog and coverage pages in
+   or a pull that changed the plan or a test, it refreshes the backlog, coverage and done pages in
    `.spry/view/` and says so. The committed pages show the main branch as of CI's last run.
 5. `NEXT`: `/spry:milestone M-1` to define the first milestone.
 

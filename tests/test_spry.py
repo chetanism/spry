@@ -45,8 +45,9 @@ def story(ident, acs=("AC-1",), state="ready", check=True):
     return item(ident, state, body=body, check=check) + "\n## Proof\n\n<!-- spry:proof -->\n<!-- /spry:proof -->\n"
 
 
-def slice_(ident, state="closed", covers="[AC-1]", plan="", check=True):
-    head = f"---\nid: {ident}\ntitle: Slice {ident}\nstate: {state}\nowner: A\naudience: 8\ncovers: {covers}\npr: 1\n---\n# {ident}\n\n"
+def slice_(ident, state="closed", covers="[AC-1]", plan="", check=True, closed="2026-10-01"):
+    date = f"closed: {closed}\n" if state == "closed" and closed else ""
+    head = f"---\nid: {ident}\ntitle: Slice {ident}\nstate: {state}\nowner: A\naudience: 8\ncovers: {covers}\npr: 1\n{date}---\n# {ident}\n\n"
     body = "## Work order\n\n### Plan\n\n" + plan + "\n"
     return head + body + ("### Conflict check\n\n- Checked 2026-10-01 against: S-1\n" if check else "")
 
@@ -554,11 +555,70 @@ class Backlog(Base):
         self.assertEqual([(i.id, need) for i, need in items["planning"]],
                          [("F-2", "finishing — it is a draft"), ("F-3", "stories")])
 
+    def test_every_row_says_its_type_and_a_slice_takes_what_it_builds(self):
+        blocked = slice_("SL-1", state="planned").replace("pr: 1\n", "pr: 1\nblocked_by: [T-1]\n")
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): blocked, self.key(f"{self.T}/README.md"): item("T-1"),
+                         self.key(f"{self.B}/README.md"): item("B-1", check=False),
+                         self.key(f"{self.B}/SL-3-c.md"): slice_("SL-3", state="planned", covers="[]"),
+                         self.key(f"{E}/F-3-z/README.md"): item("F-3")})
+        page = spry.backlog_block(t.project(), os.path.join(t.root, "spry/BACKLOG.md"))
+        for ident, kind in (("SL-3 Slice SL-3", "bug"), ("SL-1 Slice SL-1", "story"), ("T-1 Title of T-1", "task"),
+                            ("F-3 Title of F-3", "feature")):
+            self.assertRegex(page, r"\| \[" + ident + r"\]\([^)]*\) \| " + kind + r" \|")
+        self.assertIn("| # | Slice | Type | Part of |", page)
+        self.assertIn("| # | Item | Type | Part of | Waiting on | Owner |\n|--:|", page)
+        self.assertRegex(page, r"\| 1 \| \[SL-1 Slice SL-1\]")
+
     def test_index_fills_the_page(self):
         t = self.tree(**{"spry__BACKLOG.md": self.PAGE})
         self.assertIn("spry/BACKLOG.md", spry.index(t.project(), dry=False))
         with open(os.path.join(t.root, "spry/BACKLOG.md")) as handle:
             self.assertIn("### Ready to build", handle.read())
+
+
+class Done(Base):
+    PAGE = "---\ntitle: Done\naudience: 3\n---\n# Done\n\n<!-- spry:done -->\n<!-- /spry:done -->\n"
+    T, B, S2 = f"{F}/tasks/T-1-t", f"{F}/bugs/B-1-b", f"{F}/S-2-x"
+
+    def key(self, path):
+        return path.replace("/", "__")
+
+    def test_finished_newest_first_dated_by_the_last_slice(self):
+        t = self.tree(**{self.key(f"{S}/SL-2-b.md"): slice_("SL-2", closed="2026-10-05"),
+                         self.key(f"{self.T}/README.md"): item("T-1"),
+                         self.key(f"{self.T}/SL-3-c.md"): slice_("SL-3", covers="[]", closed="2026-10-03"),
+                         self.key(f"{self.B}/README.md"): item("B-1", check=False),
+                         self.key(f"{self.B}/SL-4-d.md"): slice_("SL-4", covers="[]", closed=""),
+                         self.key(f"{self.S2}/README.md"): story("S-2"),
+                         self.key(f"{self.S2}/SL-5-e.md"): slice_("SL-5", state="planned")})
+        self.assertEqual([(i.id, d) for i, d in spry.finished(t.project())],
+                         [("S-1", "2026-10-05"), ("T-1", "2026-10-03"), ("B-1", "")])
+        page = spry.done_block(t.project(), os.path.join(t.root, "spry/DONE.md"))
+        self.assertIn("| 1 | [S-1 Title of S-1](plan/M-1-m/E-1-e/F-1-f/S-1-s/README.md) | story | "
+                      "[M-1 Title of M-1](plan/M-1-m/README.md) › [E-1 Title of E-1](plan/M-1-m/E-1-e/README.md) › "
+                      "[F-1 Title of F-1](plan/M-1-m/E-1-e/F-1-f/README.md) | 2026-10-05 |", page)
+        self.assertTrue(page.splitlines()[-1].startswith("| 3 | [B-1") and page.endswith("| — |"), page)
+
+    def test_nothing_done_and_what_is_dropped_stays_off(self):
+        t = self.tree(**{"src__a.test.ts": None,
+                         self.key(f"{self.T}/README.md"): item("T-1", state="dropped"),
+                         self.key(f"{self.T}/SL-3-c.md"): slice_("SL-3", covers="[]")})
+        self.assertEqual(spry.done_block(t.project(), os.path.join(t.root, "spry/DONE.md")), "_Nothing done yet._")
+
+    def test_index_fills_the_page(self):
+        t = self.tree(**{"spry__DONE.md": self.PAGE})
+        self.assertIn("spry/DONE.md", spry.index(t.project(), dry=False))
+        with open(os.path.join(t.root, "spry/DONE.md")) as handle:
+            self.assertIn("| 2026-10-01 |", handle.read())
+
+    def test_check_refuses_a_closed_that_is_not_a_date(self):
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): slice_("SL-1", closed="last week")})
+        self.assertProblem(t.problems(), "`closed: last week` is not a date")
+
+    def test_merge_check_blocks_without_a_closed_date(self):
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): slice_("SL-1", closed="")})
+        lines = spry.merge_check(t.project(), "SL-1")
+        self.assertIn(("block", "no `closed:` date — set it to the day the slice closed (YYYY-MM-DD)"), lines)
 
 
 class Branch(Base):
@@ -605,7 +665,7 @@ class Branch(Base):
 
     def test_view_writes_both_pages_and_skips_when_nothing_relevant_changed(self):
         written = spry.view(self.t.project())
-        self.assertEqual(written, [".spry/view/BACKLOG.md", ".spry/view/COVERAGE.md"])
+        self.assertEqual(written, [".spry/view/BACKLOG.md", ".spry/view/COVERAGE.md", ".spry/view/DONE.md"])
         with open(os.path.join(self.t.root, ".spry/view/COVERAGE.md")) as handle:
             text = handle.read()
         self.assertIn("by `spry view`. Not committed.", text)
@@ -615,7 +675,7 @@ class Branch(Base):
         self.run_git("add", "-A")
         self.run_git("commit", "-qm", "notes")
         self.assertEqual(spry.view(self.t.project(), since="HEAD~1"), [])
-        self.assertEqual(len(spry.view(self.t.project(), since="HEAD~1~1~1")), 2)
+        self.assertEqual(len(spry.view(self.t.project(), since="HEAD~1~1~1")), 3)
 
     def test_hooks_install_keep_others_and_remove(self):
         os.makedirs(os.path.join(self.t.root, "spry", "tool"))

@@ -34,7 +34,7 @@ together. With no argument, the current branch's PR.
 - **Its files:** `git fetch origin <branch>`, then `git show origin/<branch>:<path>`. **Never check
   the branch out**: the session may be mid-slice or in a worktree, and a review must leave nothing
   behind.
-- Skip what is generated: `INDEX.md` files, `spry/BACKLOG.md`, `spry/COVERAGE.md`, and marker
+- Skip what is generated: `INDEX.md` files, `spry/BACKLOG.md`, `spry/COVERAGE.md`, `spry/DONE.md`, and marker
   blocks.
 
 ## 2. Fresh eyes

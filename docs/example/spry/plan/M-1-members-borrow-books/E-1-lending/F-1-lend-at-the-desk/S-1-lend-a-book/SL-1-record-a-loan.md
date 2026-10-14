@@ -7,6 +7,7 @@ audience: 8
 covers: [AC-1, AC-2, AC-3]
 branch: sl-1-record-a-loan
 pr: 9
+closed: 2026-09-25
 blocked_by: [T-1]
 related: []
 ---

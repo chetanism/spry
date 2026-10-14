@@ -58,7 +58,7 @@ CLAUDE.md                         # one line: @AGENTS.md
 spry/
   spry.config.json                # IDs, levels, team, runners, budgets
   README.md                       # entry point for humans: what's here, where to start
-  COVERAGE.md  BACKLOG.md         # generated pages: done vs defined; what to pick up next
+  COVERAGE.md  BACKLOG.md  DONE.md   # generated pages: done vs defined; what to pick up next; finished
   plan/
     README.md                     # roadmap: the milestones
     M-1-<slug>/
@@ -238,9 +238,16 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
   first, so it works for any `levels`. In-progress and ready rows have *Unblocks* — what waits on
   the slice or on something it is part of; a blocked row names each blocker with where it stands on
   this page (in progress, ready to build, …) and its owner. `slice-open` with no ID offers its first ready row — or, with `slices.pick: ask`, lists the first
-  four and recommends none.
+  four and recommends none. Every table numbers its rows from 1, and every row has a *Type*: story, task or bug — for a slice, what it builds;
+  above those, the level (`feature`, …).
+- `spry/DONE.md` holds a `<!-- spry:done -->` block: every finished story, task and bug, newest
+  first — `#`, item, type, *Part of*, and *Closed*: the latest `closed:` date of the slices it
+  counts. **The date is in the slice file, never read from git**: CI's checkout is shallow, and the
+  same tree must give the same page in every clone. `slice-close` sets `closed:` beside
+  `state: closed`; `merge-check` blocks without it, and `check` refuses one that is not a date. A
+  slice closed before CH-25 has none, so its item shows `—` and sorts last, in plan order.
 - **On a branch the committed pages show the main branch** as of CI's last run. `spry view` writes
-  both for the working tree to `.spry/view/` (gitignored); `spry hooks` (opt-in, per clone) runs it
+  every page for the working tree to `.spry/view/` (gitignored); `spry hooks` (opt-in, per clone) runs it
   after a checkout or pull that changed `spry/` or a test. `check --base` refuses a generated block
   a branch changed — unless it matches the base now or where the branch forked — and
   `index --restore <base>` puts the base's copy back.
@@ -337,7 +344,8 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `index` | regenerate marker blocks and `INDEX.md` files (CI on `main`) |
 | `coverage` | the coverage page (§13): defined vs done, built but not proven |
 | `backlog` | the backlog page (§13): in progress, ready to build, needs slicing, blocked, needs planning |
-| `view [--since]` · `hooks [--remove]` | both pages for the working tree in `.spry/view/`; git hooks that refresh them (§13) |
+| `done` | the done page (§13): finished stories, tasks and bugs, newest first |
+| `view [--since]` · `hooks [--remove]` | the generated pages for the working tree in `.spry/view/`; git hooks that refresh them (§13) |
 | `index --restore <base>` | on a branch: put back the base's copy of each generated block it changed |
 | `related <file>` | conflict-check candidates (§10) |
 | `next <type>` | next free ID |
@@ -503,3 +511,5 @@ in `spry/history/writ.md`, then retires `canon/`.
   open questions go to it, each *May not* and each non-refusal blank-field outcome is a criterion,
   unsettled reconciliation rows become bugs or open questions and stay out of `Built under writ`,
   and stories from an unreviewed file stay `draft` (CH-24, 0.17.0). For pulse-v2.
+- 2026-10-14 — a done page, `spry/DONE.md`, and `spry done`, dated by a slice's `closed:`; a *Type*
+  column and numbered rows on every backlog table (CH-25, 0.18.0).

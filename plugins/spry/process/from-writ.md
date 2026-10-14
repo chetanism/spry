@@ -341,6 +341,8 @@ manual regression list. One row per scenario, in file order:
    pages or items it became, as a list, or `history`). Add each row when its item is made, not
    afterwards.
 5. **Built work.** Every story with at least one `done` row gets one slice, titled `Built under writ`:
+   - `closed:` the day writ's last slice for it was done, when writ records it; otherwise leave it
+     out, and the Done page shows `—`;
    - `state: closed`, and `covers` lists the criteria from its `done` rows, less those an
      unsettled §1.7 reconciliation row names;
    - Summary links the writ slices that built it: `- Built under writ by [SL-WD2](<path>), …`;

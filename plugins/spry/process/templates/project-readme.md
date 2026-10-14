@@ -13,6 +13,7 @@ audience: 2
   what is inside, with progress.
 - **What to pick up next** → [Backlog](BACKLOG.md)
 - **How much is built and proven** → [Coverage](COVERAGE.md)
+- **What is finished** → [Done](DONE.md)
 - **Words we use** → [Glossary](knowledge/glossary.md)
 
 ## Who does what
