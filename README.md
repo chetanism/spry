@@ -1,5 +1,7 @@
 # spry
 
+> **spry** /spraɪ/ *adj.* — active and lively, even with age. As your project should be.
+
 **Agent-first development a human team can follow.** A Claude Code plugin — usable from other
 agents too — that runs a project the way an agile team already thinks about it:
 
