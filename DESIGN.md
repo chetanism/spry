@@ -516,3 +516,7 @@ in `spry/history/writ.md`, then retires `canon/`.
   column and numbered rows on every backlog table (CH-25, 0.18.0).
 - 2026-10-14 — `check --base` warns when a criterion changes under its `checks.md` scenarios or
   check-log rows, not only under a test (CH-26, 0.19.0). From issue #2.
+- 2026-10-14 — a scenario opens with *Type*, *Where* and *Ready*; the list is cut before steps;
+  *Before you start* says who provides each thing, and what cannot be set up through the screen;
+  steps say what to achieve, not what to press (CH-27, 0.20.0). From pulse-v2's writ template,
+  without its Given / Expect.

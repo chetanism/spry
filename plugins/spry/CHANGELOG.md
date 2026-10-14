@@ -470,3 +470,31 @@ Entry format:
     as changed under `check --base`; it is now read as UTF-8.
 - **Adapt:** nothing
 - **Migrate:** nothing
+
+## CH-27 · Scenarios a tester can run cold
+
+- **Date:** 2026-10-14 · **Version:** 0.20.0
+- **Touches:** `process/templates/checks.md`, `process/qa.md`, `process/from-writ.md` (§1.8),
+  `tool/spry.py` (`check` reads every AC a scenario heading names)
+- **Why:** a scenario said what to do and what to see, but not what kind of case it was, where in
+  the product it ran, or whether it could run yet; so a story of only happy paths looked done, and a
+  case written ahead of its screen looked runnable. *Before you start* said what was needed but not
+  who provides it, and a tester found out three scenarios in. Steps named buttons, and went stale
+  the week a screen moved. Taken from pulse-v2's writ template, without its *Given* / *Expect*:
+  `<what to do> → <what you should see>` already does that job.
+  - Each scenario opens with `**Type** … · **Where** … · **Ready** …`. Seven types: happy path,
+    negative, permission, another organisation, repeat, at once, boundary.
+  - *Before you start* is a *What is needed | Who provides it* table, and a **Not through the
+    screen** line when the product cannot set something up.
+  - Steps say what to achieve, not what to press; what you should see must be something you could
+    be wrong about, and a refusal names what must not happen.
+  - The scenario list is read back and cut before any steps are written; scenarios that change
+    data use their own, so they run in any order; a story with only happy paths sends its owner a
+    question, not a guessed case; a `fail` names its scenario.
+  - `check` enforces none of it. It did read only the first AC of `### AC-1, AC-3 · …`; it now
+    reads every one.
+- **Adapt:** in `process/qa.md` and the template's guide: the types — `another organisation` fits
+  a product with tenants; drop it or name your own — and what a tester has, which for a product
+  with no screens (a CLI, an API) is not a browser.
+- **Migrate:** nothing — scenarios already written stay valid; new ones take the new form, and an
+  old one takes it when it is next edited.

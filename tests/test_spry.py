@@ -787,10 +787,12 @@ class New(Base):
             spry.new_item(p, "checks", "F-1", "x")
 
     def test_scenario_for_a_missing_criterion(self):
-        checks = "---\ntitle: c\naudience: 4\n---\n# c\n\n## Scenarios\n\n### AC-1 · fine\n\n### AC-5 · gone\n"
+        checks = ("---\ntitle: c\naudience: 4\n---\n# c\n\n## Scenarios\n\n### AC-1 · fine\n\n### AC-5 · gone\n\n"
+                  "### AC-1, AC-6 · second named\n")
         t = self.tree(**{f"{S}/checks.md".replace("/", "__"): checks})
         problems = t.problems()
         self.assertTrue(any("scenario for AC-5" in p for p in problems), problems)
+        self.assertTrue(any("scenario for AC-6" in p for p in problems), "every AC a heading names is checked")
         self.assertFalse(any("AC-1" in p for p in problems), problems)
 
     def test_refuses_wrong_parent(self):

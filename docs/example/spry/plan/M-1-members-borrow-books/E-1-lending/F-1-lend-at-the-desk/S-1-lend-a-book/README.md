@@ -29,7 +29,9 @@ related: [S-2]
 
 ## Notes
 
-- Test data: library card `1001` (Kiran, no loans), book `9780141439518` (Pride and Prejudice).
+- Test data: library cards `1001` (Kiran), `1002` (Ana), `1005` (Ravi) and `1006` (Mei), each with
+  no loans; books `9780141439518` (Pride and Prejudice), `9780141439587` (Emma) and
+  `9780141439686` (Persuasion), none on loan.
 
 ## Conflict check
 

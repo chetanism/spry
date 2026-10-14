@@ -277,10 +277,14 @@ manual regression list. One row per scenario, in file order:
   the screen) goes, whole and as written, into each `checks.md` its scenarios land in, under
   `### Before you start`, first under `## Scenarios` — after the detail file's preconditions when
   §1.7 put them there. One section per file, never two.
-- Each scenario keeps its *Type* and *Where* as its first line. One that is *Not testable yet*
-  says so on that line, with what it waits for, as the story or §1.3 row that builds it; Note
-  repeats it. A *Not testable yet* row that names scenarios kept outside the file (in a pull
-  request, say) is a §1.6 question: bring them in, or drop them.
+- Each scenario keeps its *Type*, *Where* and *Ready* as its first line, in the template's form
+  (`**Type** … · **Where** … · **Ready** …`). One that is *Not testable yet* is `**Ready** no`,
+  with what it waits for, as the story or §1.3 row that builds it; Note repeats it. A *Not
+  testable yet* row that names scenarios kept outside the file (in a pull request, say) is a §1.6
+  question: bring them in, or drop them.
+- A scenario's *Given* is a state: it goes to *Before you start*, or to a first step that reaches
+  it. Its *Expect* becomes the `→ <what you should see>` of its last step. A step before it keeps
+  what writ said it shows, or none.
 - The file's front matter and intro go under the `checks.md` title, beside the source line (§2
   step 3): who wrote it, its `areas`, and — when `status` isn't `reviewed` — that it is a draft and
   who still has to review it. Scenarios the intro says are held back elsewhere are a §1.6 question.

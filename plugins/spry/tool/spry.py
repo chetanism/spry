@@ -70,7 +70,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.19.0"
+VERSION = "0.20.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -98,6 +98,7 @@ into only also what shows show""".split())
 CHECKED_LINE = re.compile(r"^\s*-\s*Checked \d{4}-\d{2}-\d{2} against: \S")
 OPEN_FINDING = re.compile(r"(→|->)\s*open\b")
 LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+SCENARIO_ACS = re.compile(r"(AC-\d+(?:\s*,\s*AC-\d+)*)\b")   # `### AC-1, AC-3 · …` checks both
 PLACEHOLDER = re.compile(r"<([a-zA-Z][a-zA-Z0-9 ,/|.'_-]*)>")
 FENCE = re.compile(r"^\s*(```|~~~)")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
@@ -597,9 +598,10 @@ class Project:
             return {}
         text = read(path)
         for _level, title, at, _end in sections(text):
-            m = re.match(r"^(AC-\d+)\b", title)
-            if m and m.group(1) not in story.acs:
-                self.problem(path, at + 1, f"scenario for {m.group(1)}, which {story.id} does not have")
+            m = SCENARIO_ACS.match(title)
+            for ac in re.findall(r"AC-\d+", m.group(1)) if m else []:
+                if ac not in story.acs:
+                    self.problem(path, at + 1, f"scenario for {ac}, which {story.id} does not have")
         latest = {}
         for i, cells in table_rows(section_lines(text, "Check log") or []):
             if len(cells) < 5 or not DATE.match(cells[0]):
@@ -2972,11 +2974,10 @@ def manual_reliance(text: str, ac: str) -> list:
     lines, out = text.split("\n"), []
     heads = sections(text)
     scenarios = next(((at, end) for _l, title, at, end in heads if title.lower() == "scenarios"), None)
-    starts = r"(AC-\d+(?:\s*,\s*AC-\d+)*)\b"
-    for n, (level, title, at, end) in enumerate(heads):
-        m = re.match(starts, title)
+    for n, (_level, title, at, end) in enumerate(heads):
+        m = SCENARIO_ACS.match(title)
         if scenarios and scenarios[0] < at < scenarios[1] and m and ac in re.findall(r"AC-\d+", m.group(1)):
-            stop = next((h[2] for h in heads[n + 1:] if h[2] < end and re.match(starts, h[1])), end)
+            stop = next((h[2] for h in heads[n + 1:] if h[2] < end and SCENARIO_ACS.match(h[1])), end)
             out.append((at + 1, "\n".join(line.rstrip() for line in lines[at:stop]).strip()))
     for i, cells in table_rows(section_lines(text, "Check log") or []):
         if len(cells) >= 5 and DATE.match(cells[0]) and cells[1] == ac:
