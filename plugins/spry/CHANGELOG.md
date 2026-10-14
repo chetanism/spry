@@ -450,3 +450,23 @@ Entry format:
   (*Start here*) and after the Backlog link in `spry/plan/README.md`; add the *Type* sentence to the
   intro in `spry/BACKLOG.md`. Closed slices may get `closed:` from their merge commit
   (`git log -1 --format=%cs --grep "^Slice: SL-<n>$"`); one without it dates its item `—`.
+
+## CH-26 · A criterion that changes under its manual checks
+
+- **Date:** 2026-10-14 · **Version:** 0.19.0
+- **Touches:** `tool/spry.py` (`check --base`: `changed_criteria`, `manual_reliance`; `criteria_edits`;
+  `git` output read as UTF-8),
+  `process/{qa,merging}.md`
+- **Why:** `check --base` warned when a criterion's text changed only if a test cited it. When only
+  the scenarios in the story's `checks.md` relied on it, a reworded criterion went green: the
+  scenarios still checked the old wording, and a `pass` logged before the change kept it proven.
+  From issue #2. The warning names each scenario and row still as it was where the branch left the
+  main branch; changing a scenario takes it off, and a run logged since then takes them all off.
+  Scenarios the branch wrote, and a criterion it struck, ask for no re-read.
+  - `check --base`, `merge-check --base` and `pr-body --base` compared criteria with the main
+    branch as it is now, so a branch that had not merged main in was blamed for main's rewording.
+    All three now compare where the branch left it.
+  - On Windows, `git` output was read in the local code page, so a criterion with `·` or `é` read
+    as changed under `check --base`; it is now read as UTF-8.
+- **Adapt:** nothing
+- **Migrate:** nothing

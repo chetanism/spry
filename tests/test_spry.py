@@ -2,6 +2,7 @@
 
 import contextlib
 import io
+import datetime
 import json
 import os
 import shutil
@@ -1367,6 +1368,76 @@ class Falsify(unittest.TestCase):
         warnings = [str(x) for x in p.problems if x.level == "warning"]
         self.assertEqual(len(warnings), 1, warnings)
         self.assertIn("S-1/AC-1 changed since main, and tests/test_limit.py cite it", warnings[0])
+
+    def test_check_base_warns_on_a_criterion_that_changed_under_its_scenarios(self):
+        story = "spry/plan/M-1-m/E-1-e/F-1-f/S-1-s"
+        checks = ("# Checks\n\n## Scenarios\n\n### Before you start (data for AC-1)\n\n1. log in → home\n\n"
+                  "### AC-1 · limit · unlike AC-2\n\n1. lend → refused\n\n### AC-1, AC-2 · both\n\n1. lend → refused\n\n"
+                  "### Limit, unlike AC-2\n\n1. x → y\n\n"
+                  "## Check log\n\n| Date | AC | Build | By | Result | Notes |\n|---|---|---|---|---|---|\n"
+                  "| 2026-10-01 | AC-2 | b1 | Q | pass | |\n| x | AC-2 |\n\n## Runs under writ\n\n### AC-2 run\n")
+        self.assertEqual({ac: [n for n, _ in spry.manual_reliance(checks, ac)] for ac in ("AC-1", "AC-2", "AC-3")},
+                         {"AC-1": [9, 13], "AC-2": [13, 25], "AC-3": []},
+                         "only scenarios whose heading starts with the AC, and dated log rows")
+        self.git("checkout", "-q", "main")
+        self.write({f"{story}/checks.md": checks})
+        self.commit("scenarios")
+        self.git("checkout", "-q", "sl-1")
+        self.git("merge", "-q", "--no-edit", "main")
+        path = os.path.join(self.root, story, "README.md")
+        with open(path) as handle:
+            text = handle.read()
+        self.write({f"{story}/README.md": text.replace("| a | b | c |", "| a | b | changed |"),
+                    f"{story}/checks.md": checks, "tests/test_overdue.py": "assert True\n"})
+
+        def warnings():
+            p = spry.Project(self.root)
+            spry.changed_criteria(p, "main")
+            return [str(x) for x in p.problems if x.level == "warning"]
+        found = warnings()
+        self.assertEqual(len(found), 3, found)
+        self.assertIn("S-1/AC-1 changed since main, and tests/test_limit.py cite it", found[0])
+        self.assertIn("S-1/AC-1 changed since main, and checks.md:9, 13 still check the old wording", found[1])
+        self.assertIn("S-1/AC-2 changed since main, and checks.md:13, 25 still check", found[2],
+                      "no test cites AC-2, and the scenarios alone still warn")
+        self.git("checkout", "-q", "main")
+        self.write({f"{story}/checks.md": checks.replace("| x | AC-2 |", "| 2026-10-13 | AC-2 | b9 | Q | pass | |")})
+        self.commit("a run on main after the branch left it")
+        self.git("checkout", "-q", "sl-1")
+        self.write({f"{story}/README.md": text.replace("| a | b | c |", "| a | b | changed |"),
+                    f"{story}/checks.md": checks, "tests/test_overdue.py": "assert True\n"})
+        self.assertEqual(len(warnings()), 3, "main's later run is not the branch's re-read")
+        edited = checks.replace("1. lend → refused\n\n### AC-1, AC-2", "1. lend a fourth → refused\n\n### AC-1, AC-2")
+        self.write({f"{story}/checks.md": edited.replace("## Check log", "### AC-1 · a new one\n\n1. a → b\n\n## Check log")})
+        found = warnings()
+        self.assertIn("checks.md:13 still check", found[1], "each scenario on its own; a new one re-reads none")
+        self.write({f"{story}/checks.md": edited.replace("| Q | pass | |", "| Q | pass | typo fixed |")})
+        self.assertIn("checks.md:13 still check", warnings()[2], "an edited old row is off the list, and is not a new run")
+        self.write({f"{story}/checks.md": edited.replace("### AC-1, AC-2 · both\n", "### AC-1, AC-2 · both\n\n#### Steps\n\n1. new → step\n")})
+        self.assertIn("S-1/AC-2 changed since main, and checks.md:29 still check the old wording — log a new run",
+                      warnings()[1], "a scenario changed under its sub-heading is off the list; a log row is run again, not changed")
+        today = datetime.date.today().isoformat()
+        self.write({f"{story}/checks.md": edited.replace("| x | AC-2 |", f"| {today} | AC-2 | b2 | Q | pass | |")})
+        self.assertEqual(len(warnings()), 2, "a new run re-checks every scenario of its criterion")
+        self.write({f"{story}/README.md": text.replace("| AC-2 | a | b | c |", "| ~~AC-2~~ | a | b | changed |")
+                    .replace("| AC-1 | a | b | c |", "| AC-1 | a | b | changed |")})
+        self.assertEqual(len(warnings()), 2, "a struck criterion needs no re-read")
+
+    def test_a_scenario_ends_at_the_next_heading(self):
+        text = "## Scenarios\n\n### AC-1 · a\n\n1. x → y\n\n#### AC-2 · variant\n\n1. z → w\n"
+        self.assertEqual(spry.manual_reliance(text, "AC-1"), [(3, "### AC-1 · a\n\n1. x → y")])
+
+    def test_check_base_ignores_scenarios_the_branch_wrote(self):
+        story = "spry/plan/M-1-m/E-1-e/F-1-f/S-1-s"
+        path = os.path.join(self.root, story, "README.md")
+        with open(path) as handle:
+            text = handle.read()
+        self.write({f"{story}/README.md": text.replace("| AC-2 | a | b | c |", "| AC-2 | a | b | changed |"),
+                    f"{story}/checks.md": "# Checks\n\n## Scenarios\n\n### AC-2 · new\n\n1. x → y\n",
+                    "tests/test_overdue.py": "assert True\n"})
+        p = spry.Project(self.root)
+        spry.changed_criteria(p, "main")
+        self.assertEqual([x for x in p.problems if x.level == "warning"], [])
 
     def test_check_base_reports_a_ref_it_cannot_read(self):
         p = spry.Project(self.root)

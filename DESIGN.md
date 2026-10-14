@@ -152,7 +152,8 @@ spry/
   `status <ID>` for one branch, `--level`, or `--all`.
 - **Editing a story after slicing has started is allowed** — git history is the record. `spry check`
   warns (`check --base <ref>`, which CI passes on pull requests) when a change edits the text of an
-  AC that a test already cites. A branch that changes an AC **and** code is blocked by
+  AC that a test already cites, or that its story's `checks.md` scenarios or check-log rows
+  relied on and the branch left as they were. A branch that changes an AC **and** code is blocked by
   `merge-check` until the slice carries `criteria_approved_by:` the story's owner — the quiet way
   to "pass" is to weaken the criterion to fit the code.
 
@@ -339,7 +340,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 | Command | Does |
 |---|---|
-| `check [--base <ref>]` | front-matter, IDs, placement in the tree, glossary, budgets, links, AC references, QA scenarios, conflict checks, leftover guides; with `--base`, cited ACs whose text changed, generated blocks the branch changed, and IDs the branch and the base both took |
+| `check [--base <ref>]` | front-matter, IDs, placement in the tree, glossary, budgets, links, AC references, QA scenarios, conflict checks, leftover guides; with `--base`, ACs whose text changed under a test, a `checks.md` scenario or a check-log row, generated blocks the branch changed, and IDs the branch and the base both took |
 | `status [--level]` | roll-up from §6 |
 | `index` | regenerate marker blocks and `INDEX.md` files (CI on `main`) |
 | `coverage` | the coverage page (§13): defined vs done, built but not proven |
@@ -513,3 +514,5 @@ in `spry/history/writ.md`, then retires `canon/`.
   and stories from an unreviewed file stay `draft` (CH-24, 0.17.0). For pulse-v2.
 - 2026-10-14 — a done page, `spry/DONE.md`, and `spry done`, dated by a slice's `closed:`; a *Type*
   column and numbered rows on every backlog table (CH-25, 0.18.0).
+- 2026-10-14 — `check --base` warns when a criterion changes under its `checks.md` scenarios or
+  check-log rows, not only under a test (CH-26, 0.19.0). From issue #2.

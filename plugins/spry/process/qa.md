@@ -27,5 +27,9 @@ Run by `test-scenarios`. Tone: audience 4 — the reader is QA: screens, fields,
 - `build` is what was tested: a version, a commit, a deploy.
 - **The latest row for a criterion decides it.** A `fail` un-proves the criterion even where a test
   passes; record a bug (`/spry:bug`) and put its ID in the notes.
+- **A criterion reworded under its scenarios:** `check --base` names each scenario and check-log row
+  that relied on the old wording and is as it was where the branch started. Re-read them in the
+  same PR: a scenario changed to fit is off the list, and a run of the criterion logged since the
+  branch started takes them all off. A warning that stays is accepted at merge.
 - `## Runs under writ`, in a project adopted from writ, is a record of runs before spry. It
   proves nothing and is never appended to.

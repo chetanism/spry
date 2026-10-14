@@ -22,7 +22,7 @@
     python3 spry/tool/spry.py falsify suggest <slice> [--base main]   # draft a plan from the diff
     python3 spry/tool/spry.py falsify run <plan.json> [--dry-run] [--record <slice>] [--jobs N]
     python3 spry/tool/spry.py find "<words>"     # search spry/ and AGENTS.md, best sections first
-    python3 spry/tool/spry.py check --base origin/main   # also warn on cited criteria whose text changed
+    python3 spry/tool/spry.py check --base origin/main   # also warn on criteria changed under tests or manual checks
     python3 spry/tool/spry.py codeowners [--check]       # .github/CODEOWNERS from team.review
     python3 spry/tool/spry.py tests --slowest    # from the JUnit report in tests.junit
     python3 spry/tool/spry.py draw --seed        # a fresh seed for an exploratory walk
@@ -70,7 +70,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.18.0"
+VERSION = "0.19.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -2039,7 +2039,8 @@ class PlanError(Exception):
 
 
 def git(root: str, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(["git", "-C", root, *args], capture_output=True, text=True)
+    return subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, encoding="utf-8",
+                          errors="replace")
 
 
 def git_prefix(root: str) -> str:
@@ -2940,11 +2941,17 @@ def ac_texts(text: str, struck: bool = False) -> dict:
     return out
 
 
+def fork_point(project: Project, base: str) -> str:
+    """Where this branch left `base`: what the main branch did since is not the branch's."""
+    return git(project.root, "merge-base", base, "HEAD").stdout.strip() or base
+
+
 def criteria_edits(project: Project, base: str) -> list:
-    """[(story, AC, text at base, text now or None)] for criteria that existed at `base` and changed."""
-    out = []
+    """[(story, AC, text at the fork, text now or None)] for criteria that existed where the branch
+    left `base` and changed."""
+    out, fork = [], fork_point(project, base)
     for story in project.of_type("story"):
-        before = git(project.root, "show", f"{base}:./{project.rel(story.doc)}")
+        before = git(project.root, "show", f"{fork}:./{project.rel(story.doc)}")
         if before.returncode != 0:
             continue
         old, new = ac_texts(before.stdout, struck=True), ac_texts(story.text, struck=True)
@@ -2958,25 +2965,66 @@ def code_changed(project: Project, base: str) -> list:
     return [line for line in done.stdout.split("\n") if line.strip()] if done.returncode == 0 else []
 
 
+def manual_reliance(text: str, ac: str) -> list:
+    """[(line, what)] in a checks.md that rely on `ac`: each scenario under `## Scenarios` whose
+    heading starts with it (`### AC-1 · …`, `### AC-1, AC-3 · …`), as its text with its
+    sub-headings up to the next scenario, and each dated check-log row that names it."""
+    lines, out = text.split("\n"), []
+    heads = sections(text)
+    scenarios = next(((at, end) for _l, title, at, end in heads if title.lower() == "scenarios"), None)
+    starts = r"(AC-\d+(?:\s*,\s*AC-\d+)*)\b"
+    for n, (level, title, at, end) in enumerate(heads):
+        m = re.match(starts, title)
+        if scenarios and scenarios[0] < at < scenarios[1] and m and ac in re.findall(r"AC-\d+", m.group(1)):
+            stop = next((h[2] for h in heads[n + 1:] if h[2] < end and re.match(starts, h[1])), end)
+            out.append((at + 1, "\n".join(line.rstrip() for line in lines[at:stop]).strip()))
+    for i, cells in table_rows(section_lines(text, "Check log") or []):
+        if len(cells) >= 5 and DATE.match(cells[0]) and cells[1] == ac:
+            out.append((i + 1, "log:" + lines[i].strip()))
+    return out
+
+
 def changed_criteria(project: Project, base: str):
-    """Warn for each acceptance criterion whose text changed since `base` while a test cites it."""
+    """Warn for each acceptance criterion whose text changed since `base` while a test cites it, or
+    while its story's checks.md has scenarios or check-log rows for it that this branch left as they were.
+    Both are read where the branch left `base`, so what the main branch did since is not the branch's."""
     if git(project.root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
         project.problem(project.spry, 0, f"--base {base} is not a commit here — fetch it (a shallow CI "
                                          f"clone needs `fetch-depth: 0`), or nothing was compared")
         return
+    fork = fork_point(project, base)
+    forked_on = git(project.root, "log", "-1", "--format=%cs", fork).stdout.strip()
     for story in project.of_type("story"):
         rel = project.rel(story.doc)
-        before = git(project.root, "show", f"{base}:./{rel}")
+        before = git(project.root, "show", f"{fork}:./{rel}")
         if before.returncode != 0:
             continue
         old, new = ac_texts(before.stdout), ac_texts(story.text)
+        checks, checks_then = os.path.join(story.folder, "checks.md"), None
         for ac, text in new.items():
             ref = f"{story.id}/{ac}"
-            if ac in old and old[ac] != text and project.tests.get(ref):
+            if ac not in old or old[ac] == text:
+                continue
+            if project.tests.get(ref):
                 tests = ", ".join(sorted({p for p, _, _ in project.tests[ref]}))
                 project.problem(story.doc, story.acs[ac]["line"],
                                 f"{ref} changed since {base}, and {tests} cite it — check they still prove it",
                                 "warning")
+            if story.acs[ac]["dropped"] or not os.path.isfile(checks):
+                continue
+            if checks_then is None:
+                checks_then = git(project.root, "show", f"{fork}:./{project.rel(checks)}").stdout
+            then, now = {w for _, w in manual_reliance(checks_then, ac)}, manual_reliance(read(checks), ac)
+            rerun = any(w.startswith("log:") and w not in then and w[4:].strip("| ")[:10] >= forked_on
+                        for _, w in now)
+            stale = [(n, w) for n, w in now if w in then]
+            if stale and not rerun:
+                at = ", ".join(str(n) for n, _ in stale)
+                todo = "log a new run" if all(w.startswith("log:") for _, w in stale) else \
+                    "re-read those scenarios and change them, or log a new run"
+                project.problem(story.doc, story.acs[ac]["line"],
+                                f"{ref} changed since {base}, and checks.md:{at} still check the old wording — "
+                                f"{todo}", "warning")
 
 
 # ---------------------------------------------------------------- generated blocks on a branch
