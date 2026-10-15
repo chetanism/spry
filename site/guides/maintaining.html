@@ -1,0 +1,172 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Keep spry yours · spry</title>
+<meta name="description" content="Bend spry to fit your team and keep it current: change the process, take updates as offers, contribute back, compact files that grow, and set how technical replies are.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Keep spry yours</h1>
+<p class="lead">No process fits every team on day one. spry's process is copied into your project so you
+can change it — and every change is recorded, so a later update keeps it instead of overwriting it.
+These five skills cover living with spry over time.</p>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>Skill</th><th>Use it when</th></tr></thead>
+  <tbody>
+    <tr><td><a href="#change-the-process-spryprocess-change"><code>/spry:process-change</code></a></td><td>Part of the process doesn't fit your team</td></tr>
+    <tr><td><a href="#take-updates-spryupdate"><code>/spry:update</code></a></td><td>spry has gained something since you set it up</td></tr>
+    <tr><td><a href="#give-back-sprycontribute"><code>/spry:contribute</code></a></td><td>Your project built something other projects would use</td></tr>
+    <tr><td><a href="#trim-what-grows-sprycompact"><code>/spry:compact</code></a></td><td><code>spry check</code> says a file is over its line budget</td></tr>
+    <tr><td><a href="#set-your-tone-sprytone"><code>/spry:tone</code></a></td><td>Replies are too technical, or not technical enough, for you</td></tr>
+  </tbody>
+</table></div>
+
+<h2>Change the process — /spry:process-change</h2>
+
+<p>Say the change in a sentence — "QA approves every story, not product" — and the problem it answers.
+The agent then makes it <em>complete</em>:</p>
+
+<ol class="steps">
+  <li><strong>Finds every file it touches</strong> — process files, templates, the config, <code>AGENTS.md</code>,
+  the CI workflow, your own skill copies — by searching for the words the change alters, not just the
+  obvious file.</li>
+  <li><strong>Shows the list</strong>, one line per file and what changes. Applies it only on your yes, all in one change.</li>
+  <li><strong>Records it</strong> as a row in <code>spry/knowledge/process-changes.md</code>: date, change, kind
+  <code>local</code>, files, why. That row is what lets an update keep it.</li>
+  <li><strong>Commits</strong> <code>chore(process): …</code> — through a pull request on a team — and offers
+  <code>/spry:contribute</code> if other projects would want it too.</li>
+</ol>
+
+<p>Documents already written to an older template change only if you ask.</p>
+
+<div class="callout warn">
+  <span class="callout-title">The tool is never edited locally</span>
+  <p><code>spry/tool/spry.py</code> is replaced whole on every update. A change that needs the tool is
+  contributed instead, and worked around in the process text meanwhile.</p>
+</div>
+
+<h2>Take updates — /spry:update</h2>
+
+<p>Updates are <strong>offered entry by entry, adapted, never transplanted.</strong> spry keeps a changelog of
+every change a project may want (<code>CH-1</code>, <code>CH-2</code>…), and your config remembers the last one you
+considered (<code>spry_baseline</code>).</p>
+
+<ol class="steps">
+  <li><strong>The newest spry first.</strong>
+    <p>An installed plugin is fixed at its version, so the agent updates the plugin before reading anything.
+    Afterwards, run <code>/reload-plugins</code> so the other skills use the new copy too.</p></li>
+  <li><strong>Where you stand.</strong>
+    <p>Your baseline, your own process changes, and which files differ from spry's.</p></li>
+  <li><strong>Each new entry, checked before you're asked:</strong>
+    <div class="table-wrap"><table>
+      <thead><tr><th>Finding</th><th>Means</th></tr></thead>
+      <tbody>
+        <tr><td><code>clean</code></td><td>The files differ only by spry's change</td></tr>
+        <tr><td><code>local change</code></td><td>You changed a file it touches — a merge is needed</td></tr>
+        <tr><td><code>already here</code></td><td>You already do this</td></tr>
+        <tr><td><code>conflicts</code></td><td>It contradicts a local change — you decide which wins</td></tr>
+      </tbody>
+    </table></div></li>
+  <li><strong>One ask per entry not <code>already here</code>:</strong> take as is, take adapted (it says how), or skip (it says what you lose).
+    You can answer for a group: "skip everything about CI".</li>
+  <li><strong>Port what you chose,</strong> in your own paths, commands, IDs and words. Templates update, but
+    existing documents change only if the entry says to migrate them.</li>
+  <li><strong>Verify and record:</strong> <code>check</code> and <code>index</code>, baseline moved forward, one row per
+    entry — taken, adapted or skipped, with why. Committed after asking.</li>
+</ol>
+
+<pre data-label="In your agent"><code><span class="p">&gt; </span>/spry:update</code></pre>
+
+<h2>Give back — /spry:contribute</h2>
+
+<p>When your project has built something — a process change, a skill, a stack profile — it can offer it
+back. The agent judges each candidate honestly: would another project use it unchanged in shape? Is it
+already in spry? What evidence is there — how long it's been used, what it caught? Product rules and
+domain words are not contributions.</p>
+
+<ul>
+  <li><strong>Everything private is stripped first.</strong> The draft is rewritten in generic terms, then
+  <code>spry.py scrub</code> lists every product name, person, handle, glossary term, email and URL still in it,
+  until nothing is left that isn't deliberate.</li>
+  <li><strong>It's filed as a GitHub issue — never a pull request</strong> — and only after you've read the
+  whole thing and said yes. Nothing leaves your machine before that.</li>
+  <li>A row of kind <code>offered</code>, with the issue link, goes into <code>process-changes.md</code>.</li>
+</ul>
+
+<h2>Trim what grows — /spry:compact</h2>
+
+<p>Files grow with every slice, record and interview; nothing else takes lines out. <code>AGENTS.md</code>, knowledge
+files, plan READMEs and slice files each have a line budget (<code>AGENTS.md</code>: 150 lines by default), and <code>spry check</code> says when one is over. Compact
+brings it back under by <strong>moving whole sections to the files that own them</strong> — it moves text, it
+doesn't edit it.</p>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>What the section is</th><th>Goes to</th></tr></thead>
+  <tbody>
+    <tr><td>Why one option was chosen</td><td>A decision record, and the line points at it</td></tr>
+    <tr><td>How code is written here</td><td>The area's conventions file</td></tr>
+    <tr><td>How a service really behaves</td><td>That service's external-behaviour file</td></tr>
+    <tr><td>A security or performance rule</td><td><code>security.md</code> or <code>performance.md</code></td></tr>
+    <tr><td>A procedure with steps</td><td>The process file that runs it</td></tr>
+    <tr><td>What a feature or story requires</td><td>That plan item</td></tr>
+    <tr><td>What you used to do and stopped</td><td>Deleted — git keeps it, and a stale rule reads as live</td></tr>
+  </tbody>
+</table></div>
+
+<ul>
+  <li><strong>It shows the moves first</strong> — one line per section and where it goes — and moves nothing
+  until you say yes.</li>
+  <li><strong>No fact is lost,</strong> and a one-line pointer is left where each section was.</li>
+  <li><strong><code>AGENTS.md</code> keeps</strong> only pointers, rules an agent breaks by default, and rules no tool
+  can check. Its admission test, <em>Project</em>, <em>Must not</em> and <em>Where things are</em> sections never leave.</li>
+  <li><strong>One commit per destination,</strong> on a branch — and on a team, a PR whose body tables every
+  move and the line counts before and after.</li>
+  <li><strong>What it won't touch</strong> — a section with no honest home, a line it doubts — is reported for you
+  to decide.</li>
+</ul>
+
+<p>Why budgets exist at all: <a href="../design/knowledge.html">Knowledge and size</a>.</p>
+
+<h2>Set your tone — /spry:tone</h2>
+
+<p>Every document has an audience level from 1 (no technical knowledge) to 10 (an engineer in this
+codebase), and the agent's replies follow the document it's working on. A product owner writing a story
+gets plain words; a developer closing a slice gets paths and commands. Override it for yourself:</p>
+
+<pre data-label="In your agent"><code><span class="p">&gt; </span>/spry:tone 3      <span class="c"># plain words, no paths or code</span>
+<span class="p">&gt; </span>/spry:tone 8      <span class="c"># paths, types, commands</span>
+<span class="p">&gt; </span>/spry:tone reset  <span class="c"># follow each document again</span>
+<span class="p">&gt; </span>/spry:tone        <span class="c"># say the current tone and where it comes from</span></code></pre>
+
+<p>The setting is yours only — stored in <code>.spry/tone</code>, which is never committed. More in
+<a href="../design/audience.html">Written for its reader</a>.</p>
+
+<h2>Next</h2>
+
+<div class="cards">
+  <a class="card" href="../reference/skills.html">
+    <p class="card-title">Skills</p>
+    <p>Every skill, at a glance.</p>
+  </a>
+  <a class="card" href="../reference/config.html">
+    <p class="card-title">Configuration</p>
+    <p>Every setting in <code>spry.config.json</code>.</p>
+  </a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

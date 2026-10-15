@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Plan the work · spry</title>
+<meta name="description" content="Define milestones, epics, features and stories in plain words, one level at a time, with /spry:milestone, /spry:epic, /spry:feature and /spry:story.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Plan the work</h1>
+<p class="lead">Planning in spry is a short conversation per item, written for the person who will
+read it. You define one level at a time — a milestone, then an epic, then a feature, then its
+stories — and never more than you need right now. No big requirements document up front.</p>
+
+<h2>The four planning skills</h2>
+
+<p>All four run the same procedure; each one only knows its own level.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Skill</th><th>Settles</th><th>Leaves for later</th><th>Written for</th></tr></thead>
+<tbody>
+<tr><td><code>/spry:milestone</code></td><td>Why, a <em>done when</em> a person can check, what is in and out of scope, constraints</td><td>its epics</td><td>everyone, including people who never read code <span class="badge">audience 2</span></td></tr>
+<tr><td><code>/spry:epic</code></td><td>Why, who it is for, done when, in and out of scope</td><td>its features</td><td>everyone <span class="badge">audience 2</span></td></tr>
+<tr><td><code>/spry:feature</code></td><td>Summary, who uses it, how it works step by step, numbered rules, out of scope</td><td>its stories</td><td>product, QA, designers, developers <span class="badge">audience 3</span></td></tr>
+<tr><td><code>/spry:story</code></td><td>One story per file, each with acceptance criteria as Given / When / Then</td><td>its slices</td><td>product and QA first, developers second <span class="badge">audience 3</span></td></tr>
+</tbody>
+</table></div>
+
+<p>The <em>audience</em> number (1 = no technical knowledge, 10 = an engineer in this codebase) sets how
+the document is written <em>and</em> how the agent talks to you while writing it. At 2 or 3 there are no
+file paths, no code and no bare IDs — <em>"S-2 Loan limit"</em>, never just <em>"S-2"</em>. More in
+<a href="../design/audience.html">Written for its reader</a>.</p>
+
+<div class="callout note">
+  <span class="callout-title">A small project can drop a level</span>
+  <p>Levels are chosen during setup. Many small projects skip epics and put features straight under
+  milestones.</p>
+</div>
+
+<h2>A planning session, step by step</h2>
+
+<pre data-label="Your agent"><code><span class="p">&gt; </span>/spry:feature E-1</code></pre>
+
+<ol class="steps">
+  <li><strong>Find the parent.</strong> Every level except a milestone needs one — given as the argument, or
+  the agent lists the candidates with their titles and asks. If the parent is still a draft, it says so
+  and asks whether to go on, since its scope may still move.</li>
+  <li><strong>Read before asking.</strong> The parent and everything above it, every sibling at this level, the
+  glossary, the knowledge files the project always checks (by default the security and performance rules
+  and the decisions index), and — for a story — the feature's numbered rules.</li>
+  <li><strong>Create the draft.</strong> The tool picks the next ID, the right folder and the template. The
+  document exists before the first question, so every answer is written into it straight away.</li>
+  <li><strong>The interview</strong>, one section at a time in the template's order: at most three questions per
+  reply, each with a drafted answer to confirm. It stops when every required section has content a
+  reader could act on; empty optional sections are deleted rather than left as "TBD".</li>
+  <li><strong>The conflict check.</strong> The draft is compared with everything it could clash with —
+  duplicates, overlaps, contradictions, things it depends on, glossary clashes. See
+  <a href="../design/conflicts.html">The conflict check</a>.</li>
+  <li><strong>Your yes.</strong> You see a short summary and are asked to mark it <code>ready</code>. Only then does
+  it change state, pass <code>spry check</code>, and get committed as
+  <code>docs(plan): &lt;ID&gt; &lt;title&gt;</code>.</li>
+  <li><strong>A fresh review, offered.</strong> One line offering <code>/spry:review &lt;ID&gt;</code> — a new agent
+  that didn't write the item reads it against its parent. Solo, it's the only second pair of eyes you
+  have. See <a href="reviews.html">Reviews with fresh eyes</a>.</li>
+</ol>
+
+<p>On a team, when the item's folder is under a review rule in the config, step 6 opens a pull request
+for the people who review plan documents instead of committing straight to the main branch.</p>
+
+<h2>What a finished item looks like</h2>
+
+<p>Here is part of a feature from the worked example. Notice what is <em>not</em> written in it: no
+stories (the stories table below it is generated), no code, no database tables — just enough for product, QA and design to agree on.</p>
+
+<pre data-label="F-1 · Lend at the desk (excerpt)"><code>## Summary
+
+- A librarian lends a book to a member by scanning the member's library card and the book.
+
+…
+
+## How it works
+
+1. The librarian scans the member's library card → the desk shows the member's name and current loans.
+2. The librarian scans the book → the desk shows the title.
+3. The librarian presses Lend → the desk confirms and prints a receipt with the due date.
+
+## Rules
+
+- R-1 A member may have at most 3 books on loan at once.
+- R-2 A loan lasts 14 days; the due date is printed on the receipt.
+- R-3 A book can be on loan to only one member at a time.
+- R-4 A member with an overdue book cannot borrow another until it is returned.
+
+…
+
+## Conflict check
+
+- Checked 2026-09-30 against: E-1, F-2, glossary, security, performance, D-1
+- Term: draft said "check out" → "lend", per the glossary
+- Contradiction: Asha's notes allowed overdue members to borrow; the desk's paper rule
+  does not → R-4 added (Asha, 2026-09-30)</code></pre>
+
+<p>The numbered rules matter: stories cite them (<code>F-1/R-2</code>) instead of restating them, so a
+rule lives in one place.</p>
+
+<h2>Writing stories</h2>
+
+<p>One <code>/spry:story</code> run can create several stories under the same feature. Each story is one
+thing a person does, with its acceptance criteria — the checkable statements of what "done" means.
+They are the most important thing you write in spry, because tests are named after them and QA
+checks them by hand. They have their own guide: <a href="criteria.html">Write acceptance criteria</a>.</p>
+
+<p>A story with more than six criteria is offered a split before the interview goes on.</p>
+
+<h2>When the interview drifts</h2>
+
+<div class="table-wrap"><table>
+<thead><tr><th>You say</th><th>spry does</th></tr></thead>
+<tbody>
+<tr><td>"You decide" / "whatever's standard"</td><td>Takes its recommended option and records it as an assumption under <em>Open questions</em></td></tr>
+<tr><td>More detail than was asked</td><td>Writes it down, and skips the questions you've already answered</td></tr>
+<tr><td>"I don't know yet"</td><td>Records it under <em>Open questions</em> — who answers, by when — and moves on</td></tr>
+<tr><td>Starts describing stories while defining a feature</td><td>Notes them as <em>Later</em> in its reply, not in the document, and offers <code>/spry:story</code> at the end</td></tr>
+<tr><td>A new word for something</td><td>Adds a glossary row — or, if it's a second word for an existing concept, uses the glossary's term and adds yours to <em>Don't say</em></td></tr>
+</tbody>
+</table></div>
+
+<h2>Changing a plan item later</h2>
+
+<p>Plans change, and that is fine — git history is the record. Edit the document, re-run the conflict
+check if its scope moved, and commit. Two things are protected:</p>
+
+<ul>
+  <li><strong><code>ready</code> needs a dated conflict check</strong> with nothing still marked
+  <code>→ open</code>; <code>spry check</code> refuses it otherwise.</li>
+  <li><strong>Changing an acceptance criterion that a test already cites</strong> is warned about, and if the
+  same branch changes code too, the merge waits for the story's owner to approve. See
+  <a href="criteria.html#changing-criteria-after-slicing">Changing criteria after slicing</a>.</li>
+</ul>
+
+<p><code>done</code> is never written on any item. It is worked out from merged slices and proven
+criteria — see <a href="../design/status.html">Status is derived</a>.</p>
+
+<h2>What's next</h2>
+
+<div class="cards">
+  <a class="card" href="criteria.html"><p class="card-title">Write acceptance criteria</p><p>What makes a criterion a good one — with examples.</p></a>
+  <a class="card" href="slicing.html"><p class="card-title">Split a story into slices</p><p>From a ready story to pull requests.</p></a>
+  <a class="card" href="qa.html"><p class="card-title">Checks for QA</p><p>Turn criteria into steps a tester follows.</p></a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

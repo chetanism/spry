@@ -1,0 +1,394 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Glossary · spry</title>
+<meta name="description" content="spry's own words — slice, work order, falsify, gate, proven, conflict check and the rest — each in a sentence or two, with where to read more.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Glossary</h1>
+<p class="lead">spry uses a small set of words, each for one thing. Here they are, alphabetically,
+each with where to read more. Your project gets its own glossary too — for your product's words —
+and spry checks you stick to it.</p>
+
+<h2>A–C</h2>
+<dl class="terms">
+  <dt>Acceptance criterion (AC)</dt>
+  <dd>One behaviour of a story that a person using the product can observe, written as Given / When /
+  Then and numbered <code>AC-1</code>, <code>AC-2</code> … within the story. Cited as
+  <code>S-1/AC-2</code>. Criteria live only in stories; numbers are never reused.
+  <a href="../guides/criteria.html">Write acceptance criteria</a>.</dd>
+
+  <dt>Adopt</dt>
+  <dd>Setting spry up around code that already exists, with <code>/spry:adopt</code>. The code is
+  surveyed first, and nothing existing can fail spry's checks. <a href="../guides/adopt.html">Adopt an existing codebase</a>.</dd>
+
+  <dt>Affected tests</dt>
+  <dd>The tests a change could affect, found by the test runner (<code>vitest --changed</code>,
+  <code>pytest --testmon</code>). The gate runs these, never the whole suite.
+  <a href="../design/gate.html">The gate and test speed</a>.</dd>
+
+  <dt>AGENTS.md</dt>
+  <dd>The file every agent reads on every task. It has a hard line budget and an admission test: a
+  line stays only if it is a pointer, a rule an agent breaks by default, or a rule no tool can check.
+  <a href="../design/knowledge.html">Knowledge and size</a>.</dd>
+
+  <dt>Always check</dt>
+  <dd>Knowledge files every conflict check reads, whatever the document — by default security,
+  performance and the decisions index. <a href="config.html">Configuration</a>.</dd>
+
+  <dt>Audience</dt>
+  <dd>How technical a document is, from 1 (no technical knowledge) to 10 (an engineer in this
+  codebase). Every template declares one, and it sets the tone of the conversation while a skill works
+  on that document. <a href="../design/audience.html">Written for its reader</a>.</dd>
+
+  <dt>Backlog</dt>
+  <dd>The generated page <code>spry/BACKLOG.md</code>: what is in progress, ready to build, needing
+  slicing, blocked, or needing planning — in plan order, never a hand-kept priority list.
+  <a href="../design/pages.html">Generated pages</a>.</dd>
+
+  <dt>Baseline (falsify)</dt>
+  <dd>One run of a control group's tests with nothing removed, before any mutation. A red or timed-out
+  baseline makes the group <em>unreliable</em> — the tests could not have told you anything.
+  <a href="../design/falsify.html">Falsify</a>.</dd>
+
+  <dt>Baseline (update)</dt>
+  <dd><code>spry_baseline</code> in the config: the last changelog entry the project considered.
+  <code>/spry:update</code> offers what came after. <a href="../guides/maintaining.html">Keep spry yours</a>.</dd>
+
+  <dt>Blocked by</dt>
+  <dd>The <code>blocked_by</code> list in an item's front-matter: what must be done first. An item waits
+  on what it and everything above it name. <code>check</code> refuses a dropped blocker or a circle.
+  <a href="../design/plan-tree.html">The plan is a folder tree</a>.</dd>
+
+  <dt>Bug</dt>
+  <dd>Something not working as the plan says, recorded under the feature or story it breaks
+  (<code>B-1</code>). It does not count toward progress, but a bug that QA saw breaks a criterion
+  un-proves it. <a href="../guides/bugs-and-tasks.html">Bugs and tasks</a>.</dd>
+
+  <dt>Caught</dt>
+  <dd>A falsify result: with the safeguard removed, a test that should notice failed. This is what you
+  want. <a href="../design/falsify.html">Falsify</a>.</dd>
+
+  <dt>Check log</dt>
+  <dd>The table at the bottom of a story's <code>checks.md</code> where QA appends one row per
+  criterion per run: date, criterion, build, who, pass or fail. The latest row for a criterion decides
+  it. <a href="../guides/qa.html">Checks for QA</a>.</dd>
+
+  <dt>Checks file</dt>
+  <dd>A story's <code>checks.md</code>: the scenarios QA follows by hand, and the check log.
+  <a href="../guides/qa.html">Checks for QA</a>.</dd>
+
+  <dt>CI</dt>
+  <dd>Continuous integration: the checks GitHub runs by itself on every push and pull request. spry's CI
+  runs <code>check</code>, then fast checks and tests when code changed, and on the main branch writes
+  the progress tables. <a href="../design/gate.html">The gate and test speed</a>.</dd>
+
+  <dt>Claim</dt>
+  <dd>Taking a slice before opening it (<code>spry claim</code>), so nobody else starts the same one.
+  The claim is the slice's <code>branch:</code> being set while it is still <code>planned</code>.
+  <a href="../guides/team.html">Work as a team</a>.</dd>
+
+  <dt>Close summary</dt>
+  <dd>The second part of a slice file, written at <code>/spry:slice-close</code>: what changed from
+  the plan and why, the falsify table, and follow-ups. <a href="../guides/closing.html">Close and merge a slice</a>.</dd>
+
+  <dt>Conflict check</dt>
+  <dd>Before a document goes <code>ready</code> or a slice goes <code>open</code>, the agent reads
+  everything it could clash with and records each finding and how it was resolved, in the document.
+  <code>check</code> refuses one that is missing or still has a finding marked open.
+  <a href="../design/conflicts.html">The conflict check</a>.</dd>
+
+  <dt>Conflict kinds</dt>
+  <dd><strong>Duplicate</strong> — another item already says this. <strong>Overlap</strong> — part of it
+  is covered elsewhere. <strong>Contradiction</strong> — it says the opposite of an item, decision or
+  rule. <strong>Dependency</strong> — it needs another item first. <strong>Scope</strong> — it is outside
+  its parent's scope. <strong>Term</strong> — a word clashes with the glossary. <strong>Collision</strong>
+  — a slice touches the same files as an open slice. <a href="../design/conflicts.html">The conflict check</a>.</dd>
+
+  <dt>Control</dt>
+  <dd>One safeguard a slice added — a guard, a validation, a permission check, an error branch — that
+  falsify removes to see whether a test notices. <a href="../design/falsify.html">Falsify</a>.</dd>
+
+  <dt>Convention</dt>
+  <dd>A rule about how code is written in this project that the code itself does not make obvious,
+  kept in <code>spry/knowledge/conventions/</code>. <a href="../guides/knowledge.html">Record what you learn</a>.</dd>
+
+  <dt>Coverage</dt>
+  <dd>The generated page <code>spry/COVERAGE.md</code>: done versus defined at each level, criteria
+  proven, and what is built but not proven. <a href="../design/pages.html">Generated pages</a>.</dd>
+
+  <dt>Covers</dt>
+  <dd>The criteria a slice builds, in its front-matter (<code>covers: [AC-1, AC-2]</code>). A story's
+  slices between them cover all its criteria. <a href="../guides/slicing.html">Split a story into slices</a>.</dd>
+
+  <dt>Criteria approved by</dt>
+  <dd>A line in a slice, <code>criteria_approved_by: &lt;name&gt;</code>, that only the story's owner's
+  yes puts there. Without it, <code>merge-check</code> blocks a branch that changes a criterion and code
+  together. <a href="../design/decisions.html">Where a person decides</a>.</dd>
+</dl>
+
+<h2>D–F</h2>
+<dl class="terms">
+  <dt>Decision</dt>
+  <dd>A choice between options that someone will later ask about: context, the decision, the options
+  rejected and why, consequences. One file each, <code>D-1</code>, <code>D-2</code> ….
+  <a href="../guides/knowledge.html">Record what you learn</a>.</dd>
+
+  <dt>Demo</dt>
+  <dd>The part of a work order that shows the slice working: copy-pasteable commands with no value to
+  fill in by hand. Every slice demos one visible change. <a href="../guides/building.html">Build a slice</a>.</dd>
+
+  <dt>Derived</dt>
+  <dd>Worked out by the tool from the files, never typed by a person. Progress, done, the backlog's
+  order and the relationship map are all derived. <a href="../design/status.html">Status is derived</a>.</dd>
+
+  <dt>Diff</dt>
+  <dd>The lines a change adds and removes. spry reads a slice's diff to write <em>What changed</em> and to
+  decide which safeguards falsify must break. <a href="../design/falsify.html">Falsify</a>.</dd>
+
+  <dt>Done</dt>
+  <dd>Never written — derived. A slice is done when <code>closed</code> (and so merged). A story is
+  done when all its slices are done <em>and</em> every criterion is proven. A feature, epic or
+  milestone is done when all its counted children are. <a href="../design/status.html">Status is derived</a>.</dd>
+
+  <dt>Done page</dt>
+  <dd>The generated page <code>spry/DONE.md</code>: every finished story, task and bug, newest first,
+  dated by the day its last slice closed. <a href="../design/pages.html">Generated pages</a>.</dd>
+
+  <dt>Draft</dt>
+  <dd>The state of a plan item still being written. It becomes <code>ready</code> on a person's yes,
+  after its conflict check. <a href="../design/plan-tree.html">The plan is a folder tree</a>.</dd>
+
+  <dt>Draft pull request</dt>
+  <dd>A pull request marked not ready to merge. <code>slice-open</code> opens one with the work order as
+  its body; <code>slice-close</code> marks it ready at the end. <a href="../guides/building.html">Build a slice</a>.</dd>
+
+  <dt>Dropped</dt>
+  <dd>The state of an item that will not be done. It no longer counts toward its parent, and nothing
+  may be blocked by it.</dd>
+
+  <dt>Epic</dt>
+  <dd>A body of work under a milestone (<code>E-1</code>): why, who it is for, done-when, scope.
+  Optional — a small project can drop the level. <a href="../guides/planning.html">Plan the work</a>.</dd>
+
+  <dt>Explore</dt>
+  <dd>Exploratory testing by an agent with <code>/spry:explore</code>: a seeded, replayable random walk
+  over an isolated instance, each step predicted from the criteria before it runs. Report only.
+  <a href="../guides/testing.html">Test beyond the slice</a>.</dd>
+
+  <dt>External behaviour</dt>
+  <dd>A fact about how a service you depend on actually behaves — observed or documented, with
+  evidence — in <code>spry/knowledge/external/&lt;service&gt;/</code>. <a href="../guides/knowledge.html">Record what you learn</a>.</dd>
+
+  <dt>Falsify</dt>
+  <dd>Proving a slice's tests notice its safeguards: each control is removed in turn, the tests that
+  should notice are run, and every file is restored. A test suite that passes either way proves nothing.
+  <a href="../design/falsify.html">Falsify</a>.</dd>
+
+  <dt>Fast checks</dt>
+  <dd>Format, lint and type checks (<code>checks.fast</code>), cheapest first. They run before any test,
+  so a slow test never runs only to be thrown away by a lint error. <a href="../design/gate.html">The gate and test speed</a>.</dd>
+
+  <dt>Feature</dt>
+  <dd>How one part of the product works, step by step, with numbered rules (<code>R-1</code> …) that
+  stories cite as <code>F-1/R-2</code> (<code>F-1</code>). <a href="../guides/planning.html">Plan the work</a>.</dd>
+
+  <dt>Follow-ups</dt>
+  <dd>The bugs, tasks and decisions a slice found along the way, created at close and listed in its
+  close summary. <a href="../guides/closing.html">Close and merge a slice</a>.</dd>
+
+  <dt>Fresh eyes</dt>
+  <dd>A review by a new agent that did not write the work and carries nothing from the session that
+  did — never the author's session, never a fork of it. <a href="../guides/reviews.html">Reviews with fresh eyes</a>.</dd>
+
+  <dt>Front-matter</dt>
+  <dd>The <code>key: value</code> lines at the top of each document — <code>id</code>, <code>title</code>,
+  <code>state</code>, <code>owner</code>, <code>audience</code>, <code>blocked_by</code> … — kept to a
+  simple form the standard library can read. <a href="../design/plan-tree.html">The plan is a folder tree</a>.</dd>
+</dl>
+
+<h2>G–M</h2>
+<dl class="terms">
+  <dt>Gate</dt>
+  <dd><code>spry gate</code>: <code>spry check</code>, then the fast checks, then the affected tests,
+  stopping at the first failure. A pass is stamped against the code, so it does not re-run while only
+  documents change. <code>gate --fast</code> skips the tests. <a href="../design/gate.html">The gate and test speed</a>.</dd>
+
+  <dt>Generated block</dt>
+  <dd>The part of a page between <code>&lt;!-- spry:… --&gt;</code> and <code>&lt;!-- /spry:… --&gt;</code>
+  markers — progress tables, proof tables, index lines — written by <code>spry index</code> on the main
+  branch only. Branches never change them, so they never conflict. <a href="../design/pages.html">Generated pages</a>.</dd>
+
+  <dt>Glossary</dt>
+  <dd>Your project's <code>spry/knowledge/glossary.md</code>: one term per concept, what it means, and
+  the words not to use for it. <code>check</code> fails on a banned word. <a href="../design/audience.html">Written for its reader</a>.</dd>
+
+  <dt>Index (INDEX.md)</dt>
+  <dd>A generated list of a knowledge folder's items, one line each from their title and summary. An
+  agent reads the index and opens one item, instead of reading everything. <a href="../design/knowledge.html">Knowledge and size</a>.</dd>
+
+  <dt>Interview</dt>
+  <dd>How every planning skill works: a few questions at a time, with a drafted answer offered for you
+  to confirm, each answer written into the document at once. <a href="../guides/planning.html">Plan the work</a>.</dd>
+
+  <dt>Line budget</dt>
+  <dd>The most lines a kind of file may have, set in the config and enforced by <code>check</code>.
+  <a href="../design/knowledge.html">Knowledge and size</a>.</dd>
+
+  <dt>Merge-check</dt>
+  <dd><code>spry merge-check</code>: is a closed slice ready to merge? It blocks on a missing falsify
+  row, a bare survivor, criteria changed with code without the owner's approval, a missing
+  <code>closed:</code> date or PR number, or an unclean <code>check</code>. A criterion no test cites
+  is a <code>!</code> the merge asks you about. <a href="tool.html">Tool commands</a>.</dd>
+
+  <dt>Milestone</dt>
+  <dd>An outcome a person can check (<code>M-1</code>): why, done-when, scope, constraints. The top of
+  the plan. <a href="../guides/planning.html">Plan the work</a>.</dd>
+
+  <dt>Mint</dt>
+  <dd>Where IDs are taken and slices claimed. <code>local</code>: the next number in this tree.
+  <code>main</code>: taken on the main branch on the remote, so two sessions never take one number.
+  <a href="../guides/team.html">Work as a team</a>.</dd>
+
+  <dt>Must not</dt>
+  <dd>The part of a work order that lists, with links, the rules this slice could break — a decision,
+  a security or performance rule. The review checks each still holds. <a href="../guides/building.html">Build a slice</a>.</dd>
+
+  <dt>Mutation</dt>
+  <dd>How falsify removes a control: a guard made never true, a comparison's boundary flipped
+  (<code>&gt;=</code> to <code>&gt;</code>), an error line deleted. Never a negation, which breaks the
+  normal path too and gives a false catch. <a href="../design/falsify.html">Falsify</a>.</dd>
+</dl>
+
+<h2>O–R</h2>
+<dl class="terms">
+  <dt>Open</dt>
+  <dd>The state of a slice being built: it has a work order, a conflict check, a branch and a draft pull
+  request. <a href="../guides/building.html">Build a slice</a>.</dd>
+
+  <dt>Planned</dt>
+  <dd>The state of a slice that exists but has not been opened: a summary, what it covers, and what it
+  waits on. <a href="../guides/slicing.html">Split a story into slices</a>.</dd>
+
+  <dt>Process files</dt>
+  <dd>The written rules every agent follows, copied into your project at <code>spry/process/</code> so
+  any agent reads the same ones. Yours to change, with <code>/spry:process-change</code>.
+  <a href="../guides/maintaining.html">Keep spry yours</a>.</dd>
+
+  <dt>Proof</dt>
+  <dd>The generated table on a story showing what proves each criterion — a test's name, a QA check, or
+  "not yet". <a href="../design/status.html">Status is derived</a>.</dd>
+
+  <dt>Proven</dt>
+  <dd>A criterion is proven by a test whose name contains its citation (<code>S-1/AC-2</code>), or by a
+  <code>pass</code> as the latest row for it in the check log. A skipped test proves nothing, and a later
+  <code>fail</code> row un-proves it, test or not. <a href="../design/status.html">Status is derived</a>.</dd>
+
+  <dt>Pull request (PR)</dt>
+  <dd>A request on GitHub to merge a branch into the main branch, where the change is reviewed. In
+  spry, one slice is one pull request, and its body is copied from the slice file.
+  <a href="../guides/closing.html">Close and merge a slice</a>.</dd>
+
+  <dt>Ready</dt>
+  <dd>The state of a plan item a person has agreed to, after its conflict check. A story goes ready only
+  on a yes — its criteria are what "done" means. <a href="../design/decisions.html">Where a person decides</a>.</dd>
+
+  <dt>Rebase</dt>
+  <dd>Moving a branch's commits on top of the latest main branch, so it is tested against what it will
+  merge into. <code>slice-close</code> rebases first, before the review and the gate.
+  <a href="../guides/closing.html">Close and merge a slice</a>.</dd>
+
+  <dt>Related</dt>
+  <dd>The <code>related</code> list in front-matter, and <code>spry related</code>, which lists the
+  candidates a conflict check must read. <a href="../design/conflicts.html">The conflict check</a>.</dd>
+
+  <dt>Rule (feature rule)</dt>
+  <dd>A numbered rule in a feature, <code>R-1</code>, cited by stories as <code>F-1/R-1</code> instead of
+  being restated. <a href="../guides/planning.html">Plan the work</a>.</dd>
+</dl>
+
+<h2>S–Z</h2>
+<dl class="terms">
+  <dt>Scenario</dt>
+  <dd>The steps QA follows by hand for one or more criteria, in a story's <code>checks.md</code>: type,
+  where, whether it is ready to run, then numbered steps with what you should see.
+  <a href="../guides/qa.html">Checks for QA</a>.</dd>
+
+  <dt>Skill</dt>
+  <dd>A command you type into your agent, like <code>/spry:story</code>. Skills are thin: each points at
+  the process file that holds the procedure. <a href="skills.html">Skills</a>.</dd>
+
+  <dt>Skipped</dt>
+  <dd>A falsify result for a control that cannot run — it needs a clock or a network — recorded with a
+  reason, for a person to accept at the merge. <a href="../design/falsify.html">Falsify</a>.</dd>
+
+  <dt>Slice</dt>
+  <dd>One reviewable change with one visible result: a work order, a branch, a pull request, covering
+  one or more criteria of one story — or the work of a task or bug (<code>SL-1</code>). A slice is a
+  file, not a folder. <a href="../guides/slicing.html">Split a story into slices</a>.</dd>
+
+  <dt>Squash merge</dt>
+  <dd>Merging a pull request as one single commit. <code>/spry:merge</code> always squashes, with a commit
+  message from <code>merge-message</code> that carries the slice's trailers.
+  <a href="../guides/closing.html">Close and merge a slice</a>.</dd>
+
+  <dt>Stack profile</dt>
+  <dd>Per-language setup values — test commands, falsify runners, fast checks, how to keep
+  <code>spry/</code> out of the build — that setup copies into the config. TypeScript / Node, Python, and
+  a generic one. <a href="config.html">Configuration</a>.</dd>
+
+  <dt>Story</dt>
+  <dd>One thing a person does with the product, with its acceptance criteria (<code>S-1</code>).
+  <a href="../guides/criteria.html">Write acceptance criteria</a>.</dd>
+
+  <dt>Survived</dt>
+  <dd>A falsify result: the safeguard was removed and every test still passed — no test notices it.
+  It needs a new test, or a written reason a person accepts at the merge. <a href="../design/falsify.html">Falsify</a>.</dd>
+
+  <dt>Task</dt>
+  <dd>Technical work no story asks for — set-up, upgrades, refactors — under the milestone or epic it
+  serves (<code>T-1</code>). Does not count toward progress. <a href="../guides/bugs-and-tasks.html">Bugs and tasks</a>.</dd>
+
+  <dt>Tone</dt>
+  <dd>Your personal override of the audience level, set with <code>/spry:tone</code> and kept in
+  <code>.spry/tone</code>, never committed. <a href="../design/audience.html">Written for its reader</a>.</dd>
+
+  <dt>Trailer</dt>
+  <dd>A <code>Key: value</code> line at the end of a commit message. spry's merge commit carries
+  <code>Slice:</code>, <code>Parent:</code> and <code>Covers:</code> — and <code>CI:</code> when CI did not
+  run — because a squash keeps nothing else. <a href="../guides/closing.html">Close and merge a slice</a>.</dd>
+
+  <dt>Unreliable</dt>
+  <dd>A falsify result when the tests could not give an answer: the baseline was red, or a run timed out.
+  Fix that first. <a href="../design/falsify.html">Falsify</a>.</dd>
+
+  <dt>Vendor</dt>
+  <dd>Copying the process files and the tool into a project (<code>spry vendor</code>), so every agent
+  reads the same rules and CI runs without any agent. <a href="../start/install.html">Installation</a>.</dd>
+
+  <dt>Wide</dt>
+  <dd>A falsify control whose criterion is cited by more than 20 test files. Named at the run, so you
+  can list the files that matter. <a href="../design/falsify.html">Falsify</a>.</dd>
+
+  <dt>Work order</dt>
+  <dd>The first part of a slice file, written before any code: summary, covers, plan (one line per file),
+  must not, tests, demo, conflict check. The pull request body is copied from it.
+  <a href="../guides/building.html">Build a slice</a>.</dd>
+</dl>
+
+</article>
+</main>
+</body>
+</html>

@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Coming from writ · spry</title>
+<meta name="description" content="What spry kept, changed and dropped from writ, the process it grew out of, and how a writ project is adopted — the mapping file writ's agent writes first, and how adopt builds the plan from it.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+<h1>Coming from writ</h1>
+<p class="lead">spry is inspired by writ, not based on it. Both aim at agent-first development a human
+team can follow. spry was rebuilt around what running writ on two real projects taught — and if your
+project runs writ today, it has a planned way across.</p>
+
+<h2>Kept, changed, dropped</h2>
+
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>What</th></tr></thead>
+<tbody>
+<tr><td><span class="badge green">Kept</span></td><td>Skills run the project; the slice loop; a work order before code; the demo; falsify; decisions; chat rules; <code>process-change</code>; <code>security-audit</code>; <code>prelaunch</code>; <code>test-scenarios</code>; <code>test-all</code>; <code>update</code>; <code>contribute</code>; <code>adopt</code>. Renamed: <code>manual-test</code> → <code>explore</code>, <code>context-compact</code> → <code>compact</code>, <code>requirement-review</code> → <code>review</code>.</td></tr>
+<tr><td><span class="badge amber">Changed</span></td><td>An up-front business requirements document → milestones planned one at a time. Registers → item folders. The ledger → status derived from merges and proof. <code>CLAUDE.md</code> → <code>AGENTS.md</code>.</td></tr>
+<tr><td><span class="badge">Dropped</span></td><td>Many-to-many claims between work and requirements; <code>requirement-verify</code>; <code>coverage-review</code>; <code>change-request</code>; velocity; the code graph; maintenance and cleanup.</td></tr>
+</tbody></table></div>
+
+<h3>Why those changes</h3>
+<ul>
+  <li><strong>The requirements document went stale.</strong> Written up front, it stopped matching the
+  product as soon as the first slices taught the team something. spry plans a level when it is needed.
+  <a href="principles.html#incremental">Incremental →</a></li>
+  <li><strong>Many-to-many claims made "done" a puzzle.</strong> One slice could claim several
+  requirements, and one requirement several slices. One parent per item makes "done" a count.</li>
+  <li><strong>A hand-kept ledger and queue drifted.</strong> They were edited by hand after every slice.
+  spry derives both. <a href="status.html">Status is derived →</a> · <a href="pages.html">Generated pages →</a></li>
+  <li><strong>Comments counted as proof.</strong> writ accepted a requirement ID in a comment near a
+  test. spry accepts only the test's name. <a href="status.html#what-counts-as-proof">What counts as proof →</a></li>
+</ul>
+<p>Still to come from writ's list: <code>product-docs</code>, <code>product-guide</code>, and a separate
+<code>spry-web</code> plugin.</p>
+
+<h2>Adopting a writ project</h2>
+<p><code>/spry:adopt</code> recognises a writ project by a folder — usually <code>canon/</code> — holding
+<code>BRD.md</code>, <code>ID-REGISTRY.md</code> and a slice queue. It works in two halves, so nothing is
+investigated twice:</p>
+
+<div class="flow" role="list" aria-label="Adopting from writ">
+  <span class="step" role="listitem"><b>writ's agent</b><small>cleans up, writes to-spry.md</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step person" role="listitem"><b>You approve it</b><small>"Status: approved"</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>/spry:adopt</b><small>builds the plan from it</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step person" role="listitem"><b>You review the PR</b><small>then retire canon/</small></span>
+</div>
+<div class="legend"><span>an agent runs it</span><span class="person">a person decides</span></div>
+
+<h3>Before anything is written</h3>
+<ul>
+  <li><strong>The mapping file must exist and be approved</strong>: <code>canon/to-spry.md</code>, whose first
+  line reads <code>Status: approved &lt;date&gt; by &lt;name&gt;</code>. Without it, adopt stops and tells you to
+  run the pre-work.</li>
+  <li><strong>No work in flight.</strong> A slice in progress in writ, or an open pull request for one,
+  has no home in spry — finish it or park it first.</li>
+  <li><strong>On a branch</strong>, <code>spry-adopt</code>: one commit per step, one pull request at the end.</li>
+</ul>
+
+<h3>The mapping file</h3>
+<p>writ's own agent writes it, in writ's terms. It assigns no spry IDs — adopt numbers things as it
+creates them. Its sections:</p>
+<ol>
+  <li><strong>Tree</strong> — milestones, epics, features and stories as titles with one line of purpose,
+  in plain words, every link one-to-many. A story is one thing a person does; most writ requirements
+  become a criterion of one.</li>
+  <li><strong>Identifiers</strong> — every traceable writ ID and what it becomes: a criterion
+  (<code>ac</code>), a <code>story</code>, a feature <code>rule</code>, <code>knowledge</code>, a <code>milestone</code>
+  exit, or <code>drop</code> — and whether it is done.</li>
+  <li><strong>Work not built</strong> — writ's queue rows not yet built, and the story each goes to.</li>
+  <li><strong>Documents</strong> — every document and where its content goes in spry. History holds
+  only records of what happened; current content moves into the plan or knowledge.</li>
+  <li><strong>Local process changes</strong> — what the project added to writ, why, and whether it is
+  still useful.</li>
+  <li><strong>Open questions.</strong></li>
+  <li><strong>Requirement details</strong> — writ's detail files, case by case. A file with several jobs
+  becomes a feature: its summary, personas, fence and open questions go to the feature; each
+  <em>May not</em> of a persona, and each blank-field outcome that is not a refusal, becomes a criterion;
+  unsettled reconciliation rows become bugs or open questions and stay out of the <em>Built under
+  writ</em> slice. Stories from a file nobody reviewed stay <code>draft</code>.</li>
+  <li><strong>Test scenarios</strong> — split into stories' <code>checks.md</code> files.</li>
+</ol>
+
+<h3>What adopt does with it</h3>
+<ol class="steps">
+  <li><strong>Survey and interview</strong> as for any adoption, with answers drafted from writ's
+  documents. The roadmap topic has no questions — it shows the approved tree.</li>
+  <li><strong>Builds the plan top-down</strong>, which is where the new IDs come from. Each criterion keeps
+  its requirement's meaning in plain words. Nothing is cut to fit a budget: a story that would run over
+  is split, and only steps, fields and data move to <code>checks.md</code>.</li>
+  <li><strong>Writes the trail</strong>, <code>spry/history/writ.md</code>: every old ID and what it became
+  (<code>S-12/AC-3</code>, <code>F-2/R-1</code>, <code>D-41</code>, <code>dropped</code>, …), added as each item is made.</li>
+  <li><strong>Records built work.</strong> Each story writ built gets one closed slice, <em>Built under
+  writ</em>, linking writ's slice summaries, which are kept unchanged in
+  <code>spry/history/writ/slices/</code>. writ's requirement details are kept the same way in
+  <code>spry/history/writ/requirements/</code>. <code>check</code> skips history; <code>find</code> lists it last.</li>
+  <li><strong>Rewrites test citations</strong> from the trail, by script, in test files only — and moves an
+  ID cited only in a comment into the test's name, since spry only counts names. Then runs the full suite
+  once: only names changed, so it must stay green.</li>
+  <li><strong>Moves knowledge and instructions</strong>: decision records to <code>knowledge/decisions/</code>,
+  <code>CLAUDE.md</code> into <code>AGENTS.md</code> under the admission test, writ's local process changes into
+  <code>process-changes.md</code>.</li>
+  <li><strong>Asks to remove writ's machinery</strong> — its skills, CI workflows and scripts — in one ask.</li>
+  <li><strong>Verifies</strong> by script that every ID and case landed somewhere, then has a fresh agent
+  compare each original with the pages it became and list anything lost or changed. Every gap is fixed
+  before the pull request.</li>
+  <li><strong>Retires <code>canon/</code></strong> in the last commit — only after you have compared
+  <code>spry status</code> with writ's last ledger. The trail, the kept summaries and git history keep
+  everything.</li>
+</ol>
+
+<div class="callout note">
+  <span class="callout-title">Adopted with an older spry?</span>
+  <p>Projects adopted before the slice summaries were kept, or before current documents were moved
+  out of history, have a recovery procedure that restores them from git history on one branch. Run
+  <code>/spry:update</code> and it is offered.</p>
+</div>
+
+<p><a href="../guides/adopt.html">Adopt an existing codebase →</a></p>
+
+</article>
+</main>
+</body>
+</html>

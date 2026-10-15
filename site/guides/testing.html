@@ -1,0 +1,219 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test beyond the slice · spry</title>
+<meta name="description" content="The whole test suite on purpose, a seeded exploratory walk over a real isolated instance, a security audit and a pre-launch review — all of which report, and never fix.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Test beyond the slice</h1>
+<p class="lead">A slice runs only the tests its change affects. Four skills cover the rest: the whole suite,
+an exploratory walk over the real product, a security audit and a pre-launch review. All four
+<strong>report and never fix</strong> — a finding becomes a bug or task that you approve.</p>
+
+<div class="cards">
+  <a class="card" href="#the-whole-suite-sprytest-all"><p class="card-title">/spry:test-all</p><p>Every test, on purpose, timed part by part.</p></a>
+  <a class="card" href="#exploratory-testing-spryexplore"><p class="card-title">/spry:explore</p><p>A seeded, replayable walk over a real, isolated instance.</p></a>
+  <a class="card" href="#security-audit-sprysecurity-audit"><p class="card-title">/spry:security-audit</p><p>Access, input, data, secrets — against your rules.</p></a>
+  <a class="card" href="#pre-launch-review-spryprelaunch"><p class="card-title">/spry:prelaunch</p><p>A go / no-go before a release.</p></a>
+</div>
+
+<h2>The whole suite — /spry:test-all</h2>
+
+<p><strong>When:</strong> when you ask, or after a change to dependencies or to build or test
+configuration — where the affected-only run (the tests touching what the slice changed) can't tell what is affected. Never as a routine step of a
+slice or a merge: CI runs the full suite on the main branch and nightly.</p>
+
+<ol class="steps">
+  <li><strong>It says what will run</strong> — which parts, whether local services come up, and whether
+  uncommitted changes are in the tree.</li>
+  <li><strong>Cheapest first, each part timed.</strong> <code>spry check</code> first, then each part from
+  <code>tests.parts</code> (unit, integration…). Local services (a database, queues) are started only if
+  they're down, and stopped only if this run started them — always then, even after a failure. Data is
+  never removed.</li>
+  <li><strong>It keeps going after a failure,</strong> so one run names every broken thing.</li>
+  <li><strong>It reports.</strong></li>
+</ol>
+
+<pre data-label="Example report"><code>test-all — 4m 12s
+check        ok        2s
+unit         ok       41s
+integration  FAILED 3m 20s  2 of 164
+  - src/loans/lend.test.ts › S-1/AC-3 refuses a book already on loan: expected AlreadyOnLoan
+slowest
+  38s  src/desk/LendPanel.test.ts</code></pre>
+
+<ul>
+  <li><strong>A failure</strong> is named, with whether it looks like this branch or something older.</li>
+  <li><strong>Slow</strong> — a part over 60 seconds, or one file over a quarter of its part — is a finding.</li>
+  <li><strong>Flaky</strong> — fails, then passes when that file alone is re-run once — is a finding, never a pass.</li>
+</ul>
+
+<div class="callout warn">
+  <span class="callout-title">Never to get green</span>
+  <p>It never edits code or tests, and never skips, retries or quarantines a test to make the run pass.</p>
+</div>
+
+<h2>Exploratory testing — /spry:explore</h2>
+
+<p>A good tester does three things a test suite doesn't: combines steps nobody wrote down together, runs
+them in orders nobody planned, and <em>notices</em>. <code>/spry:explore</code> does that against a real, running
+copy of the product — seeded (every random choice comes from one number, the seed), so any run can be
+replayed exactly.</p>
+
+<h3>The rules</h3>
+<ul>
+  <li><strong>Always an isolated instance</strong> — a second copy of the product on its own ports and data,
+  never the one you're developing in. Every shell first loads the file named in <code>explore.env</code> in the
+  config.</li>
+  <li><strong>Report only.</strong> It edits nothing in the repository. The transcript lives in
+  <code>.spry/explore/&lt;seed&gt;/</code>.</li>
+  <li><strong>Predict before running.</strong> Every step writes down the expected outcome and the criterion
+  it comes from (<code>S-4/AC-2</code>) first. A step with no prediction is not a test.</li>
+</ul>
+
+<h3>What you're asked</h3>
+<ol>
+  <li><strong>Area</strong> — the whole product, or a milestone, epic or feature.</li>
+  <li><strong>Depth:</strong></li>
+</ol>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>Depth</th><th>Steps</th><th>Does</th></tr></thead>
+  <tbody>
+    <tr><td>Sanity</td><td>~15</td><td>The main path plus four or five operators — is it broken right now?</td></tr>
+    <tr><td>Regular <span class="badge green">recommended</span></td><td>~50</td><td>Operators across the area's criteria, evidence read back</td></tr>
+    <tr><td>Deep</td><td>~150</td><td>Every criterion in the area once, plus interrupt and concurrency</td></tr>
+    <tr><td>Adversarial</td><td>~300</td><td>Hostile, until it finds something or the budget ends</td></tr>
+  </tbody>
+</table></div>
+<ol start="3">
+  <li><strong>Seed</strong> — a new one, or paste one to replay.</li>
+</ol>
+
+<p>The starting data needs <strong>two of everything that has a boundary</strong> — two organisations, two
+users with different roles — or the walk never tests isolation and passes for the worst reason.</p>
+
+<h3>The walk</h3>
+<p>Each step draws an <strong>operator</strong> and a target from the seed, predicts, runs, judges and records.
+The oracles — what each prediction is judged against — are the area's acceptance criteria plus the security and performance rules — kept true by
+<code>spry check</code>, so they can be trusted as written.</p>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>#</th><th>Operator</th><th>What must hold</th></tr></thead>
+  <tbody>
+    <tr><td>1</td><td>Duplicate — the same action twice</td><td>One effect, or a clear refusal of the second</td></tr>
+    <tr><td>2</td><td>Concurrent — two actors, same target, at once</td><td>One wins; no lost write, no half state</td></tr>
+    <tr><td>3</td><td>Reorder — a later step before an earlier one</td><td>Refused, or the same end state</td></tr>
+    <tr><td>4</td><td>Delay — wait past an expiry, a cut-off, a slot</td><td>The time rule applies at the moment of acting</td></tr>
+    <tr><td>5</td><td>Skip — leave out a step the flow assumes</td><td>Refused with a message naming what is missing</td></tr>
+    <tr><td>6</td><td>Substitute — another user's, organisation's or item's ID</td><td>Refused; nothing about the other is revealed</td></tr>
+    <tr><td>7</td><td>Boundary — the limit, one below, one above</td><td>Exactly the criterion's line</td></tr>
+    <tr><td>8</td><td>Malform — wrong type, empty, oversized, odd characters</td><td>Refused at the edge, cleanly, nothing stored</td></tr>
+    <tr><td>9</td><td>Interrupt — stop mid-action</td><td>All or nothing; a retry completes it once</td></tr>
+    <tr><td>10</td><td>Change underneath — edit or delete what a flow is using</td><td>The flow notices; no stale write</td></tr>
+    <tr><td>11</td><td>Repeat until the limit — a rate or quota</td><td>The limit holds and says so; recovery works</td></tr>
+    <tr><td>12</td><td>Clock — midnight, month end, time zones, daylight saving</td><td>Dates land on the right day</td></tr>
+    <tr><td>13</td><td>Cross-boundary — act from one tenant or role on another</td><td>Refused; even a suggestion is a leak</td></tr>
+    <tr><td>14</td><td>Read the evidence — logs, audit rows, queues, emails</td><td>Each record exists, is right, leaks nothing</td></tr>
+  </tbody>
+</table></div>
+
+<p>Operator 12 is the kind of walk that catches a bug like B-1 in the worked example — a receipt printed
+after 18:30 showing a due date a day early. (There, QA found it by hand.)</p>
+
+<h3>Before anything is reported</h3>
+<p><strong>It assumes the walk is wrong first.</strong> On a mismatch it re-reads the criterion, reproduces on
+fresh data with the shortest sequence, then classifies:</p>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>Class</th><th>Means</th><th>Reported?</th></tr></thead>
+  <tbody>
+    <tr><td>defect</td><td>The code disagrees with a clear criterion</td><td>Yes — offers <code>/spry:bug</code></td></tr>
+    <tr><td>gap</td><td>The code is defensible and no criterion decides it</td><td>Yes — asks who decides</td></tr>
+    <tr><td>walk error</td><td>The walk misread a criterion, the data, or an intended refusal</td><td>Transcript only</td></tr>
+    <tr><td>expected</td><td>Documented behaviour that only looks wrong</td><td>Transcript only</td></tr>
+  </tbody>
+</table></div>
+
+<p>Every finding carries <code>seed:counter</code> — that pair is the whole reproduction. A finding worth
+re-checking later is offered as a QA scenario via <a href="qa.html"><code>/spry:test-scenarios</code></a>.</p>
+
+<div class="callout note">
+  <span class="callout-title">First run</span>
+  <p>The <code>explore</code> settings — how to start, stop and seed the isolated instance — can stay unfilled
+  at setup. The first <code>/spry:explore</code> stops and fills them in with a developer.</p>
+</div>
+
+<h2>Security audit — /spry:security-audit</h2>
+
+<p>Scope: the whole product, a milestone, an area or a branch's diff. The report lives in
+<code>spry/knowledge/audits/</code>, and the previous audit's open findings are re-checked first. It reads
+the code, not only the documents:</p>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>Area</th><th>Looks for</th></tr></thead>
+  <tbody>
+    <tr><td>Access</td><td>Every route, query and screen that returns data: who may call it, checked server-side</td></tr>
+    <tr><td>Sign-in and sessions</td><td>Expiry, reset flows, rate limits, what a stolen session reaches</td></tr>
+    <tr><td>Input</td><td>Validation at the edge; injection through queries, shell, templates, file paths</td></tr>
+    <tr><td>Personal data</td><td>What is stored, logged, sent to third parties; the project's numbered security rules (<code>SEC-1</code>, <code>SEC-2</code>…)</td></tr>
+    <tr><td>Secrets</td><td>In code, history, logs, client bundles; how they reach production</td></tr>
+    <tr><td>Dependencies</td><td>The stack's audit command; unmaintained packages</td></tr>
+    <tr><td>External services</td><td>What is sent to them, and what is trusted from them</td></tr>
+  </tbody>
+</table></div>
+
+<p>Every security rule gets a line: held (where it's enforced) or broken (a finding).</p>
+
+<h2>Pre-launch review — /spry:prelaunch</h2>
+
+<p>A go / no-go before the first release, or a major one:</p>
+
+<ul>
+  <li>every story of the milestone done, none unproven;</li>
+  <li>no open blocker bug, and every open major one accepted by name;</li>
+  <li>a security audit of this scope within the last milestone, its findings closed or accepted;</li>
+  <li>every rule marked as checked by hand, checked on this build;</li>
+  <li>production configuration and secrets set; nothing development-only switched on;</li>
+  <li>migrations run forward cleanly; a backup exists and a restore has been tried;</li>
+  <li>someone is told when it fails — logs, alerts and error reports reach a person;</li>
+  <li><code>spry/</code> and other non-product files are not in the build;</li>
+  <li>the constraints still hold: dates, legal, privacy notices.</li>
+</ul>
+
+<p>The verdict is <span class="badge green">go</span>, <span class="badge amber">go with conditions</span> (listed)
+or <span class="badge">no-go</span> (the blockers). It never deploys.</p>
+
+<h3>After either review</h3>
+<p>You're asked which findings become bugs or tasks and which are accepted, and by whom. Each finding's
+action column then holds an ID or <code>accepted — &lt;name&gt;</code>.</p>
+
+<h2>Next</h2>
+
+<div class="cards">
+  <a class="card" href="bugs-and-tasks.html">
+    <p class="card-title">Bugs and tasks</p>
+    <p>Where findings go.</p>
+  </a>
+  <a class="card" href="../design/gate.html">
+    <p class="card-title">The gate and test speed</p>
+    <p>Why a slice runs only affected tests.</p>
+  </a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

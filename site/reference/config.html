@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Configuration · spry</title>
+<meta name="description" content="Every key in spry/spry.config.json — what it means, its default, and examples for TypeScript, Python and other stacks.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Configuration</h1>
+<p class="lead">One file, <code>spry/spry.config.json</code>, holds everything about how spry runs in
+your project: the shape of the plan, the team, line budgets, and the commands that check and test your
+code. <code>/spry:init</code> or <code>/spry:adopt</code> writes it from your answers — you rarely edit
+it by hand.</p>
+
+<div class="callout note">
+  <span class="callout-title">It lives inside <code>spry/</code></span>
+  <p>Not at the repository root. The tool finds the project by looking for
+  <code>spry/spry.config.json</code> in the current folder and its parents.</p>
+</div>
+
+<h2>The whole file</h2>
+
+<p>This is the template setup starts from. Values in <code>&lt;…&gt;</code> are filled in during the
+interview; a value still in <code>&lt;…&gt;</code> means that topic has no answer yet.</p>
+
+<pre data-label="spry/spry.config.json"><code>{
+  "spry": "0.23.0",
+  "spry_baseline": "CH-33",
+  "product": "&lt;product name&gt;",
+  "levels": ["milestone", "epic", "feature", "story"],
+  "ids": {
+    "milestone": "M", "epic": "E", "feature": "F", "story": "S",
+    "slice": "SL", "task": "T", "bug": "B", "decision": "D"
+  },
+  "team": { "members": [], "review": {} },
+  "budgets": {
+    "AGENTS.md": 150,
+    "spry/knowledge/**": 120,
+    "spry/plan/**/README.md": 150,
+    "spry/plan/**/SL-*.md": 200
+  },
+  "glossary": "spry/knowledge/glossary.md",
+  "always_check": [
+    "spry/knowledge/security.md",
+    "spry/knowledge/performance.md",
+    "spry/knowledge/decisions/INDEX.md"
+  ],
+  "checks": {
+    "fast": [
+      {"name": "format", "run": "&lt;formatter in check mode&gt;"},
+      {"name": "lint", "run": "&lt;linter, with its cache&gt;"},
+      {"name": "types", "run": "&lt;type checker, if the language has one&gt;"}
+    ],
+    "docs": ["spry/**", "**/*.md"]
+  },
+  "tests": {
+    "match": ["&lt;glob of test files, e.g. **/*.test.ts&gt;"],
+    "affected": "&lt;command that runs only tests affected by the working tree&gt;",
+    "retry": "",
+    "all": "&lt;command that runs every test, in parallel&gt;",
+    "junit": "&lt;path the runner writes JUnit XML to&gt;",
+    "parts": [
+      {"name": "unit", "run": "&lt;command&gt;", "stack": false},
+      {"name": "integration", "run": "&lt;command&gt;", "stack": true}
+    ]
+  },
+  "stack": {
+    "running": "&lt;command that exits 0 when the local services are up&gt;",
+    "up": "&lt;command that starts them and waits until healthy&gt;",
+    "down": "&lt;command that stops them, keeping their data&gt;"
+  },
+  "explore": {
+    "env": "&lt;file sourced in every shell&gt;",
+    "up": "&lt;command that starts the isolated instance; --fresh resets its data&gt;",
+    "down": "&lt;command that stops it&gt;",
+    "fixture": "&lt;command or script that creates the starting data&gt;"
+  },
+  "falsify": {
+    "parallel": false,
+    "timeout": 600,
+    "share": [],
+    "runners": [
+      {"match": ["&lt;glob of test files&gt;"], "cwd": "package",
+       "command": "&lt;runner with fail-fast flag&gt; {files}"}
+    ]
+  },
+  "slices": { "issue": false, "pick": "offer" },
+  "main_branch": "main",
+  "mint": "local"
+}</code></pre>
+
+<h2>Version</h2>
+
+<table>
+  <thead><tr><th>Key</th><th>Means</th></tr></thead>
+  <tbody>
+    <tr><td><code>spry</code></td><td>The spry version vendored into this project.</td></tr>
+    <tr><td><code>spry_baseline</code></td><td>The last changelog entry (<code>CH-n</code>) this project considered. <code>/spry:update</code> offers every entry after it, then moves it forward.</td></tr>
+  </tbody>
+</table>
+
+<h2>Product and plan shape</h2>
+
+<table>
+  <thead><tr><th>Key</th><th>Means</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td><code>product</code></td><td>The product's name. <code>scrub</code> treats it as a private word.</td><td>—</td></tr>
+    <tr><td><code>levels</code></td><td>The planning levels, biggest first. A small project may drop <code>epic</code>; features then sit straight under milestones.</td><td><code>["milestone", "epic", "feature", "story"]</code></td></tr>
+    <tr><td><code>ids</code></td><td>The prefix for each type's IDs. IDs are flat counters per type — <code>S-12</code>, never <code>M2.E3.S12</code> — so moving an item never renumbers it.</td><td><code>M</code> <code>E</code> <code>F</code> <code>S</code> <code>SL</code> <code>T</code> <code>B</code> <code>D</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Team</h2>
+
+<pre data-label="Example"><code>"team": {
+  "members": [
+    {"name": "Asha", "github": "asha", "roles": ["product"]},
+    {"name": "Ravi", "github": "ravi", "roles": ["developer"]},
+    {"name": "Meera", "github": "meera", "roles": ["qa"]}
+  ],
+  "review": {"spry/plan/**": ["product"], "src/**": ["developer"]}
+}</code></pre>
+
+<table>
+  <thead><tr><th>Key</th><th>Means</th></tr></thead>
+  <tbody>
+    <tr><td><code>team.members</code></td><td>Name, GitHub handle and roles for each person. <strong>Empty means solo</strong>: nothing is routed for review, and approval is not required to merge.</td></tr>
+    <tr><td><code>team.review</code></td><td>Which roles review which paths. <code>spry codeowners</code> turns it into <code>.github/CODEOWNERS</code>. Planning skills open a pull request instead of committing to the main branch when a document falls under a rule here.</td></tr>
+  </tbody>
+</table>
+<p>More: <a href="../guides/team.html">Work as a team</a>.</p>
+
+<h2>Budgets and knowledge</h2>
+
+<table>
+  <thead><tr><th>Key</th><th>Means</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td><code>budgets</code></td><td>The most lines a file matching each glob may have. <code>spry check</code> fails a file over budget; <code>/spry:compact</code> brings it back.</td><td><code>AGENTS.md</code> 150 · knowledge 120 · plan READMEs 150 · slice files 200</td></tr>
+    <tr><td><code>glossary</code></td><td>Where the glossary is. <code>check</code> fails on its banned words anywhere in <code>spry/</code> outside code, the glossary and conflict-check sections.</td><td><code>spry/knowledge/glossary.md</code></td></tr>
+    <tr><td><code>always_check</code></td><td>Knowledge files every conflict check reads, whatever the document.</td><td>security, performance, decisions index</td></tr>
+  </tbody>
+</table>
+
+<h2>Checks and tests</h2>
+
+<p>These say how the <a href="../design/gate.html">gate</a> and CI check your code. Cheapest first:
+the fast checks run before any test.</p>
+
+<table>
+  <thead><tr><th>Key</th><th>Means</th></tr></thead>
+  <tbody>
+    <tr><td><code>checks.fast</code></td><td>Format, lint and type checks, as <code>{"name", "run"}</code>, cheapest first.</td></tr>
+    <tr><td><code>checks.docs</code></td><td>Globs for files whose change never needs a test run. A branch that changed only these runs <code>check</code> alone. Default <code>["spry/**", "**/*.md"]</code>.</td></tr>
+    <tr><td><code>tests.match</code></td><td>Globs that find test files — where <code>check</code> looks for criterion citations like <code>S-1/AC-2</code> in test names.</td></tr>
+    <tr><td><code>tests.affected</code></td><td>A command that runs only the tests affected by the working tree. Used by <code>gate</code> — once at close, or whenever a test's answer is needed (<code>gate --fast</code>, run while building, runs no tests).</td></tr>
+    <tr><td><code>tests.retry</code></td><td>The affected tests again with no parallelism, run once when the first run failed on a timeout. Empty: never retry.</td></tr>
+    <tr><td><code>tests.retry_when</code></td><td>Optional. A pattern in the output that marks a failure as a timeout. Default <code>timed out|timeout|ETIMEDOUT</code>.</td></tr>
+    <tr><td><code>tests.all</code></td><td>Every test, in parallel where the runner allows. CI runs it on the main branch and nightly; the agent never runs it as a routine step.</td></tr>
+    <tr><td><code>tests.junit</code></td><td>Where the runner writes JUnit XML, for <code>spry tests --slowest</code>.</td></tr>
+    <tr><td><code>tests.parts</code></td><td>Optional. Parts of the suite that run differently — <code>{"name", "run", "stack"}</code>; <code>stack: true</code> means it needs local services. <code>/spry:test-all</code> runs them in order. Leave it out when <code>tests.all</code> is all there is.</td></tr>
+  </tbody>
+</table>
+
+<h2>Local services</h2>
+
+<table>
+  <thead><tr><th>Key</th><th>Means</th></tr></thead>
+  <tbody>
+    <tr><td><code>stack.running</code></td><td>Exits 0 when the local services (database, queues) are up.</td></tr>
+    <tr><td><code>stack.up</code></td><td>Starts them and waits until they are healthy.</td></tr>
+    <tr><td><code>stack.down</code></td><td>Stops them, keeping their data. <code>/spry:test-all</code> stops only what it started.</td></tr>
+  </tbody>
+</table>
+
+<h2>Exploratory testing</h2>
+
+<p>Used only by <code>/spry:explore</code>, and may stay <code>&lt;…&gt;</code> until its first run,
+which stops and asks.</p>
+
+<table>
+  <thead><tr><th>Key</th><th>Means</th></tr></thead>
+  <tbody>
+    <tr><td><code>explore.env</code></td><td>A file sourced in every shell, pointing ports and data away from your development instance.</td></tr>
+    <tr><td><code>explore.up</code></td><td>Starts the isolated instance; <code>--fresh</code> resets its data, so a replay is a real replay.</td></tr>
+    <tr><td><code>explore.down</code></td><td>Stops it.</td></tr>
+    <tr><td><code>explore.fixture</code></td><td>Creates the starting data — two of everything that has a boundary (two organisations, two users with different roles), or the walk never tests isolation.</td></tr>
+  </tbody>
+</table>
+
+<h2>Falsify</h2>
+
+<table>
+  <thead><tr><th>Key</th><th>Means</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td><code>falsify.parallel</code></td><td><code>false</code>, <code>true</code>, or a number of git worktrees to run controls in at once. Never touches your working tree.</td><td><code>false</code></td></tr>
+    <tr><td><code>falsify.timeout</code></td><td>Seconds before a test run is stopped, with its whole process group. A timeout makes the control <code>unreliable</code>.</td><td><code>600</code></td></tr>
+    <tr><td><code>falsify.share</code></td><td>Extra folders to link into each worktree beside the installed dependencies (<code>node_modules</code>, <code>.venv</code>, <code>venv</code> are linked already) — generated code tests import, for example.</td><td><code>[]</code></td></tr>
+    <tr><td><code>falsify.runners</code></td><td>How to run a list of test files. Each: <code>match</code> (test globs), <code>command</code> with <code>{files}</code> and the runner's fail-fast flag, optional <code>cwd: "package"</code> to run in the nearest package folder (a monorepo), and <code>"parallel": false</code> for tests that cannot run side by side (a shared database, fixed ports).</td><td>—</td></tr>
+  </tbody>
+</table>
+
+<h2>Slices and branches</h2>
+
+<table>
+  <thead><tr><th>Key</th><th>Means</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td><code>slices.issue</code></td><td><code>true</code>: each slice gets a GitHub issue when it opens, from its work order, for people who follow issues rather than the repository. The close summary is posted on it; the merge closes it.</td><td><code>false</code></td></tr>
+    <tr><td><code>slices.pick</code></td><td>What <code>/spry:slice-open</code> with no ID does. <code>offer</code>: recommends the first ready slice, with two alternatives. <code>ask</code>: lists the first four and recommends none.</td><td><code>offer</code></td></tr>
+    <tr><td><code>main_branch</code></td><td>The repository's default branch — read from the repository at setup, never assumed.</td><td><code>main</code></td></tr>
+    <tr><td><code>mint</code></td><td>Where IDs are taken and slices claimed. <code>local</code>: the next number in this tree; two branches can collide, and <code>check --base</code> names it before the merge. <code>main</code>: taken on the main branch on the remote, pushed at once — two sessions never take one number or one slice. Needs a main branch that accepts a direct commit of documents.</td><td><code>local</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Examples per stack</h2>
+
+<p>Setup fills the test and check commands from a stack profile. These are the profiles' values.</p>
+
+<h3>TypeScript / Node — Vitest</h3>
+<pre data-label="Vitest"><code>"checks": {
+  "fast": [
+    {"name": "format", "run": "prettier --check ."},
+    {"name": "lint", "run": "eslint . --cache"},
+    {"name": "types", "run": "tsc --noEmit"}
+  ]
+},
+"tests": {
+  "match": ["**/*.test.ts", "**/*.test.tsx"],
+  "affected": "vitest run --changed origin/main",
+  "retry": "vitest run --changed origin/main --no-file-parallelism",
+  "all": "vitest run",
+  "junit": "reports/junit.xml"
+},
+"falsify": {
+  "runners": [
+    {"match": ["**/*.test.ts", "**/*.test.tsx"],
+     "command": "vitest run --bail 1 {files}"}
+  ]
+}</code></pre>
+
+<p>With Jest instead: <code>jest --changedSince=origin/main</code> for affected tests,
+<code>--runInBand</code> added for the retry, <code>jest --maxWorkers=50%</code> for all, and
+<code>jest --bail {files}</code> for falsify. In a Turborepo,
+<code>turbo run test --filter=...[origin/main]</code> runs only changed packages and their dependents; set <code>"cwd": "package"</code> on the falsify runners.</p>
+
+<h3>Python — pytest</h3>
+<pre data-label="pytest"><code>"checks": {
+  "fast": [
+    {"name": "format", "run": "ruff format --check ."},
+    {"name": "lint", "run": "ruff check ."},
+    {"name": "types", "run": "mypy ."}
+  ]
+},
+"tests": {
+  "match": ["**/test_*.py", "**/*_test.py"],
+  "affected": "pytest --testmon",
+  "retry": "pytest --lf -p no:xdist",
+  "all": "pytest -n auto",
+  "junit": "reports/junit.xml"
+},
+"falsify": {
+  "runners": [
+    {"match": ["**/test_*.py", "**/*_test.py"], "command": "pytest -x -q {files}"}
+  ]
+}</code></pre>
+
+<p><code>--testmon</code> needs pytest-testmon and <code>-n auto</code> needs pytest-xdist.</p>
+
+<h3>Any other stack</h3>
+<p>The interview asks the developer for each value above. If the runner cannot run only affected
+tests, <code>tests.affected</code> runs the test files beside the changed source files instead, and
+<code>AGENTS.md</code> says so. Integration tests on a shared database get their own runner entry with
+<code>"parallel": false</code>.</p>
+
+<div class="callout warn">
+  <span class="callout-title">A citation lives in the test's name</span>
+  <p>Whatever the stack, a test proves a criterion only when <code>S-1/AC-2</code> is in the string
+  that names it — a title, a docstring, a parametrize id. A citation in a comment or in code proves
+  nothing. See <a href="../design/status.html">Status is derived</a>.</p>
+</div>
+
+</article>
+</main>
+</body>
+</html>

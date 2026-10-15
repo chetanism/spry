@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adopt an existing codebase · spry</title>
+<meta name="description" content="Put spry around code that already exists with /spry:adopt — a survey first, an interview that confirms what it found, and nothing that blocks existing work.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Adopt an existing codebase</h1>
+<p class="lead">Most teams don't start fresh. <code>/spry:adopt</code> puts spry around a codebase that
+already exists — it reads the code before asking anything, plans from the <em>next</em> piece of work
+rather than reconstructing the past, and never blocks a line of existing code.</p>
+
+<h2>What adopt promises</h2>
+
+<ul>
+  <li><strong>Nothing existing can fail it.</strong> <code>spry check</code> only reads <code>spry/</code> and
+  test names. Your current code, tests and CI keep working exactly as before.</li>
+  <li><strong>No backwards planning.</strong> What is already built is described once, in
+  <code>spry/knowledge/codebase.md</code>. The plan starts with what you will build next.</li>
+  <li><strong>Existing tests are untouched.</strong> Only new tests cite acceptance criteria.</li>
+  <li><strong>Nothing you have is deleted.</strong> Instructions, decision records and workflows are merged
+  or moved; anything spry would replace is listed as a question, not removed.</li>
+</ul>
+
+<pre data-label="Your agent"><code><span class="p">&gt; </span>/spry:adopt members should be able to see their own loans online</code></pre>
+
+<p>The argument is optional: if you give one, it is the next piece of work and seeds the roadmap.</p>
+
+<h2>Step by step</h2>
+
+<ol class="steps">
+  <li><strong>spry is copied in.</strong> The process files and the tool go into <code>spry/process/</code> and
+  <code>spry/tool/</code>, and a config file is started.</li>
+  <li><strong>The survey.</strong> Before any question, the agent reads the repository and writes what it
+  finds into <code>spry/knowledge/codebase.md</code>, reporting each area as it goes:
+    <ul>
+      <li>stack, package manager, test runner, the commands that run the tests, and how long a full run takes;</li>
+      <li>the main areas of the code, one line each;</li>
+      <li>existing documents — README, <code>docs/</code>, decision records, <code>CLAUDE.md</code> or <code>AGENTS.md</code>;</li>
+      <li>external services, from dependency manifests and configuration;</li>
+      <li>domain words that recur in type and table names — candidates for the glossary.</li>
+    </ul>
+    It only runs commands that read. It asks before running your test suite, which may be slow or need services.</li>
+  <li><strong>The interview</strong> — the same topics as <a href="new-project.html">a new project</a>, but
+  every question offers the surveyed answer for you to confirm. You correct; you rarely type from scratch.</li>
+  <li><strong>Existing material is folded in</strong> — see below.</li>
+  <li><strong>The rest is written</strong> and checked, exactly as for <code>/spry:init</code>, and you are asked
+  before the commit.</li>
+</ol>
+
+<h2>What happens to what you already have</h2>
+
+<div class="table-wrap"><table>
+<thead><tr><th>You have</th><th>What adopt does</th></tr></thead>
+<tbody>
+<tr><td>A <code>CLAUDE.md</code> or <code>AGENTS.md</code></td><td>Merges it into the new <code>AGENTS.md</code>. Lines that are not a pointer, a rule an agent breaks by default, or a rule no tool can check (<code>AGENTS.md</code>'s admission test) move to <code>spry/knowledge/conventions/</code> — never deleted.</td></tr>
+<tr><td>Decision records</td><td>One question for all of them: move each to <code>spry/knowledge/decisions/</code> as <code>D-1</code>, <code>D-2</code>… in their present order, text kept. You list any to drop.</td></tr>
+<tr><td>CI workflows</td><td>spry's jobs are added beside them. A workflow that only checks something spry now does is listed as a question to remove — never removed by itself.</td></tr>
+<tr><td>Your own agent skills or commands</td><td>One with the same name or job as a spry skill is listed as a question to remove — two versions side by side means an agent may run the old one. The rest stay, and are recorded as local process changes.</td></tr>
+<tr><td>Tests</td><td>Untouched.</td></tr>
+</tbody>
+</table></div>
+
+<div class="callout tip">
+  <span class="callout-title">The first plan is small on purpose</span>
+  <p>After adopting, expect a roadmap whose near milestones (one to three) are about your next work, and a
+  good <code>codebase.md</code>. That's the right start. The plan grows as you work, one level at a
+  time — see <a href="planning.html">Plan the work</a>.</p>
+</div>
+
+<h2>Coming from writ</h2>
+
+<p>If the project ran <a href="../design/writ.html">writ</a>, spry's predecessor — you'll see a folder
+(usually <code>canon/</code>) holding <code>BRD.md</code>, <code>ID-REGISTRY.md</code> and a slice queue —
+adopt follows a longer path, in two halves:</p>
+
+<ol class="steps">
+  <li><strong>writ's own agent writes a mapping file</strong> first, <code>canon/to-spry.md</code>: the plan as
+  a tree of titles, every traceable writ ID and what it becomes, what is done, and where each document
+  goes. Nothing is investigated twice.</li>
+  <li><strong>A person reviews and approves it.</strong> Adopt stops until the file says
+  <code>Status: approved &lt;date&gt; by &lt;name&gt;</code>.</li>
+  <li><strong>No work in flight.</strong> A half-built writ slice has no home in spry, so finish or park it first.</li>
+  <li><strong>Adopt builds the plan from the file</strong> on a branch, one commit per step, ending in one pull
+  request. Each story already built gets one closed <em>Built under writ</em> slice, test citations are
+  rewritten to spry's form, and — in the last commit, only after you have compared <code>spry status</code> with writ's last
+  ledger and said yes — the writ folder is retired. Its records of what happened are kept under
+  <code>spry/history/</code>.</li>
+</ol>
+
+<p>The full mapping is in <a href="../design/writ.html">Coming from writ</a>.</p>
+
+<h2>If it stops part-way</h2>
+
+<p>As with a new project, setup is finished only when <code>spry/README.md</code> exists. Run
+<code>/spry:adopt</code> again and it continues from the first unanswered topic; the survey already in
+<code>codebase.md</code> is not repeated.</p>
+
+<h2>What's next</h2>
+
+<div class="cards">
+  <a class="card" href="planning.html"><p class="card-title">Plan the work</p><p>Define the next milestone and break it down.</p></a>
+  <a class="card" href="knowledge.html"><p class="card-title">Record what you learn</p><p>Decisions and conventions the codebase already relies on.</p></a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

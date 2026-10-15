@@ -1,0 +1,199 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Where a person decides · spry</title>
+<meta name="description" content="The three things a person decides in spry — the criteria, the merge, and anything hard to undo — why the agent runs everything else without stopping, and the log of settled design decisions.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+<h1>Where a person decides</h1>
+<p class="lead">An agent that asks permission at every step wastes your day; one that never asks
+eventually does something you can't take back. spry draws the line in one place: a person decides
+three things, and the agent works through everything else without stopping.</p>
+
+<h2>The three decisions</h2>
+
+<div class="cards">
+  <div class="card">
+    <p class="card-title">1 · The criteria</p>
+    <p>A story goes <code>ready</code> only on a person's yes. Its acceptance criteria are what "done"
+    means, so the agent never decides them.</p>
+  </div>
+  <div class="card">
+    <p class="card-title">2 · The merge</p>
+    <p><code>/spry:merge</code> asks once, listing everything a person must accept: a test that didn't
+    catch its safeguard, a skipped check, a changed criterion, CI that didn't run.</p>
+  </div>
+  <div class="card">
+    <p class="card-title">3 · Anything hard to undo</p>
+    <p>A database migration, a public API or event shape, a new dependency, deleting data or files, or
+    breaking a project's <em>Must not</em> rule.</p>
+  </div>
+</div>
+
+<div class="flow" role="list" aria-label="Who decides along a slice">
+  <span class="step person" role="listitem"><b>Criteria</b><small>story ready</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>Slice</b><small>split</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>Open</b><small>work order, branch, draft PR</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>Build</b><small>asks only if hard to undo</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>Close</b><small>review, falsify, gate</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step person" role="listitem"><b>Merge</b><small>one ask</small></span>
+</div>
+<div class="legend"><span>the agent runs it</span><span class="person">a person decides</span></div>
+
+<h2>Why the agent doesn't stop in between</h2>
+<p>Because checks stand in for a person watching each step — and checks do not get tired or skim:</p>
+<ul>
+  <li><strong>The gate</strong> — spry's check, the fast checks (format, lint, types) and the affected
+  tests, run at close on the code that merges. <a href="gate.html">The gate →</a></li>
+  <li><strong>Falsify</strong> — every safeguard the change adds is broken on purpose, to prove a test
+  notices. <a href="falsify.html">Falsify →</a></li>
+  <li><strong>Citations only in test names</strong> — so a criterion is proven by something the runner
+  actually reports. <a href="status.html">Status is derived →</a></li>
+  <li><strong><code>merge-check</code></strong> — blocks a merge when anything above is missing.</li>
+  <li><strong>A fresh-eyes review</strong> — a new agent that didn't write the code reads it against its
+  work order. <a href="../guides/reviews.html">Reviews →</a></li>
+</ul>
+<p>So opening, building, testing and closing a slice run as one piece of work. You are asked when your
+answer changes the outcome, not to confirm that the agent is still alive.</p>
+
+<div class="callout tip">
+  <span class="callout-title">Asking only to open</span>
+  <p>If you would rather read the work order before any code is written, say so when you run
+  <code>/spry:slice-open</code> — it will stop after opening. The default is to keep going.</p>
+</div>
+
+<h2>How the merge's one ask works</h2>
+<p>Everything a person must accept is gathered into a single question at merge time, rather than
+scattered through the slice. Items marked <code>!</code> by <code>merge-check</code> are listed there:</p>
+<ul>
+  <li>a safeguard that <em>survived</em> falsify (no test noticed it removed), with its written reason;</li>
+  <li>a safeguard that was <em>skipped</em> (it needs a clock, a network), with its reason;</li>
+  <li>a criterion with no test — QA will check it by hand;</li>
+  <li>a criterion changed under its tests or QA scenarios;</li>
+  <li>CI that did not run, with the local gate standing in.</li>
+</ul>
+<p>When you reviewed the PR and chose <em>fix, then merge</em>, that answer already covers everything
+the review named; only something new is asked again. <a href="../guides/closing.html">Close and merge →</a></p>
+
+<h2>Settled decisions</h2>
+<p>These are the design questions that were argued over and settled, with the reasoning. They are why
+spry behaves as it does in the cases where a reasonable person might expect something else.</p>
+
+<h3>2026-10-08 — the three decisions</h3>
+<p>A person decides the criteria, the merge, and anything hard to undo. Everything between runs without
+stopping, because the checks stand in for a person. Slices of stories that touch different files run
+side by side, each in its own git worktree.</p>
+
+<h3>2026-10-08 — generated tables, slice size, story edits</h3>
+<ul>
+  <li><strong>Generated blocks</strong> (progress tables, indexes) are written by CI on the main branch
+  only — never on a branch, so they never conflict. <a href="pages.html">Generated pages →</a></li>
+  <li><strong>Slice size</strong> is judged by the agent against a written rule — one sitting to review,
+  one visible change — not a line count.</li>
+  <li><strong>Editing a story</strong> after slicing has started is allowed, with a warning when a cited
+  criterion changes.</li>
+  <li><strong>Falsify</strong> was built serial first, then parallel.</li>
+</ul>
+
+<h3>2026-10-08 — adopt is built alongside init</h3>
+<p>Putting spry around existing code mattered as much as starting fresh, so <code>/spry:adopt</code> was
+built with <code>/spry:init</code>, not after a pilot.</p>
+
+<h3>2026-10-08 — "Work order" and "Close summary"</h3>
+<p>A slice file's two parts have these names, and the pull request body is copied from the file by the
+skills rather than written separately.</p>
+
+<h3>2026-10-08 — compact is its own skill; explore is not "manual test"</h3>
+<ul>
+  <li><code>/spry:compact</code> is separate from <code>/spry:process-change</code>: files grow from slices,
+  records and interviews, so the trigger is a line budget, not a change of process.</li>
+  <li>writ's <code>manual-test</code> is called <code>explore</code> here, so it is not confused with the
+  manual checks in <code>checks.md</code>.</li>
+  <li>writ's history-churn survey script is not ported; adopt reads the code itself.</li>
+</ul>
+
+<h3>2026-10-09 — the backlog order is derived</h3>
+<ul>
+  <li>The backlog is in plan order, worked out — no <code>priority</code> field and no hand-kept queue,
+  which writ's slice queue needed constant re-editing for.</li>
+  <li>A slice branch counts as "in progress", read from git (CI fetches the branches), not from
+  GitHub's API.</li>
+  <li>Fresh pages for a branch live in <code>.spry/view/</code>, never in the tracked file. Marking the
+  tracked file <code>skip-worktree</code> was tried and rejected: git then refuses a pull as soon as CI
+  updates that file.</li>
+</ul>
+
+<h3>2026-10-10 — parallel sessions</h3>
+<ul>
+  <li><strong>A new ID taken on the main branch reaches your branch by merging the main branch in</strong>,
+  not by writing an identical copy. Your branch fills the file in next, and git would see two different
+  additions of one path — a conflict at every merge — unless the merge base holds it. The base moving
+  mid-slice is the smaller cost.</li>
+  <li><strong>A claim is <code>branch:</code> on a <code>planned</code> slice</strong>, not
+  <code>state: open</code>: <code>check</code> refuses an open slice without its work order and conflict
+  check, which the main branch cannot have yet.</li>
+  <li><strong><code>mint</code> defaults to <code>local</code></strong>, so nothing pushes to the main branch
+  until a project says it may.</li>
+</ul>
+<p><a href="plan-tree.html#two-sessions-one-number">IDs and parallel sessions →</a></p>
+
+<h2>What was built, and when</h2>
+<p>Every change spry has made since it started, oldest first. A <code>CH-n</code> is a changelog entry —
+a change a project may want, offered to it by <code>/spry:update</code>. Most changes after the first
+day came from pilot projects or from issues people filed.</p>
+<table>
+<thead><tr><th>Date</th><th>Entry · version</th><th>What changed</th></tr></thead>
+<tbody>
+<tr><td>2026-10-08</td><td>—</td><td>The first tool commands: <code>check</code>, <code>status</code>, <code>index</code>, <code>related</code>, <code>next</code>, <code>new</code>, <code>pr-body</code>, <code>vendor</code>.</td></tr>
+<tr><td>2026-10-08</td><td>—</td><td>Search (<code>find</code>), installing for other agents (<code>install --agent</code>), <code>codeowners</code>, the slowest-tests report, and <code>check --base</code>.</td></tr>
+<tr><td>2026-10-08</td><td>—</td><td>Falsify: <code>suggest</code> and <code>run</code>, serial first — then parallel in git worktrees, built before any pilot at the owner's call.</td></tr>
+<tr><td>2026-10-08</td><td>—</td><td>The first skills: <code>init</code>, <code>adopt</code>, the four planning levels, <code>slice</code>, <code>slice-open</code>, <code>slice-close</code>, <code>status</code>, <code>tone</code>, <code>update</code>, <code>contribute</code>.</td></tr>
+<tr><td>2026-10-08</td><td>—</td><td>The rest of the skills: <code>bug</code>, <code>task</code>, <code>test-scenarios</code>, <code>record</code>, <code>security-audit</code>, <code>prelaunch</code>, <code>process-change</code>, with their procedures. Audit reports live in <code>spry/knowledge/audits/</code>.</td></tr>
+<tr><td>2026-10-08</td><td>—</td><td>How updates and contributions work: one <code>CH-n</code> changelog entry per change a project may want; a project's config remembers the last entry it considered (<code>spry_baseline</code>), and its own process changes are logged so an update keeps them. The tool is never changed locally — it is replaced whole.</td></tr>
+<tr><td>2026-10-08</td><td>—</td><td><code>review</code> and <code>merge</code>, with <code>merge-check</code> and <code>merge-message</code>. Merge rules that a writ project kept in its always-loaded file now load only when merging.</td></tr>
+<tr><td>2026-10-08</td><td>CH-2 · 0.2.0</td><td><code>test-all</code>, <code>explore</code> and <code>compact</code>, with <code>draw</code> for seeded, replayable choices.</td></tr>
+<tr><td>2026-10-08</td><td>CH-3 · 0.3.0</td><td>A review before the first pilot: setup writes the config first and can resume; adopt handles existing skills and decisions in one ask; the writ adoption procedure; falsify, <code>check --base</code> and parsing fixes.</td></tr>
+<tr><td>2026-10-08</td><td>CH-4 · 0.4.0</td><td>Fewer ways to pass by mistake, fewer slow runs: a citation proves only in a test's name; <code>merge-check</code> requires every control the diff adds and the owner's approval for criteria changed with code; the PR body opens with a page for the reviewer; the gate and <code>changed</code>; the merge waits for CI instead of re-running the suite.</td></tr>
+<tr><td>2026-10-09</td><td>CH-5 · 0.4.1</td><td>Setup reads the main branch's name from the repository instead of assuming <code>main</code>.</td></tr>
+<tr><td>2026-10-09</td><td>CH-6 · 0.5.0</td><td>The coverage page and <code>spry coverage</code>.</td></tr>
+<tr><td>2026-10-09</td><td>CH-7 · 0.6.0</td><td>Adopt keeps writ's slice summaries as history; <code>check</code> skips them and <code>find</code> lists them last.</td></tr>
+<tr><td>2026-10-09</td><td>CH-8 · 0.7.0</td><td>Adopt splits writ's requirement details into stories, criteria and QA scenarios, planned by writ's agent, and keeps the originals.</td></tr>
+<tr><td>2026-10-09</td><td>CH-9 · 0.7.1</td><td>After a merge, the full suite runs only when the main branch gained code the PR's checks never saw.</td></tr>
+<tr><td>2026-10-09</td><td>CH-10 · 0.8.0</td><td>The backlog page and <code>spry backlog</code>; <code>view</code>, <code>hooks</code>, <code>index --restore</code>, and <code>check --base</code> refusing generated blocks a branch changed.</td></tr>
+<tr><td>2026-10-09</td><td>CH-11 · 0.8.1</td><td>Backlog rows say what each item is part of, from the top level down.</td></tr>
+<tr><td>2026-10-09</td><td>CH-12 · 0.9.0</td><td><code>review</code> covers any PR and a solo plan item, by fresh eyes, one comment per line with suggested changes; <code>review-check</code>. From another project's requirement review.</td></tr>
+<tr><td>2026-10-09</td><td>CH-13 · 0.10.0</td><td>Backlog rows say what they unblock, and where a blocker stands and with whom; <code>slice</code> records which slices need each other; <code>check</code> refuses a dropped blocker and a circle.</td></tr>
+<tr><td>2026-10-09</td><td>CH-14 · 0.11.0</td><td>From the first pilot: the gate retries a timeout once; falsify runs the tests naming the source file first and names wide controls; falsify rows keep a key, so renaming one never forces a re-run; <code>ASK</code> comes last in a reply.</td></tr>
+<tr><td>2026-10-09</td><td>CH-15 · 0.12.0</td><td>From the first pilot: a merge when CI never ran — the gate on the PR's head stands in, the person accepts it, and the commit says so; a review's first ask can be <em>post, fix, then merge</em>.</td></tr>
+<tr><td>2026-10-09</td><td>CH-16 · 0.13.0</td><td>From the first pilot: <code>/spry:update</code> updates the installed plugin before reading the changelog; falsify offers value lines when no guard was added; a branch adding no source line needs no falsify.</td></tr>
+<tr><td>2026-10-09</td><td>CH-17 · 0.13.1</td><td><code>status</code> fits a big plan in 100 lines, takes an ID for one branch, <code>--all</code> for everything.</td></tr>
+<tr><td>2026-10-09</td><td>CH-18 · 0.14.0</td><td>A GitHub issue per slice, opt-in (<code>slices.issue</code>), and <code>slices.pick: ask</code>. From two pilots that kept writ's issues.</td></tr>
+<tr><td>2026-10-09</td><td>CH-19 · 0.14.1</td><td>Small pilot fixes: <code>link</code> sets a slice's branch, PR and issue; a folder's index line shows its count; clearer messages for criteria under a bug or task; <code>AGENTS.md</code> names where the config lives.</td></tr>
+<tr><td>2026-10-10</td><td>CH-20 · 0.15.0</td><td>IDs and slice claims taken on the main branch (<code>mint: main</code>): <code>new</code>, <code>claim</code>, <code>release</code>; <code>check --base</code> names an ID taken twice. From the first pilot.</td></tr>
+<tr><td>2026-10-14</td><td>CH-21 · 0.16.0</td><td>Adopt moves writ's documents into spry, keeping history only for records of what happened; a fresh agent compares each original with what it became. For a second pilot.</td></tr>
+<tr><td>2026-10-14</td><td>CH-22 · 0.16.1</td><td>Falsify of a bug's slice expects the bug: a <code>B-n</code> in a test's name selects it. From issue #1.</td></tr>
+<tr><td>2026-10-14</td><td>CH-23 · 0.16.2</td><td>Falsify works on Windows. From a pilot's Windows users.</td></tr>
+<tr><td>2026-10-14</td><td>CH-24 · 0.17.0</td><td>A writ detail file with several jobs becomes a feature; its rules and outcomes become criteria, unsettled rows become bugs or questions, and stories from an unreviewed file stay draft.</td></tr>
+<tr><td>2026-10-14</td><td>CH-25 · 0.18.0</td><td>The done page and <code>spry done</code>, dated by a slice's <code>closed:</code>; a <em>Type</em> column and numbered rows on every backlog table.</td></tr>
+<tr><td>2026-10-14</td><td>CH-26 · 0.19.0</td><td><code>check --base</code> warns when a criterion changes under its QA scenarios or check-log rows, not only under a test. From issue #2.</td></tr>
+<tr><td>2026-10-14</td><td>CH-27 · 0.20.0</td><td>QA scenarios a tester can run cold: <em>Type</em>, <em>Where</em> and <em>Ready</em>; the list agreed before steps; <em>Before you start</em> says who provides each thing; steps say what to achieve, not what to press.</td></tr>
+<tr><td>2026-10-15</td><td>CH-28 · 0.21.0</td><td>The gate runs <code>check</code> alone when a branch changed only documents. From issue #3.</td></tr>
+<tr><td>2026-10-15</td><td>CH-29–31 · 0.22.0</td><td><code>mint: main</code> checks out only <code>spry/</code> in its temporary worktree (CH-29); <code>falsify run --record</code> keeps rows a run did not touch (CH-30); close falsifies before the gate, so tests added for survivors need one gate, not two (CH-31). From the first pilot.</td></tr>
+<tr><td>2026-10-15</td><td>CH-32–33 · 0.23.0</td><td>Close reviews before it proves — review and fixes on the draft PR, then falsify and the gate once; <code>gate --fast</code> while building (CH-32). <code>/spry:merge</code> writes the progress tables when CI left them stale (CH-33). From issues #4 and #5.</td></tr>
+</tbody></table>
+
+</article>
+</main>
+</body>
+</html>

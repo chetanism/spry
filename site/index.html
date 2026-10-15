@@ -1,0 +1,174 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spry — agent-first development a team can follow</title>
+<meta name="description" content="spry is a Claude Code plugin that runs a software project the way an agile team already thinks: plans in plain words, work in reviewable slices, and progress proven by tests and QA.">
+<link rel="icon" href="assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="assets/style.css">
+<script src="assets/theme.js"></script>
+<script src="assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<section class="hero">
+  <p class="def"><strong>spry</strong> /spraɪ/ <em>adj.</em> — active and lively, even with age. As your project should be.</p>
+  <h1>Agent-first development a human team can follow</h1>
+  <p class="lead">Your coding agent can write a feature in minutes. spry gives that speed a process your
+  team already understands — plans in plain words, work in small reviewable slices, and progress you
+  can trust because it is proven, never typed.</p>
+  <div class="actions">
+    <a class="btn primary" href="start/quick-start.html">Quick start →</a>
+    <a class="btn" href="start/why.html">Why spry</a>
+    <a class="btn" href="start/example.html">See a worked example</a>
+  </div>
+</section>
+
+<h2>What spry is</h2>
+
+<p>spry is a <strong>plugin for Claude Code</strong> — usable from Cursor, Gemini, Codex and other
+agents too — that runs a software project the way an agile team already thinks about it. It is three
+things working together:</p>
+
+<ul>
+  <li><strong>Skills</strong> — short commands like <code>/spry:story</code> or <code>/spry:slice-close</code>
+  that you type into your agent. Each one walks through one step of the work.</li>
+  <li><strong>Process files</strong> — the written rules every agent follows: how to interview you, how to
+  split work, how to review it, how to reply. They are copied into your project, so every agent and
+  every teammate reads the same ones.</li>
+  <li><strong>A small tool</strong> — one Python file, no dependencies, that checks the rules and works out
+  progress. It runs in CI (the automatic checks GitHub runs on every change) too, so nothing depends on an agent remembering to do the right thing.</li>
+</ul>
+
+<p>Everything spry writes is a Markdown file in your repository. There is no server, no database, no
+account to sign up for. Anyone on the team — including people who never open a terminal — can read
+the plan by clicking through folders on GitHub.</p>
+
+<h2>The idea in three lines</h2>
+
+<div class="cards">
+  <div class="card">
+    <span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M4 12h10M4 18h7"/></svg></span>
+    <p class="card-title">Plan in plain words</p>
+    <p>Milestone → epic → feature → story, one level at a time. Each step is a short interview, and
+    each page is written for the person who will read it.</p>
+  </div>
+  <div class="card">
+    <span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><rect x="3" y="10" width="18" height="4" rx="1"/><rect x="3" y="16" width="18" height="4" rx="1"/></svg></span>
+    <p class="card-title">Build in slices</p>
+    <p>A written work order before any code, a pull request (the proposed change, shown on GitHub for
+    review) a person can review in one sitting,
+    and tests that are <em>proven</em> to notice when the safeguards break.</p>
+  </div>
+  <div class="card">
+    <span class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg></span>
+    <p class="card-title">Progress is derived</p>
+    <p>A story is done when its slices are merged and every acceptance criterion is proven by a
+    test or a QA check. Nobody types "done".</p>
+  </div>
+</div>
+
+<h2>How the work is shaped</h2>
+
+<p>spry uses the levels most teams already plan in. Each one has a single parent, and each one is
+written by the person who owns that level of decision:</p>
+
+<div class="flow" role="list" aria-label="The plan, from biggest to smallest">
+  <span class="step" role="listitem"><b>Milestone</b><small>an outcome</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>Epic</b><small>a body of work</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>Feature</b><small>how it works, its rules</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>Story</b><small>acceptance criteria</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step hi" role="listitem"><b>Slice</b><small>one pull request</small></span>
+</div>
+
+<p>Milestones, epics, features and stories are written by product, in plain language, through an
+interview the agent runs. A <strong>slice</strong> is where the technical work starts: one small
+change, one pull request, covering one or more of a story's acceptance criteria. Bugs and technical
+tasks hang off the same tree. <a href="design/plan-tree.html">More on the plan tree →</a></p>
+
+<h2>A slice, from start to merge</h2>
+
+<p>Here is the loop you will run most often. The agent runs the grey steps, pausing only to show you the proposed
+slices and the review's findings; the amber ones are where a person decides.</p>
+
+<div class="flow" role="list" aria-label="The slice loop">
+  <span class="step person" role="listitem"><b>Criteria agreed</b><small>story goes ready</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>/spry:slice</b><small>split into slices</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>/spry:slice-open</b><small>work order, branch, draft pull request, build — then goes on to close</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>/spry:slice-close</b><small>review, break safeguards on purpose, run checks</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step person" role="listitem"><b>/spry:merge</b><small>your yes</small></span>
+</div>
+<div class="legend"><span>the agent runs it</span><span class="person">a person decides</span></div>
+
+<p>Between the two decisions the agent works through everything — writing the plan for the change,
+checking it against open work, building it, getting a fresh agent to review it, proving its tests
+catch real breakage, and running the checks. The checks stand in for a person watching each step.
+<a href="design/decisions.html">Where a person decides →</a></p>
+
+<h2>Why people use it</h2>
+
+<div class="compare">
+  <div>
+    <h4>Agents without a process</h4>
+    <ul>
+      <li>Huge pull requests nobody can review properly</li>
+      <li>"Done" means the agent said so</li>
+      <li>Tests that pass but would not notice the bug</li>
+      <li>Context lives in a chat that is gone tomorrow</li>
+      <li>Product can't see what is happening without asking</li>
+    </ul>
+  </div>
+  <div class="after">
+    <h4>With spry</h4>
+    <ul>
+      <li>Slices a reviewer reads in one sitting</li>
+      <li>"Done" means merged <em>and</em> every criterion proven</li>
+      <li>Safeguards are broken on purpose to prove tests catch them</li>
+      <li>Everything is in files — any agent, any session, picks up where the last left off</li>
+      <li>The plan, backlog and progress are pages anyone can open</li>
+    </ul>
+  </div>
+</div>
+
+<p>If any of the left column sounds familiar, <a href="start/why.html">Why spry</a> goes through each
+problem and what spry does about it.</p>
+
+<div class="callout note">
+  <span class="callout-title">Early days</span>
+  <p>spry is young. The tool is tested, and the process is being piloted on real projects — most
+  recent changes came straight from them — but none has run a full milestone through it yet. Expect
+  it to keep changing; <code>/spry:update</code> brings
+  each change into your project as an offer, never a forced rewrite.</p>
+</div>
+
+<h2>Where to next</h2>
+
+<div class="cards">
+  <a class="card" href="start/fit.html">
+    <p class="card-title">Is spry for you?</p>
+    <p>Solo or team, new code or old — who it fits, and who it doesn't.</p>
+  </a>
+  <a class="card" href="start/quick-start.html">
+    <p class="card-title">Quick start</p>
+    <p>Install, set up, and take your first story to a merged slice.</p>
+  </a>
+  <a class="card" href="start/example.html">
+    <p class="card-title">A worked example</p>
+    <p>A small library-lending product, from roadmap to slice — what the files look like.</p>
+  </a>
+  <a class="card" href="design/principles.html">
+    <p class="card-title">The design</p>
+    <p>Every rule and why it exists, written so you can decide without reading the code.</p>
+  </a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

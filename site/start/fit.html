@@ -1,0 +1,126 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Is spry for you? · spry</title>
+<meta name="description" content="Who spry fits and who it doesn't: solo or team, new or existing code, any stack, other agents — and what it asks of you in return.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Is spry for you?</h1>
+<p class="lead">spry suits people who want an agent to do most of the building but still want to
+know — without taking anyone's word for it — what was built, why, and whether it works. Here is who
+it fits, who it doesn't, and what it asks of you.</p>
+
+<h2>It fits if…</h2>
+
+<ul>
+  <li><strong>You already think in milestones, features and stories</strong>, or would like to. spry
+  uses the levels agile teams already plan in, so nobody learns a new vocabulary for the plan.</li>
+  <li><strong>You want to review less code, better.</strong> Small slices, each checked against a written
+  plan, are easier to trust than one big pull request.</li>
+  <li><strong>People who don't code need to follow along.</strong> Product owners, QA and stakeholders read
+  the plan as pages on GitHub, written for them.</li>
+  <li><strong>You have been burned by "it's done"</strong> — by an agent, or a status board — and want
+  done to mean proven.</li>
+  <li><strong>You switch agents, sessions or people mid-work.</strong> Everything is in files, so any of
+  them picks up where the last one stopped.</li>
+</ul>
+
+<h2>Solo or team — the same process</h2>
+
+<p>A team is a section in the configuration, not a different setup. With nobody listed, you are solo:
+nothing is routed for review and the plan can be committed straight to the main branch. Add people
+with their roles — product, developer, QA — and spry routes plan changes to product, code to
+developers, and writes a <code>CODEOWNERS</code> file for GitHub to enforce it.</p>
+
+<p>Solo does not mean unreviewed. Every review is done by a <strong>fresh agent</strong> that did not
+write the work — the second pair of eyes there is no teammate for.
+<a href="../guides/reviews.html">Reviews with fresh eyes →</a></p>
+
+<h2>New code or old</h2>
+
+<div class="cards">
+  <a class="card" href="../guides/new-project.html">
+    <p class="card-title">A new project</p>
+    <p><code>/spry:init</code> interviews you about the product, team, stack and rules, then writes the plan, knowledge files and CI.</p>
+  </a>
+  <a class="card" href="../guides/adopt.html">
+    <p class="card-title">An existing codebase</p>
+    <p><code>/spry:adopt</code> surveys the code first and offers what it found for you to confirm. It plans from the next work — what exists is recorded, not planned backwards.</p>
+  </a>
+</div>
+
+<p>Adopting blocks nobody: the checks only read spry's own folder and test names, so no existing file
+can fail them. Existing tests are left untouched; only new tests cite criteria.</p>
+
+<h2>Your stack, your agent</h2>
+
+<ul>
+  <li><strong>Any language.</strong> The tool is one Python file with no dependencies; it calls your own
+  test runner, linter and type checker. There are ready profiles for TypeScript/Node and Python, and a
+  generic one that asks the questions any other stack needs answered.</li>
+  <li><strong>Any agent.</strong> spry is a Claude Code plugin, and it also installs for Cursor, Gemini
+  and any agent that reads <code>AGENTS.md</code> — Codex among them.
+  <a href="../guides/other-agents.html">Use another agent →</a></li>
+  <li><strong>GitHub.</strong> The workflow assumes pull requests and GitHub Actions for CI. The plan is
+  browsable because GitHub shows each folder's <code>README.md</code>.</li>
+</ul>
+
+<h2>Small projects</h2>
+
+<p>The levels are configurable. A small project can drop epics and put features straight under
+milestones. You also don't plan everything up front: define one milestone, then one epic, then one
+feature, only as you need them.</p>
+
+<h2>What it asks of you</h2>
+
+<p>spry is not free. Be honest with yourself about these before you start:</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>It costs</th><th>What you get back</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Interviews.</strong> Each milestone, epic, feature and story is a short conversation — a few questions at a time, with drafted answers to confirm.</td><td>Plans written down once, in plain words, that every later session reads instead of guessing.</td></tr>
+    <tr><td><strong>Agreeing criteria.</strong> A story goes ready only on a person's yes to its acceptance criteria.</td><td>A definition of done you chose, which tests and QA are named after.</td></tr>
+    <tr><td><strong>Small slices.</strong> You merge more, smaller pull requests.</td><td>Reviews you can actually do, and a backlog that shows real progress.</td></tr>
+    <tr><td><strong>Discipline in the files.</strong> Templates, one term per concept, a conflict check before anything goes ready. <code>spry check</code> enforces it.</td><td>A plan that stays consistent as it grows, and agents that don't drift.</td></tr>
+    <tr><td><strong>Time at close.</strong> Review, falsify and the gate run before each merge.</td><td>Evidence that each slice's tests catch its safeguards breaking.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>It may not fit if…</h2>
+
+<ul>
+  <li><strong>You want the agent to just write code, with no plan.</strong> spry's value comes from the
+  plan and the proof; without them it is overhead.</li>
+  <li><strong>The work is a one-off script or a spike.</strong> Throwaway work does not need acceptance
+  criteria.</li>
+  <li><strong>You are not on git and GitHub.</strong> Pull requests, CI and browsable folders are part of
+  how it works.</li>
+  <li><strong>You need a polished, battle-tested product today.</strong> spry is young: it is being piloted
+  on real projects, but none has run a full milestone through it yet, and it keeps changing as they
+  teach it things.</li>
+</ul>
+
+<div class="callout tip">
+  <span class="callout-title">Not sure?</span>
+  <p>Read the <a href="example.html">worked example</a> — ten minutes of clicking through a small
+  invented product shows what living with spry looks like, before you install anything.</p>
+</div>
+
+</article>
+</main>
+</body>
+</html>

@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Use another agent · spry</title>
+<meta name="description" content="Running spry from Cursor, Gemini CLI, Codex or any agent that reads AGENTS.md — and switching agents mid-slice without losing anything.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Use another agent</h1>
+<p class="lead">spry is built for Claude Code, but nothing about it depends on one agent. The rules live in
+files, the state lives in files, and the checks run in a plain Python tool. Teammates on Cursor, Gemini
+CLI, Codex or anything that reads <code>AGENTS.md</code> run the same process.</p>
+
+<h2>Why it works anywhere</h2>
+
+<ul>
+  <li><strong>Skills are thin.</strong> Each one is a short entry point that names a process file. The real
+  logic is in the process files, the templates and the tool.</li>
+  <li><strong>The process and the tool are copied into your project</strong> (<code>spry/process/</code>,
+  <code>spry/tool/spry.py</code>), so every agent reads the same rules and CI runs without any agent.</li>
+  <li><strong>State is never in a session.</strong> The plan, the work order, the claim, the falsify results —
+  all in files and git. Switch agent mid-slice and nothing is lost.</li>
+</ul>
+
+<h2>Install the skills for your agent</h2>
+
+<p>Clone spry once, then run its tool from your project folder with your agent's name:</p>
+
+<pre data-label="Terminal"><code><span class="p">$ </span>git clone https://github.com/chetanism/spry ~/spry
+<span class="p">$ </span>cd ~/projects/your-project
+<span class="p">$ </span>python3 ~/spry/plugins/spry/tool/spry.py install --agent generic</code></pre>
+
+<div class="table-wrap"><table>
+  <thead><tr><th><code>--agent</code></th><th>Writes</th><th>You type</th></tr></thead>
+  <tbody>
+    <tr><td><code>generic</code></td><td>Each skill to <code>spry/skills/&lt;name&gt;.md</code>, and a list of them in a generated block of <code>AGENTS.md</code></td><td><code>/spry:story</code> — the agent reads <code>AGENTS.md</code>, finds the skill and follows it</td></tr>
+    <tr><td><code>claude</code></td><td>Project skills in <code>.claude/skills/spry-&lt;name&gt;/</code> — for Claude Code users not using the plugin</td><td><code>/spry-story</code></td></tr>
+    <tr><td><code>cursor</code></td><td>Commands in <code>.cursor/commands/spry-&lt;name&gt;.md</code></td><td><code>/spry-story</code></td></tr>
+    <tr><td><code>gemini</code></td><td>Commands in <code>.gemini/commands/spry/&lt;name&gt;.toml</code></td><td><code>/spry:story</code></td></tr>
+  </tbody>
+</table></div>
+
+<p><code>generic</code> is the one to reach for when your agent isn't listed: most agents, Codex among them,
+read <code>AGENTS.md</code> at the start of every task.</p>
+
+<div class="callout note">
+  <span class="callout-title">Skills that need spry itself</span>
+  <p><code>init</code>, <code>adopt</code>, <code>update</code> and <code>contribute</code> work with spry's own copy, not
+  your project's. The installed versions point at the spry clone whose tool you ran (<code>~/spry/plugins/spry</code>
+  above) — so keep that clone where it is, and <code>git pull</code> it to get newer versions.</p>
+</div>
+
+<h2>Mixed teams</h2>
+
+<p>One person on Claude Code with the plugin, another on Cursor, a third on Gemini — all fine. Each person
+runs <code>install</code> for their own agent, or the project commits the <code>generic</code> listing once and
+everyone's agent reads <code>AGENTS.md</code> (init, adopt, update and contribute in that listing point at
+the installer's own clone; anyone running them should run <code>install</code> themselves). They all read <code>spry/process/</code> and run
+<code>spry/tool/spry.py</code>, so the work order one writes is the work order the next one builds from.</p>
+
+<h2>What differs between agents</h2>
+
+<ul>
+  <li><strong>Fresh-eyes reviews need a new agent.</strong> In Claude Code that's a sub-agent started for the
+  review. An agent that can't start one asks you to run <code>/spry:review</code> in a new session — see
+  <a href="reviews.html">Reviews with fresh eyes</a>.</li>
+  <li><strong>Slash-command names</strong> differ slightly, as in the table above.</li>
+  <li><strong>Nothing else.</strong> The tool, the checks, CI and the files are the same.</li>
+</ul>
+
+<h2>Next</h2>
+
+<div class="cards">
+  <a class="card" href="new-project.html">
+    <p class="card-title">Set up a new project</p>
+    <p>The setup interview, from any agent.</p>
+  </a>
+  <a class="card" href="maintaining.html">
+    <p class="card-title">Keep spry yours</p>
+    <p>Taking updates and changing the process.</p>
+  </a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

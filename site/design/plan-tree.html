@@ -1,0 +1,215 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The plan is a folder tree · spry</title>
+<meta name="description" content="How spry lays out a project: the plan as nested folders anyone can click through on GitHub, the seven kinds of item, their IDs, states and front-matter.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+<h1>The plan is a folder tree</h1>
+<p class="lead">In spry the plan is not a database or a board — it is folders in your repository. A
+milestone is a folder; its epics are folders inside it; and so on down to the story. Open the
+repository on GitHub and you can read the whole plan by clicking.</p>
+
+<h2>Why folders</h2>
+<ul>
+  <li><strong>Nothing to install to read it.</strong> GitHub shows a folder's <code>README.md</code> when you
+  open the folder. A product owner navigates milestone → epic → feature → story the way they browse
+  any website.</li>
+  <li><strong>The path is the parent.</strong> An item's parent is the folder it sits in — there is no
+  <code>parent:</code> field to get wrong. Moving a story to another feature is <code>git mv</code>.</li>
+  <li><strong>Plan and code change together.</strong> The plan lives in the same repository as the code
+  (never a nested repository), so a slice's work order and its code land in one pull request.</li>
+  <li><strong>Fewer merge conflicts.</strong> One file per item means two people rarely edit the same
+  file.</li>
+</ul>
+
+<h2>A project's layout</h2>
+<p>This is what <code>/spry:init</code> or <code>/spry:adopt</code> sets up. You do not need to remember
+it — the tool creates every file in the right place — but it helps to know what is where.</p>
+
+<pre data-label="Project layout"><code>AGENTS.md                  <span class="c"># always read by agents; short, with a hard line budget</span>
+CLAUDE.md                  <span class="c"># one line: @AGENTS.md</span>
+spry/
+  spry.config.json         <span class="c"># IDs, levels, team, test commands, budgets</span>
+  README.md                <span class="c"># the entry point for people: what's here, where to start</span>
+  BACKLOG.md               <span class="c"># generated: what to pick up next</span>
+  COVERAGE.md              <span class="c"># generated: done vs defined, criteria proven</span>
+  DONE.md                  <span class="c"># generated: what is finished, newest first</span>
+  plan/
+    README.md              <span class="c"># the roadmap: the milestones</span>
+    M-1-&lt;slug&gt;/
+      README.md            <span class="c"># the milestone</span>
+      E-1-&lt;slug&gt;/
+        README.md          <span class="c"># the epic</span>
+        F-1-&lt;slug&gt;/
+          README.md        <span class="c"># the feature: how it works, its rules</span>
+          S-1-&lt;slug&gt;/
+            README.md      <span class="c"># the story and its acceptance criteria</span>
+            checks.md      <span class="c"># QA's test scenarios and check log</span>
+            SL-1-&lt;slug&gt;.md <span class="c"># a slice: work order + close summary</span>
+          bugs/B-1-&lt;slug&gt;/README.md
+      tasks/T-1-&lt;slug&gt;/README.md   <span class="c"># technical work no story asks for</span>
+  knowledge/
+    glossary.md            <span class="c"># one term per concept, and the words not to use</span>
+    conventions/           <span class="c"># INDEX.md + one file per area of code</span>
+    decisions/             <span class="c"># INDEX.md + D-1-&lt;slug&gt;.md …</span>
+    external/&lt;service&gt;/    <span class="c"># how a service you depend on really behaves</span>
+    security.md  performance.md  constraints.md
+  process/                 <span class="c"># spry's rules and templates, copied in</span>
+  tool/spry.py             <span class="c"># spry's tool, copied in</span>
+.spry/                     <span class="c"># not committed: search index, personal tone, gate stamp, caches, fresh pages (view/)</span></code></pre>
+
+<ul>
+  <li><strong>Anything that can have children is a folder</strong> — milestone, epic, feature, story,
+  task, bug. A slice has no children, so it is a single file.</li>
+  <li><strong>One directory, <code>spry/</code>, holds it all</strong>, and setup excludes it from your deploy
+  build (<code>.dockerignore</code> or the stack's build configuration), so plans never ship to production.</li>
+  <li>A project adopted from writ also has <code>spry/history/</code>: the mapping from old writ IDs to new
+  ones, and writ's slice summaries and requirement details kept as they were written.
+  <a href="writ.html">Coming from writ →</a></li>
+</ul>
+
+<h2>The kinds of item</h2>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Item</th><th>ID</th><th>Parent</th><th>Written by</th><th>Audience</th><th>Counts toward its parent?</th></tr></thead>
+<tbody>
+<tr><td>Milestone</td><td><code>M-1</code></td><td>—</td><td>product</td><td>2</td><td>—</td></tr>
+<tr><td>Epic</td><td><code>E-1</code></td><td>milestone</td><td>product</td><td>2</td><td>yes</td></tr>
+<tr><td>Feature</td><td><code>F-1</code></td><td>epic</td><td>product</td><td>3</td><td>yes</td></tr>
+<tr><td>Story</td><td><code>S-1</code></td><td>feature</td><td>product / QA</td><td>3</td><td>yes</td></tr>
+<tr><td>Slice</td><td><code>SL-1</code></td><td>story, task or bug</td><td>developer</td><td>8</td><td>yes (toward a story)</td></tr>
+<tr><td>Task</td><td><code>T-1</code></td><td>any level above story</td><td>developer</td><td>7</td><td>no</td></tr>
+<tr><td>Bug</td><td><code>B-1</code></td><td>feature or story</td><td>anyone</td><td>4</td><td>no</td></tr>
+</tbody></table></div>
+
+<p><em>Audience</em> is how technical the document is, from 1 to 10 — see
+<a href="audience.html">Written for its reader</a>. Tasks and bugs hang off the tree so they are
+found next to what they serve, but they do not count toward the parent's progress: a feature is not
+"less done" because someone found a bug in it, and setting up CI does not make a milestone more done.</p>
+
+<ul>
+  <li><strong>Prefixes and levels are chosen in the setup interview.</strong> The ones above are the
+  defaults. A small project can drop epics and put features straight under milestones.</li>
+  <li><strong>Acceptance criteria live only in stories</strong>, numbered <code>AC-1</code>, <code>AC-2</code>, …
+  and cited as <code>S-1/AC-1</code>. A feature's rules are numbered <code>R-1</code>… and cited as
+  <code>F-1/R-2</code>; stories cite rules instead of restating them.</li>
+</ul>
+
+<h2>IDs are flat counters</h2>
+<p>Every type has its own counter: <code>S-1</code>, <code>S-2</code>, <code>S-3</code>, wherever those stories sit.
+IDs are never hierarchical like <code>M2.E3.F1</code>.</p>
+<p><strong>Why:</strong> a hierarchical ID is wrong the moment work moves. Move a feature to another epic
+and every ID under it changes, along with every test name and link that cited them.</p>
+
+<h3>Two sessions, one number</h3>
+<p>With several people or agent sessions working at once, two of them can each create "the next
+story" and both pick <code>S-7</code>. The <code>mint</code> setting decides how spry handles that:</p>
+<div class="table-wrap"><table>
+<thead><tr><th><code>mint</code></th><th>How an ID is taken</th><th>Best for</th></tr></thead>
+<tbody>
+<tr><td><code>local</code> <span class="badge">default</span></td><td>The next free number in your working tree. Two branches can take the same number; <code>check --base</code> names the clash before merge, and the later branch renames.</td><td>Solo work, or a main branch that accepts no direct commits</td></tr>
+<tr><td><code>main</code></td><td>The main branch on the remote is the counter and the push is the lock: <code>new</code> takes the number there, pushes it, and merges that commit into your branch. Two sessions can never get the same number. It works in a temporary worktree holding only <code>spry/</code>, with git hooks off and your git config untouched.</td><td>Several sessions or people creating items in parallel</td></tr>
+</tbody></table></div>
+<p><strong>Why merge it in, rather than write the same file on the branch?</strong> Because the branch
+then fills that file in, and git would see two different additions of one path — a conflict at
+every merge — unless the file is already in the merge base. Merging the main branch in puts it
+there. The cost is that the branch's base moves mid-slice, which is the smaller problem.
+<strong>Why is <code>local</code> the default?</strong> So nothing pushes to your main branch until your
+project says it may. <a href="../guides/team.html">Work as a team →</a></p>
+
+<h2>Front-matter</h2>
+<p>Each item file starts with a small block of fields, its <em>front-matter</em>. It uses a restricted
+format — only <code>key: value</code> and <code>key: [a, b]</code> — so the tool can read it with nothing but
+Python's standard library.</p>
+
+<pre data-label="A slice's front-matter"><code>---
+id: SL-2
+title: Refuse a loan over the limit
+state: open
+owner: Ravi
+audience: 8
+covers: [AC-1, AC-2]
+branch: sl-2-refuse-over-limit
+pr: 14
+blocked_by: []
+related: [SL-1]
+---</code></pre>
+
+<dl class="terms">
+  <dt>Every item</dt>
+  <dd><code>id</code>, <code>title</code>, <code>state</code>, <code>owner</code>, <code>audience</code>, <code>blocked_by</code>, <code>related</code>. No <code>parent</code> — the folder says it.</dd>
+  <dt><code>state</code> for plan items</dt>
+  <dd><code>draft</code> → <code>ready</code>, or <code>dropped</code>. <strong>"Done" is never written</strong> — it is worked out (<a href="status.html">Status is derived</a>).</dd>
+  <dt><code>state</code> for slices</dt>
+  <dd><code>planned</code> → <code>open</code> → <code>closed</code>, or <code>dropped</code>. A closed slice also carries <code>closed: &lt;date&gt;</code>.</dd>
+  <dt>Slices add</dt>
+  <dd><code>covers</code> (the story's criteria it builds), <code>branch</code>, <code>pr</code> — and <code>issue</code>, when the project turns on a GitHub issue per slice.</dd>
+  <dt><code>blocked_by</code></dt>
+  <dd>What must finish first. An item waits on what it, and everything above it, names here. Filled by the conflict check (a <code>Dependency</code> finding) and by <code>/spry:slice</code> when one slice needs another's code.</dd>
+  <dt><code>related</code></dt>
+  <dd>A pointer to something nearby. It never affects progress.</dd>
+</dl>
+
+<h3>Blockers must be able to finish</h3>
+<p><code>spry check</code> refuses two kinds of <code>blocked_by</code>:</p>
+<ul>
+  <li><strong>A dropped blocker</strong> — it will never finish, so the item would wait forever.</li>
+  <li><strong>A circle</strong> — A waits on B, B waits on A. This includes subtle ones: a slice that names
+  its own story waits on something that is only done when the slice is.</li>
+</ul>
+
+<h3>The issue option</h3>
+<p>With <code>slices.issue</code> on, opening a slice creates a GitHub issue from its work order — for
+people outside the repository who follow issues rather than files. The issue body is frozen and
+says so; the slice file keeps changing, and the difference is the record. The close summary is posted
+as a comment, and the merge commit's <code>Closes #n</code> closes it. <code>check</code> refuses an open slice
+without its issue.</p>
+
+<h2>A slice has two parts</h2>
+<div class="compare">
+  <div>
+    <h4>Work order — at open, before code</h4>
+    <ul>
+      <li>Summary anyone can read</li>
+      <li>Covers — which criteria</li>
+      <li>Plan — one line per file</li>
+      <li>Must not — rules this could break</li>
+      <li>Tests — named after criteria</li>
+      <li>Demo — copy-paste to see it</li>
+      <li>Conflict check</li>
+    </ul>
+  </div>
+  <div class="after">
+    <h4>Close summary — at close</h4>
+    <ul>
+      <li>What changed — only where the code differs from the plan, and why</li>
+      <li>Falsify — each safeguard, broken on purpose, and whether a test caught it</li>
+      <li>Follow-ups — bugs, tasks, decisions found</li>
+    </ul>
+  </div>
+</div>
+<p><strong>The file is the source; the pull request body is copied from it</strong> — the work order at
+open, both parts at close — and never edited by hand. That way the review, the record and the PR can
+never disagree. The work order is never rewritten to match the code afterwards; the close summary
+says what differed.</p>
+
+<h2>Nobody maintains a map</h2>
+<p>The tool builds the relationship map — the hierarchy, what blocks what, what is related — from the
+folders and front-matter. There is no diagram, spreadsheet or register to keep in step by hand.</p>
+
+</article>
+</main>
+</body>
+</html>

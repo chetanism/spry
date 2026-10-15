@@ -1,0 +1,142 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Record what you learn · spry</title>
+<meta name="description" content="Record a decision, a coding convention or how an external service really behaves with /spry:record, so the next person and the next agent session find it.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Record what you learn</h1>
+<p class="lead">An agent forgets everything when the session ends. A decision made in a chat, a
+convention explained once, a quirk of an outside service found the hard way — all gone by tomorrow,
+unless they're written where the next session will look. <code>/spry:record</code> puts each one in
+the right file, findable from an index.</p>
+
+<h2>What to record, and where</h2>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Kind</th><th>Record it when</th><th>Where it goes</th></tr></thead>
+<tbody>
+<tr><td><strong>Decision</strong></td><td>a choice was made between options, and someone will later ask why</td><td>its own file, <code>spry/knowledge/decisions/D-1-….md</code></td></tr>
+<tr><td><strong>Convention</strong></td><td>a rule about how code is written here that the code doesn't make obvious</td><td>the area's file in <code>spry/knowledge/conventions/</code>, or a new bullet in it</td></tr>
+<tr><td><strong>External behaviour</strong></td><td>a fact about how a service you depend on actually behaves</td><td><code>spry/knowledge/external/&lt;service&gt;/</code>, one file per behaviour</td></tr>
+<tr><td><strong>Knowledge rule</strong></td><td>a security, performance or constraint rule</td><td>a numbered rule in <code>security.md</code>, <code>performance.md</code> or <code>constraints.md</code></td></tr>
+</tbody>
+</table></div>
+
+<pre data-label="Your agent"><code><span class="p">&gt; </span>/spry:record decision store the due date on the loan</code></pre>
+
+<p>One thing per run. If the kind isn't obvious from what you say, the agent asks.</p>
+
+<h2>Search first</h2>
+
+<p>Before writing anything, the agent searches the existing knowledge. If an entry already covers the
+same thing, it extends that one rather than adding a second — two entries about one thing soon
+disagree.</p>
+
+<h2>Decisions</h2>
+
+<p>A decision records the options <em>not</em> taken and why. That's the part people need most and
+remember least. From the worked example:</p>
+
+<pre data-label="D-1 · Store the due date on the loan"><code>summary: the due date is saved when a book is lent, never worked out again later
+decided_by: [Ravi, Asha]
+affects: [F-1, S-1, S-2]
+
+## Context
+- F-1/R-2 sets a loan at 14 days; Asha expects the length to change (holiday periods).
+- If the due date is worked out from the loan date, changing the rule would move every
+  existing due date.
+
+## Decision
+- loans.due_on is set once, when the book is lent, and never recalculated.
+
+## Rejected
+- Compute lent_on + loan_days on read — changes past loans when the rule changes.
+- Store the loan length on each loan — same result with more arithmetic in every query.
+
+## Consequences
+- Changing the loan length affects only new loans.
+- Overdue means due_on &lt; today, nothing else (S-2).</code></pre>
+
+<ul>
+  <li><strong><code>affects</code> matters.</strong> When anyone plans or changes F-1, S-1 or S-2, the conflict
+  check reads this decision automatically.</li>
+  <li><strong>Decisions are never edited to say something new.</strong> To change one, write a new decision; the
+  old one's state becomes <code>superseded by D-&lt;n&gt;</code>.</li>
+  <li><strong><code>summary</code> is the line the index shows</strong> — so it should state the fact, not
+  "about due dates".</li>
+</ul>
+
+<h2>Conventions</h2>
+
+<p>One rule per bullet, each with its reason after a dash:</p>
+
+<pre data-label="spry/knowledge/conventions/domain.md (excerpt)"><code>- Return Result&lt;T, E&gt;; never throw for a rule the desk shows to a librarian — the desk must
+  show every refusal, and a thrown error loses its type.
+- Take today: LocalDate as a parameter; never read the clock inside domain code — tests and
+  B-1 need control over the date.
+…</code></pre>
+
+<p>The reason is what lets someone tell, later, whether the rule still applies.</p>
+
+<h2>External behaviour</h2>
+
+<p>What a service's documentation says and what it does are often different. Each file records what
+was seen, when, the evidence, how confident you are, and whether it was <code>observed</code> or
+<code>documented</code>. When the two disagree, observed wins — and the file says so.</p>
+
+<pre data-label="spry/knowledge/external/open-library/rate-limit.md (excerpt)"><code>title: Open Library — lookups are rate-limited without a User-Agent
+summary: about 100 lookups per 5 minutes, then HTTP 429
+source: observed
+confidence: medium
+…
+## Behaviour
+- GET https://openlibrary.org/isbn/&lt;isbn&gt;.json without a User-Agent header: HTTP 429 after about 100 requests in 5 minutes.
+- With a User-Agent naming the app and a contact email: no 429 seen in 1,000 requests.
+- The documentation asks for a User-Agent but states no limit.</code></pre>
+
+<h2>Should it go in AGENTS.md too?</h2>
+
+<p><code>AGENTS.md</code> is read by every agent on every task, so every line in it costs something. A
+line earns its place only if it's a pointer, a rule an agent breaks by default, or a rule no tool can
+check. The agent offers a <em>Must not</em> line only when an agent would break the rule by default
+<em>and</em> no tool can check it — for example,
+<em>"Never compute a due date from the loan date — read <code>loans.due_on</code> (D-1)."</em> If the file
+is at its line budget, it offers what to move out instead. More in
+<a href="../design/knowledge.html">Knowledge and size</a>.</p>
+
+<h2>When to reach for it</h2>
+
+<ul>
+  <li>At the end of a slice — <a href="closing.html">closing</a> lists follow-ups, and a decision found while
+  building is one of them.</li>
+  <li>After an argument that got settled.</li>
+  <li>The second time you explain the same thing to an agent.</li>
+  <li>When an outside service surprises you.</li>
+</ul>
+
+<p>The new entry's line in the index appears when CI regenerates the indexes on the main branch.</p>
+
+<h2>What's next</h2>
+
+<div class="cards">
+  <a class="card" href="../design/knowledge.html"><p class="card-title">Knowledge and size</p><p>Why everything is an index plus small files.</p></a>
+  <a class="card" href="maintaining.html"><p class="card-title">Keep spry yours</p><p>Compact a file that grew too long.</p></a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

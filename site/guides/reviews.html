@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reviews with fresh eyes · spry</title>
+<meta name="description" content="How /spry:review has a new agent review a slice, a plan item or any pull request, verify every finding, and post one inline comment per line with suggested changes.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Reviews with fresh eyes</h1>
+<p class="lead">The agent that wrote the code is the worst one to review it — it shares every assumption it
+made. <code>/spry:review</code> hands the work to a <strong>new</strong> agent that carries nothing from the
+session that wrote it. Solo, it is the second pair of eyes you have no teammate for. On a team, it reads
+before a teammate does.</p>
+
+<h2>What can be reviewed</h2>
+
+<pre data-label="In your agent"><code><span class="p">&gt; </span>/spry:review SL-2      <span class="c"># a slice's pull request</span>
+<span class="p">&gt; </span>/spry:review S-3      <span class="c"># a plan item, with or without a PR</span>
+<span class="p">&gt; </span>/spry:review 42        <span class="c"># any pull request</span>
+<span class="p">&gt; </span>/spry:review           <span class="c"># the current branch's PR</span></code></pre>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>Kind</th><th>Known by</th><th>The question it asks</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Slice</strong></td><td>a branch <code>sl-&lt;n&gt;-…</code>, or <code>SL-n</code></td><td>Is this what the work order (the plan written before any code) said, and nothing it said not to do?</td></tr>
+    <tr><td><strong>Plan</strong> (a milestone, epic, feature, story, bug or task)</td><td>every changed file is under <code>spry/</code>, and none is a slice</td><td>Does it elaborate its parent without extending it?</td></tr>
+    <tr><td><strong>Other</strong></td><td>anything else</td><td>Does the diff do what the title says, and nothing it doesn't mention?</td></tr>
+  </tbody>
+</table></div>
+
+<p>Several targets can be reviewed together; each gets its own new agent, run in parallel.</p>
+
+<h2>What "fresh" means</h2>
+
+<ul>
+  <li><strong>A new agent,</strong> never the session that wrote the work, and never a fork of it (a copy
+  that carries that session's memory).</li>
+  <li><strong>Its prompt holds only</strong> the target and its kind, the review rules, and the shape of the
+  report. Why the work was written as it was is left out on purpose — that reasoning is what's being tested.</li>
+  <li><strong>It reads and comments.</strong> It never checks a branch out, edits, pushes, approves (unless
+  told to) or merges. The one exception: on a solo plan item with no PR, it applies the fixes you accept. It reads files straight from the remote branch, so a session mid-slice is left
+  untouched.</li>
+  <li><strong>A second review after fixes</strong> gets another new agent, which writes its own findings
+  before reading the earlier ones, then says which still stand.</li>
+  <li><strong>An agent that can't start sub-agents</strong> asks you to run <code>/spry:review</code> in a new session.</li>
+</ul>
+
+<h2>What it checks</h2>
+
+<h3>A slice</h3>
+<ol>
+  <li>It reads <em>For the reviewer</em> first — a short section the tool writes at the top of the PR body: the criteria in words, any that
+  changed, what falsify couldn't show, what QA checks by hand. Then the work order, then the diff.</li>
+  <li><strong>Plan:</strong> every file the plan named changed as described; any other file is explained in
+  <em>What changed</em>.</li>
+  <li><strong>Must not:</strong> each rule the work order lists as one this change could break still holds.</li>
+  <li><strong>Tests:</strong> at least one per covered criterion, each citing it, each asserting what the
+  criterion's <em>Then</em> says — not something nearby.</li>
+  <li><strong><a href="../design/falsify.html">Falsify</a>:</strong> the tool broke each safeguard on purpose;
+  every row should read <code>caught</code> (a test noticed), or carry a reason the reviewer accepts. Reviewed during close there
+  are no rows yet, and it says so.</li>
+  <li><strong>Conventions</strong> for the areas the diff touches.</li>
+  <li><strong>Demo:</strong> run if it can run locally — and if not, it says it didn't.</li>
+</ol>
+
+<h3>A plan item</h3>
+<p>The rule everything serves: <strong>the parent is elaborated, never extended.</strong> It reads the item,
+its parents, its siblings, the glossary and the decisions that bind it, then looks for:</p>
+<ul>
+  <li><strong>Fidelity</strong> — anything the parent didn't ask for, or contradicts;</li>
+  <li><strong>The code, where it's already built</strong> — every sentence a tester will act on, checked against
+  what the product actually does;</li>
+  <li><strong>Where a tester will trip</strong> — a criterion that can't fail, two behaviours in one, a
+  precondition QA can't set up, a word that differs from the screen;</li>
+  <li><strong>Words</strong> missing from the glossary, or on its "don't say" list;</li>
+  <li><strong>Who decided</strong> — an open question the drafter answered, or a criterion changed without its owner;</li>
+  <li>an honest <strong>conflict check</strong>.</li>
+</ul>
+
+<h3>Any other PR</h3>
+<p>Claims match the diff; every changed behaviour has a test; conventions; risk around inputs,
+permissions, secrets and deleted or migrated data; and a behaviour people see, changed with no slice
+behind it — reported as a <em>Should</em>, naming the slice, bug or task it should have been.</p>
+
+<h2>Findings and the ask</h2>
+
+<p>Each finding has a line, a severity — <span class="badge amber">Blocker</span> <span class="badge">Should</span>
+<span class="badge">Nit</span> — what's wrong and why, and the replacement text wherever the fix is
+wording. <strong>Every finding is verified</strong> before you see it: the reviewer opens the line it rests on.
+An agent's claim is a lead, not evidence. (A review once reported that the browser blocks a blank email.
+The input had no <code>required</code>. One look would have caught it.)</p>
+
+<p>Then one question carries the whole review through:</p>
+
+<pre data-label="Ask 1"><code>1. What next?
+   a. Post, fix every Blocker and Should as found, then merge (recommended)
+   b. Post, and fix — stop before the merge
+   c. Post only
+   d. Neither</code></pre>
+
+<p><em>a</em> and <em>b</em> are offered only on your own slice or plan PR. <em>a</em> is recommended when every
+fix is the finding's own suggestion; <em>c</em> when a fix is a choice for the author. The fixes are made
+by your session — never by the reviewing agent, except on a solo plan item with no PR — and only what was
+accepted. A fix that turns out to need
+more (another file, a design choice) is not made; you're asked about it.</p>
+
+<h2>How comments are posted</h2>
+
+<ul>
+  <li><strong>One review, one inline comment per finding,</strong> anchored on exactly the lines its
+  suggestion replaces.</li>
+  <li><strong>Wording fixes carry a GitHub suggestion</strong>, so the author applies them in one click.</li>
+  <li><code>spry.py review-check</code> checks the review before it's posted: every anchor on a line the diff
+  shows, suggestions closed, none overlapping, none a no-op.</li>
+  <li><strong>On your own PR, only <code>COMMENT</code>.</strong> GitHub refuses approve or request-changes
+  there — and solo, every PR is your own.</li>
+  <li><strong>With no PR</strong> (a solo plan item committed straight to the main branch), the findings are
+  shown, and the reviewer applies the accepted ones as one commit.</li>
+</ul>
+
+<h3>How comments read</h3>
+<p>Comments go out to the author, in the tone of the document reviewed: a story PR in plain words, a slice
+PR naming paths. Say what's wrong, why, and recommend one way.</p>
+
+<div class="compare">
+  <div>
+    <h4>Instead of</h4>
+    <ul><li>"AC-2 is not in the feature."</li></ul>
+  </div>
+  <div class="after">
+    <h4>Write</h4>
+    <ul><li>"The feature never asks for this. The product does it, though: a member with an overdue book is
+    stopped at the desk. Recommendation: keep it, and add it to the feature first."</li></ul>
+  </div>
+</div>
+
+<h2>Next</h2>
+
+<div class="cards">
+  <a class="card" href="closing.html">
+    <p class="card-title">Close and merge a slice</p>
+    <p>Where the review sits in the close.</p>
+  </a>
+  <a class="card" href="team.html">
+    <p class="card-title">Work as a team</p>
+    <p>Routing reviews to the right people.</p>
+  </a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

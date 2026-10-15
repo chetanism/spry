@@ -1,0 +1,194 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Set up a new project · spry</title>
+<meta name="description" content="Run /spry:init on a new project: the interview it holds, the files it writes, and what to do once setup is finished.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Set up a new project</h1>
+<p class="lead"><code>/spry:init</code> turns a paragraph about what you want to build into a working
+spry project: a roadmap, the first milestones, the rules your product must follow, the words your
+team uses, and CI (the automatic checks GitHub runs on every push) that checks it all. It is one interview, run once, and it can stop and pick up
+again at any point.</p>
+
+<div class="callout tip">
+  <span class="callout-title">New code or existing code?</span>
+  <p>Use <code>/spry:init</code> when the project has little or no code yet. If there is already a
+  codebase, use <a href="adopt.html">/spry:adopt</a> instead — it reads the code first, so you confirm
+  answers rather than type them.</p>
+</div>
+
+<h2>Before you start</h2>
+
+<ul>
+  <li><strong>spry is installed</strong> — see <a href="../start/install.html">Installation</a>.</li>
+  <li><strong>You are in the project's repository</strong>, connected to GitHub (a git
+  remote). Setup reads the repository's default branch — the main line others merge into — from it rather
+  than assuming <code>main</code>. New words are in the <a href="../reference/glossary.html">glossary</a>.</li>
+  <li><strong>Have a description ready</strong> — what you are building, for whom, and why now. A paragraph
+  is enough; a pasted document or a file path works too. Everything after is drafted from it.</li>
+  <li><strong>Setup is an interview of ten topics</strong>, a few questions at a time. If you are interrupted, nothing is lost — see
+  <a href="#if-it-stops-part-way">If it stops part-way</a>.</li>
+</ul>
+
+<pre data-label="Your agent"><code><span class="p">&gt; </span>/spry:init Shelf replaces the paper lending register at small community libraries…</code></pre>
+
+<h2>How the interview works</h2>
+
+<p>spry never hands you a blank form. For each topic it drafts an answer from what it already knows
+and asks you to confirm or correct it. The rules it follows, in every interview:</p>
+
+<ul>
+  <li><strong>At most three questions per reply</strong>, numbered, with lettered options and one marked
+  <em>(recommended)</em> — so "2b" is a complete answer.</li>
+  <li><strong>Coarse to fine.</strong> The outline of a topic is agreed before its details.</li>
+  <li><strong>Written down at once.</strong> Each answer goes into a file as soon as you give it, never held
+  in the chat. A later session — or another agent — resumes by reading the files.</li>
+  <li><strong>"I don't know yet" is fine.</strong> It is recorded under <em>Open questions</em> with who
+  answers and by when, and the interview moves on. Nothing is invented to fill a gap.</li>
+  <li><strong>"You decide" is fine too.</strong> spry takes its recommended option and records it as an
+  assumption, so you can revisit it.</li>
+</ul>
+
+<p>Until the stack topic the tone is plain — written for someone with no technical background. The
+stack topic is for a developer; if none is present, it is skipped and noted as an open question.</p>
+
+<h2>The topics, in order</h2>
+
+<div class="table-wrap"><table>
+<thead><tr><th>#</th><th>Topic</th><th>What it writes</th></tr></thead>
+<tbody>
+<tr><td>a</td><td><strong>Product and the people who use it</strong></td><td>The roadmap's <em>Where we are going</em>; a glossary row for each role</td></tr>
+<tr><td>b</td><td><strong>Team</strong> — names, GitHub handles, roles, who reviews what; whether each slice gets a GitHub issue; how the next slice is picked; whether IDs are taken on the main branch</td><td><code>team</code>, <code>slices</code> and <code>mint</code> in the config. An empty team means you work solo</td></tr>
+<tr><td>c</td><td><strong>Plan shape</strong> — which levels you use (small projects can drop Epic) and ID prefixes</td><td><code>levels</code> and <code>ids</code> in the config (<code>spry/spry.config.json</code>)</td></tr>
+<tr><td>d</td><td><strong>Roadmap</strong> — the milestones in order, the next one to three in a sentence each</td><td>A draft milestone for each near one; the rest as <em>Later</em> lines</td></tr>
+<tr><td>e</td><td><strong>Constraints</strong> — dates, budget, hosting, regulation, systems you must use</td><td><code>spry/knowledge/constraints.md</code></td></tr>
+<tr><td>f</td><td><strong>Security</strong> — who may see what, personal data, sign-in, audit</td><td><code>spry/knowledge/security.md</code>, with numbered rules <code>SEC-1</code>…</td></tr>
+<tr><td>g</td><td><strong>Performance</strong> — load, response times, devices, data volumes</td><td><code>spry/knowledge/performance.md</code>, rules <code>PERF-1</code>…</td></tr>
+<tr><td>h</td><td><strong>External services</strong> the product depends on</td><td>One folder per service under <code>spry/knowledge/external/</code></td></tr>
+<tr><td>i</td><td><strong>Stack and tests</strong> (for a developer) — language, framework, test runner, CI host</td><td>The commands spry runs for checks and tests, from spry's notes for your stack (a <em>stack profile</em>: TypeScript/Node, Python, or any other)</td></tr>
+<tr><td>j</td><td><strong>Words</strong> — every term used so far, its meaning, and the synonyms not to use</td><td><code>spry/knowledge/glossary.md</code></td></tr>
+</tbody>
+</table></div>
+
+<p>Topic b is the one that makes spry fit a team rather than a single person. If you are on your own,
+leave the team empty — no person is asked to review and approval is skipped at merge, but a fresh
+agent still reviews every plan item and slice (<a href="reviews.html">/spry:review</a>). You can add
+people later. See
+<a href="team.html">Work as a team</a>.</p>
+
+<div class="callout note">
+  <span class="callout-title">Why security and performance come up so early</span>
+  <p>Every later plan item and every slice is checked against these rules before it is ready. A rule
+  like <em>"a library card number never appears in a log"</em> written now is one an agent cannot
+  quietly break in month three.</p>
+</div>
+
+<h2>What gets written</h2>
+
+<p>When the interview ends, your repository holds:</p>
+
+<pre class="tree" data-label="Files"><code>AGENTS.md                  <span class="c"># what every agent reads first — kept under 150 lines</span>
+CLAUDE.md                  <span class="c"># one line: @AGENTS.md</span>
+.github/workflows/spry.yml <span class="c"># CI: spry check, fast checks, tests</span>
+.github/CODEOWNERS         <span class="c"># who reviews what (skipped when solo)</span>
+spry/
+  README.md                <span class="c"># the entry point for people — written last</span>
+  spry.config.json         <span class="c"># levels, IDs, team, test commands, budgets</span>
+  BACKLOG.md  COVERAGE.md  DONE.md   <span class="c"># progress pages, filled in by CI</span>
+  plan/README.md           <span class="c"># the roadmap</span>
+  plan/M-1-…/README.md     <span class="c"># first milestone, as a draft</span>
+  knowledge/               <span class="c"># glossary, security, performance, constraints, …</span>
+  process/                 <span class="c"># spry's rules, copied in</span>
+  tool/spry.py             <span class="c"># the tool, copied in</span></code></pre>
+
+<p>A few things worth knowing about these files:</p>
+
+<ul>
+  <li><strong>The process and the tool are copied into your project</strong>, not linked. Every agent and CI
+  run uses the same copy, with no plugin needed. <a href="maintaining.html">/spry:update</a> brings in
+  later improvements.</li>
+  <li><strong><code>spry/</code> is kept out of your deploy</strong> — setup adds it to
+  <code>.dockerignore</code> or your stack's build ignore.</li>
+  <li><strong><code>.spry/</code> is git-ignored.</strong> It holds personal and cached things: the search
+  index, your tone setting, the last green test run.</li>
+  <li><strong>Existing CI is never replaced.</strong> spry's jobs are added beside it.</li>
+</ul>
+
+<p>Here is what the roadmap looks like in the worked example:</p>
+
+<pre data-label="spry/plan/README.md"><code># Roadmap
+
+## Where we are going
+
+- Shelf replaces the paper lending register at small community libraries.
+- First for one library — Riverside Reading Room — then for any library that signs up.
+- Success: the desk lends books and records returns without paper, and members see their own loans.
+
+## Later
+
+- M-2 Members see their loans online
+- M-3 Any library can sign up</code></pre>
+
+<h2>Finishing</h2>
+
+<ol class="steps">
+  <li><strong>Checks run once.</strong> <code>spry check</code> and <code>spry index</code> run, and anything
+  they report is fixed. From then on, CI on the main branch keeps the progress pages current.</li>
+  <li><strong>You see a summary</strong>, grouped as plan · knowledge · process · CI, in plain words.</li>
+  <li><strong>You are asked before anything is committed.</strong> The commit is
+  <code>chore(spry): set up spry</code>. If you chose to take IDs on the main branch (topic b), the setup
+  commit still says <code>mint: local</code>; switch it to <code>main</code> once setup is on the main branch.</li>
+  <li><strong>Optional: git hooks</strong> (small scripts git runs after a checkout or pull). spry offers <code>spry.py hooks</code>, run once per clone. After a
+  checkout or pull that changed the plan or a test, it refreshes your local copy of the backlog,
+  coverage and done pages.</li>
+  <li><strong>Next step:</strong> <code>/spry:milestone M-1</code> to define the first milestone properly. See
+  <a href="planning.html">Plan the work</a>.</li>
+</ol>
+
+<h2>If it stops part-way</h2>
+
+<p>Setup counts as finished only when <code>spry/README.md</code> exists — it is written last on purpose.
+If a session ends before that, run <code>/spry:init</code> again: it reads the config and whatever was
+written, and continues from the first topic with no answer. Nothing you answered is asked twice.</p>
+
+<p>If <code>spry/README.md</code> already exists, <code>/spry:init</code> stops and offers
+<code>/spry:status</code> instead — it never sets a project up twice.</p>
+
+<h2>Things that commonly go wrong</h2>
+
+<ul>
+  <li><strong>Trying to plan everything up front.</strong> Name all your milestones, but describe only the
+  next one to three. spry is incremental by design — later milestones are a line each until you get
+  to them.</li>
+  <li><strong>Skipping the glossary.</strong> If your team says "patron" and "member" for the same person, an
+  agent will too, and two words soon become two concepts. Pick one, ban the other. <code>spry check</code>
+  then fails on a banned word anywhere in the plan.</li>
+  <li><strong>No developer for the stack topic.</strong> That's fine for now — the topic is recorded as an
+  open question. But slices can't run tests until it is filled in.</li>
+</ul>
+
+<h2>What's next</h2>
+
+<div class="cards">
+  <a class="card" href="planning.html"><p class="card-title">Plan the work</p><p>Define the first milestone, then its epics, features and stories.</p></a>
+  <a class="card" href="../reference/config.html"><p class="card-title">Configuration</p><p>Every setting setup wrote, and what it changes.</p></a>
+  <a class="card" href="team.html"><p class="card-title">Work as a team</p><p>Roles, reviews and several people building at once.</p></a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

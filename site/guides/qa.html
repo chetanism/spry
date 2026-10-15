@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Checks for QA · spry</title>
+<meta name="description" content="Write the steps QA follows by hand for each acceptance criterion with /spry:test-scenarios, and log manual checks that prove — or un-prove — a criterion.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Checks for QA</h1>
+<p class="lead">Tests prove a lot, but not everything — a printed receipt, a real device, the evening
+shift. <code>/spry:test-scenarios</code> writes the steps a tester follows by hand for each acceptance
+criterion, and the check log records what they saw. A passing check proves a criterion; a failing
+one un-proves it, test or no test.</p>
+
+<h2>When to write them</h2>
+
+<p>Once a story is <code>ready</code> — before it is built or while it is being built. Scenarios that
+can't run yet are written now and marked not ready, so they run the week they can.</p>
+
+<pre data-label="Your agent"><code><span class="p">&gt; </span>/spry:test-scenarios S-1</code></pre>
+
+<p>Without an ID, spry lists ready stories with no checks file and asks which one. The conversation
+is pitched at audience 4 on spry's 1–10 scale of how technical to be (<a href="../design/audience.html">Written
+for its reader</a>) — screens, fields and messages, nothing internal.</p>
+
+<h2>The principle: a tester has what a user has</h2>
+
+<p>For most products that means a browser and an account — no terminal, no database, no server.
+A scenario never asks a tester to "insert a row" or "set the clock". Anything the product itself
+can't set up goes under <em>Before you start</em>, addressed to whoever prepares the environment.</p>
+
+<h2>How the session goes</h2>
+
+<ol class="steps">
+  <li><strong>The agent reads</strong> the story, its feature's rules, and the story's notes for test data.</li>
+  <li><strong>The list first, steps later.</strong> You see one line per scenario — its criterion, type and
+  whether it's ready — and cut it down with the agent before any steps are written. A session nobody
+  finishes is not coverage.</li>
+  <li><strong>Before you start</strong> is written: what is needed and who provides it — accounts and what each
+  may do, data that must exist, equipment, a second browser. A tester who learns three scenarios in
+  that they needed a second account has lost the session.</li>
+  <li><strong>The scenarios</strong>, at least one per criterion, each with numbered steps.</li>
+  <li><strong>Read back with QA</strong>, adjusted, and committed as <code>docs(qa): scenarios for S-&lt;n&gt;</code>.</li>
+</ol>
+
+<h2>Anatomy of a scenario</h2>
+
+<p>From the worked example's <code>checks.md</code>:</p>
+
+<pre data-label="checks.md"><code>### AC-3 · Book already on loan
+
+**Type** negative · **Where** the desk · **Ready** yes
+
+1. Signed in at the desk as the librarian, lend Ravi (card 1005) Persuasion (9780141439686)
+   → "Lent to Ravi".
+2. Scan Mei's card, 1006, and try to lend Mei Persuasion → "Already on loan to Ravi",
+   and the book cannot be lent.
+3. Scan Mei's card again → still "0 books on loan"; scanning Persuasion still shows it
+   on loan to Ravi.</code></pre>
+
+<ul>
+  <li><strong>Heading</strong> — the criterion it checks, then a short name. One scenario may check several:
+  <code>### AC-1, AC-3 · …</code>. <code>spry check</code> fails on a scenario for a criterion the story
+  doesn't have.</li>
+  <li><strong>Type</strong> — <code>happy path</code>, <code>negative</code>, <code>permission</code>,
+  <code>another organisation</code>, <code>repeat</code>, <code>at once</code> or <code>boundary</code>. The ways
+  somebody gets it wrong are most of what a session is for. If a story's criteria only describe happy
+  paths, the agent asks the owner for the missing criterion rather than guessing one.</li>
+  <li><strong>Where</strong> — the part of the product, as a person would say it. Never a link or a route.</li>
+  <li><strong>Ready</strong> — <code>yes</code>, or <code>no</code> and what it waits for.</li>
+  <li><strong>Steps</strong> — <code>what to do → what you should see</code>, with the exact data to use.</li>
+</ul>
+
+<h3>Writing good steps</h3>
+
+<div class="compare">
+  <div><h4>Not this</h4><ul><li>Press the Lend button</li><li>→ it works</li><li>Assume a member already has three loans</li></ul></div>
+  <div class="after"><h4>This</h4><ul><li>Lend the book to Kiran</li><li>→ "Lent to Kiran"; Kiran now shows "1 book on loan"</li><li>Start from a state the tester can reach, with its data named</li></ul></div>
+</div>
+
+<ul>
+  <li><strong>Say what to achieve, not what to press.</strong> "Lend the book to Kiran" survives a redesign;
+  "press Lend" is wrong the week the button moves.</li>
+  <li><strong>What you should see must be something you could be wrong about.</strong> For a refusal, name what
+  must <em>not</em> happen too — a refusal that half-saved the record is a bug. That's step 3 above.</li>
+  <li><strong>Each scenario stands on its own.</strong> Scenarios that change data use their own, so they run
+  in any order.</li>
+  <li><strong>Boundaries only when the criterion has one.</strong> "3 books" → also try 2 and 4.</li>
+</ul>
+
+<h2>Logging a check</h2>
+
+<p>Each time a tester runs a criterion, they append one row to the <em>Check log</em> — the table at the end
+of the story's <code>checks.md</code> — and commit it (or ask the agent to add the row for them). Rows are never
+edited.</p>
+
+<pre data-label="checks.md — Check log (excerpt: two of S-1's four rows)"><code>| Date       | AC   | Build   | By    | Result | Notes                                        |
+|------------|------|---------|-------|--------|----------------------------------------------|
+| 2026-10-04 | AC-2 | a1c9e02 | Meera | pass   | printed at 11:20                             |
+| 2026-10-06 | AC-2 | a1c9e02 | Meera | fail   | printed at 19:05, due date one day early → B-1 |</code></pre>
+
+<ul>
+  <li><strong>Build</strong> is what was tested — a version, a commit, a deploy.</li>
+  <li><strong>A fail names the scenario and what happened.</strong> A result nobody can act on is not a run.</li>
+  <li><strong>The latest row decides.</strong> A <code>pass</code> proves the criterion when no test does. A
+  <code>fail</code> un-proves it even if a test passes — a person saw it broken. Record a bug with
+  <a href="bugs-and-tasks.html">/spry:bug</a> and put its ID in the notes.</li>
+</ul>
+
+<div class="callout tip">
+  <span class="callout-title">See it in the worked example</span>
+  <p>Meera's evening <code>fail</code> above is why story S-1 shows "not proven" even though its slice is
+  merged and its tests pass. Bug B-1 names the criterion it breaks. When B-1 is fixed and AC-2 passes
+  again, S-1 is done. See <a href="../start/example.html">A worked example</a>.</p>
+</div>
+
+<h2>When a criterion is reworded</h2>
+
+<p>If a pull request changes a criterion's wording, <code>spry check --base</code> (which compares the
+branch with where it started; CI runs it on every pull request) names each scenario and
+check-log row that relied on the old wording and that the branch left as it was. Re-read them in the
+same pull request: a scenario updated to fit drops off the list, and a new run of the criterion logged
+since the branch started clears them all. A warning that stays is accepted by a person at merge.</p>
+
+<h2>What's next</h2>
+
+<div class="cards">
+  <a class="card" href="bugs-and-tasks.html"><p class="card-title">Bugs and tasks</p><p>Record what a failed check found.</p></a>
+  <a class="card" href="testing.html"><p class="card-title">Test beyond the slice</p><p>Exploratory testing nobody wrote steps for.</p></a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

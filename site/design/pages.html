@@ -1,0 +1,122 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generated pages · spry</title>
+<meta name="description" content="The pages spry writes for you — progress tables in every plan folder, the backlog, coverage and done pages — what each shows, and why only CI on the main branch writes them.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+<h1>Generated pages</h1>
+<p class="lead">Nobody keeps a status board up to date in spry. The tool writes the tables people read —
+progress in every plan folder, what to pick up next, what is built but unproven, what is finished —
+from the plan itself.</p>
+
+<h2>Marker blocks</h2>
+<p>A generated table lives between two markers in an otherwise hand-written page:</p>
+<pre data-label="In a feature's README.md"><code>## Stories
+
+&lt;!-- spry:children --&gt;
+| Story | State | Progress |
+|---|---|---|
+| [S-1 Lend a book](…) | ready | not proven · 1 of 1 slices · 2 of 3 criteria proven |
+| [S-2 Loan limit](…) | ready | in progress · 0 of 1 slices · 0 of 2 criteria proven |
+&lt;!-- /spry:children --&gt;</code></pre>
+<ul>
+  <li><strong>Everything outside the markers is written</strong> by a person, or by an agent in an
+  interview. <strong>Everything between them is generated.</strong></li>
+  <li>Each item's <code>README.md</code> has a <code>spry:children</code> block: its children, with links and
+  done/total. Stories also get a <code>spry:proof</code> block — each criterion and what proves it.</li>
+  <li><code>INDEX.md</code> files in the knowledge folder are generated the same way, from each item's
+  <code>title</code> and <code>summary</code>.</li>
+</ul>
+
+<h2>The three project pages</h2>
+
+<h3>Backlog — what to pick up next</h3>
+<p><code>spry/BACKLOG.md</code>, also printed by <code>spry backlog</code>. Its tables, in order:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>Table</th><th>Holds</th></tr></thead>
+<tbody>
+<tr><td>In progress</td><td>Slices that are open, or claimed, or have a branch named <code>sl-&lt;n&gt;-…</code>. Leave these to their owner.</td></tr>
+<tr><td>Ready to build</td><td>Planned slices with nothing unfinished in their way. The first row is next — <code>/spry:slice-open</code> with no ID offers it.</td></tr>
+<tr><td>Needs slicing</td><td>Ready items with no slice, or with criteria no slice covers.</td></tr>
+<tr><td>Blocked</td><td>Items waiting on unfinished work, naming each blocker, where it stands on this page, and who owns it.</td></tr>
+<tr><td>Needs planning</td><td>Drafts to finish, and items with no children yet.</td></tr>
+</tbody></table></div>
+<ul>
+  <li><strong>Plan order, never typed.</strong> By top-level item; inside one, bugs first, then tasks,
+  then stories, in tree order; slices by ID. There is no <code>priority</code> field and no hand-kept
+  queue. <em>Why:</em> writ's hand-kept slice queue needed re-editing every time anything moved. To
+  change the order, change the plan.</li>
+  <li><strong>Every row has a <em>Part of</em> column</strong> — everything above it, top level first — so
+  it reads the same however many levels your project uses.</li>
+  <li><strong>In-progress and ready rows have <em>Unblocks</em></strong> — what waits on the slice, or on
+  something it is part of. Between two ready rows, the one that frees more is worth noticing.</li>
+  <li><strong>Every row has a <em>Type</em></strong>: story, task or bug — for a slice, what it builds;
+  above those, the level (feature, …). Every table numbers its rows from 1.</li>
+  <li>With <code>slices.pick: ask</code>, <code>slice-open</code> lists the first four ready rows and
+  recommends none — for teams where outside facts (a design not settled, another team's date) decide.</li>
+</ul>
+
+<h3>Coverage — built versus proven</h3>
+<p><code>spry/COVERAGE.md</code>, also printed by <code>spry coverage</code> on any branch. It shows done
+versus defined at each level, criteria proven, slices, tasks and bugs, with one row per milestone. And
+the list that matters most: <strong>stories whose slices are all closed but whose criteria are still
+unproven</strong>, plus unproven criteria cited only in a comment or code — where someone thought they
+had a test and doesn't.</p>
+
+<h3>Done — what is finished</h3>
+<p><code>spry/DONE.md</code>, also printed by <code>spry done</code>: every finished story, task and bug,
+newest first, with what it is part of and the date it closed — the latest <code>closed:</code> date of
+the slices it counts.</p>
+<p><strong>Why the date is in the slice file, not read from git:</strong> CI's checkout is shallow, so it
+can't see old history, and the same files must give the same page in every clone. <code>slice-close</code>
+writes <code>closed:</code> beside <code>state: closed</code>; <code>merge-check</code> blocks without it, and
+<code>check</code> refuses one that isn't a date. A slice closed before this existed has no date, so its
+item shows <code>—</code> and sorts last, in plan order.</p>
+
+<h2>Only the main branch gets them</h2>
+<p>Generated blocks are written <strong>only on the main branch</strong> — by CI, running
+<code>spry index</code> with <code>[skip ci]</code>, or by <code>/spry:merge</code> when CI left them stale.
+Branches never touch them.</p>
+<p><strong>Why:</strong> if every branch regenerated the progress tables, every pair of branches would
+conflict on them. Kept to the main branch, they never conflict. <code>spry check</code> ignores what is
+inside the blocks, so a stale table never fails a check.</p>
+<ul>
+  <li><code>check --base</code> refuses a branch that changed a generated block — unless it matches the base
+  now, or where the branch forked.</li>
+  <li><code>index --restore &lt;base&gt;</code> puts the base's copy back.</li>
+  <li><code>/spry:merge</code> never leaves the tables stale: if no CI run is going to update them, it runs
+  <code>index</code> and pushes the refresh itself, retrying if someone merged meanwhile.</li>
+</ul>
+
+<h2>Fresh pages on a branch</h2>
+<p>The committed pages show the main branch as of CI's last run. To see your branch's own state:</p>
+<ul>
+  <li><code>spry backlog</code>, <code>spry coverage</code>, <code>spry done</code> print them for the working tree.</li>
+  <li><code>spry view</code> writes every page for the working tree to <code>.spry/view/</code>, which is
+  never committed.</li>
+  <li><code>spry hooks</code> (opt-in, once per clone) installs git hooks that run <code>view</code> after a
+  checkout or pull that changed the plan or a test, and say so.</li>
+</ul>
+<p><strong>Why not regenerate the tracked file and hide the change from git?</strong> That was tried
+with <code>skip-worktree</code>, and rejected: git then refuses to pull as soon as CI updates the file.</p>
+
+<h2>Later</h2>
+<p>A local <code>spry serve</code> — a small web server rendering the plan — is deferred. GitHub's own
+rendering of Markdown comes first, and is enough so far.</p>
+
+</article>
+</main>
+</body>
+</html>

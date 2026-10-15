@@ -17,6 +17,9 @@ agents too — that runs a project the way an agile team already thinks about it
 > **Status: untried.** The tool is tested; the process has not yet run a real milestone.
 > Inspired by [writ](https://github.com/chetanism/writ).
 
+**Documentation:** [chetanism.github.io/spry](https://chetanism.github.io/spry/) — guides, the design,
+and a reference for every skill.
+
 ## Install
 
 ```bash
@@ -60,6 +63,8 @@ The design and every decision behind it: [`DESIGN.md`](DESIGN.md).
 ```bash
 python3 tests/test_spry.py
 python3 plugins/spry/tool/spry.py --root docs/example check
+python3 tests/test_site.py                     # the docs site
+python3 -m http.server -d site                 # preview it at http://localhost:8000
 ```
 
 MIT — see [LICENSE](LICENSE).

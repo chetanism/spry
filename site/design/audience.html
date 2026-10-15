@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Written for its reader · spry</title>
+<meta name="description" content="Audience levels from 1 to 10, the shape of every agent reply, the writing rules for every document, and the glossary rule — how spry keeps plans readable for product and precise for developers.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+<h1>Written for its reader</h1>
+<p class="lead">A plan only helps if the people who need it actually read it. spry sets how technical
+each document is — and how the agent talks to you while working on it — by who the reader is.</p>
+
+<h2>Audience levels</h2>
+<p>Every document type carries an <code>audience</code> number from 1 to 10. It governs the document
+<strong>and</strong> the agent's chat while a skill works on that document.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Level</th><th>Reader</th><th>What's allowed</th></tr></thead>
+<tbody>
+<tr><td><span class="badge green">1–3</span></td><td>product, QA, stakeholders</td><td>Plain words; what a person sees and does. No file paths, code, commands or internals. An ID always appears with its title: "S-2 Loan limit", never just "S-2".</td></tr>
+<tr><td><span class="badge">4–6</span></td><td>QA, support, designers</td><td>Names screens, fields, data and error messages — but no internals.</td></tr>
+<tr><td><span class="badge amber">7–10</span></td><td>developers</td><td>Paths as <code>file:line</code>, types, commands, internals. IDs alone are fine.</td></tr>
+</tbody></table></div>
+
+<p>The defaults follow who writes each kind of item: milestones and epics are 2, features and stories
+3, bugs 4, tasks 7, slices 8. One exception: a slice's <em>Summary</em> is written so anyone on the team
+can read it.</p>
+
+<h3>Your own tone</h3>
+<p><code>/spry:tone &lt;1-10&gt;</code> sets a personal override, stored in <code>.spry/</code> on your machine
+and never committed. A product owner can set 3 and get plain-language replies even while the agent is
+working on a slice; a developer can set 9 and get paths while a story is being written. The agent uses,
+in order: your override, then the audience of the document in hand, then 5.</p>
+
+<p><strong>Why:</strong> product owners stop reading plans full of file paths, and when they stop
+reading, they stop catching the wrong assumption in time. Meanwhile developers want the path, not a
+paraphrase of it. One tone for everyone serves nobody.</p>
+
+<h2>The shape of every reply</h2>
+<p>Tone sets the vocabulary; the chat rules set the shape, which is the same at every level. They exist
+so you can scan an agent's reply in seconds and know what it did and what it needs from you.</p>
+<ul>
+  <li><strong>Bullets, not prose.</strong> No preamble, no recap, no closing summary, no restated question.</li>
+  <li><strong>Grouped under only the headings the reply needs</strong>, in this order:
+    <code>BLOCKED</code> (what stops progress, and on whom) · <code>DONE</code> (what the agent did) ·
+    <code>NEXT</code> (what you should do) · <code>FYI</code> (facts, nothing to do) · <code>ASK</code>
+    (questions for you — last, so you have the findings before the choice).</li>
+  <li><strong>Every bullet starts with a tag</strong>: past tense for what the agent did —
+    <code>[Added]</code> <code>[Changed]</code> <code>[Fixed]</code> <code>[Ran]</code> <code>[Found]</code>;
+    to-do verbs for what you should do — <code>[Review]</code> <code>[Decide]</code> <code>[Run]</code>
+    <code>[Approve]</code> <code>[Test]</code>; <code>[Note]</code> for a fact.</li>
+  <li><strong>One fact per bullet.</strong> Never quote back a diff or a file just written.</li>
+</ul>
+
+<h3>Asks you can answer in two characters</h3>
+<ul>
+  <li>Asks are numbered from 1 in each reply; options are lettered <code>a</code>, <code>b</code>, <code>c</code>.</li>
+  <li>One line per option, saying why it is or isn't the better choice.</li>
+  <li>Exactly one option is marked <code>(recommended)</code> — except where your configuration says the
+  choice is yours alone (<code>slices.pick: ask</code>).</li>
+  <li>The question carries its own context, so <code>2b</code> is a complete answer and you never have to
+  open a file to reply.</li>
+</ul>
+
+<pre data-label="A reply at audience 2"><code>DONE
+- [Added] Story S-2 Loan limit, with 2 acceptance criteria
+- [Found] S-2 overlaps S-1 Lend a book: S-1 now covers only the allowed case
+NEXT
+- [Review] S-2 Loan limit — the two acceptance criteria are what QA will test
+ASK
+1. Should a member with an overdue book be allowed to borrow another?
+   a. No — they return the overdue book first (recommended): matches the desk's paper rule today
+   b. Yes, up to the limit — simpler for members, but overdue books pile up</code></pre>
+
+<pre data-label="A reply at audience 8"><code>DONE
+- [Opened] SL-2 on `sl-2-refuse-over-limit`, draft PR #14
+- [Found] Overlap: SL-1 already edited `src/loans/lend.ts` — AtLimit and Overdue added to its LendError union
+NEXT
+- [Review] SL-2 plan — `spry/plan/…/SL-2-refuse-over-limit.md`</code></pre>
+
+<h2>Writing rules for every document</h2>
+<p>The same discipline applies to the documents themselves. Rules marked <span class="badge green">checked</span>
+are enforced by <code>spry check</code>.</p>
+<ul>
+  <li><strong>Start from the document's template</strong> and keep its section order.</li>
+  <li><strong>Bullets, one fact per line.</strong> A table where rows share columns. No prose paragraphs.</li>
+  <li><strong>No guide comments or placeholders left</strong> in a finished document — no
+  <code>&lt;!-- guide: … --&gt;</code>, no <code>&lt;placeholder&gt;</code>. <span class="badge green">checked</span></li>
+  <li><strong>An empty optional section is deleted</strong>, not filled with "None" or "TBD".</li>
+  <li><strong>Absolute dates</strong> — <code>2026-10-08</code>, never "today" or "next week". A plan is
+  read months later.</li>
+  <li><strong>No hedging</strong> — "should probably", "might want to". State the rule, or ask.</li>
+  <li><strong>An ID with its title on first mention</strong> in any document at audience 5 or below —
+  "S-2 Loan limit", then "S-2".</li>
+  <li><strong>Never restate another document — link it.</strong> A restatement is a second copy that
+  will drift.</li>
+  <li><strong>Front-matter</strong> uses only <code>key: value</code> and <code>key: [a, b]</code>. <span class="badge green">checked</span></li>
+  <li><strong>Line budgets</strong> per document type. <span class="badge green">checked</span>
+  <a href="knowledge.html">Knowledge and size →</a></li>
+</ul>
+
+<h2>One term per concept</h2>
+<p>The <strong>glossary rule</strong>: <code>spry/knowledge/glossary.md</code> holds each term, what it
+means, and the words <em>not</em> to use for it. <code>spry check</code> fails on a banned word anywhere
+in <code>spry/</code> — except in code, in the glossary itself, and in conflict-check sections, which
+quote words in order to correct them. <span class="badge green">checked</span></p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Term</th><th>Means</th><th>Don't say</th></tr></thead>
+<tbody>
+<tr><td>Member</td><td>a person who may borrow books from the library</td><td>patron, borrower</td></tr>
+<tr><td>Lend</td><td>a librarian gives a book to a member, recorded as a loan</td><td>check out, issue a book</td></tr>
+<tr><td>Overdue</td><td>a loan still open after its due date</td><td>late, past due</td></tr>
+</tbody></table></div>
+<p><em>From the Shelf example's glossary.</em></p>
+
+<p><strong>Why:</strong> when a story says "borrower", the feature says "member" and the code says
+<code>patron</code>, everyone has to wonder whether these are three things or one. Agents are especially
+prone to it — they vary words for style. A new concept gets a glossary row in the same change that
+introduces it; a second word for an existing concept is added to <em>Don't say</em>, and the agent
+tells you once which word it used instead.</p>
+
+</article>
+</main>
+</body>
+</html>

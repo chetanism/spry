@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The gate and test speed · spry</title>
+<meta name="description" content="How spry keeps checks fast — a slow check runs only when its answer could have changed — through the gate, affected-only tests, stamps, CI that skips document-only changes, and the full suite kept for main and nightly.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+<h1>The gate and test speed</h1>
+<p class="lead">Agents make a lot of small changes. If every change ran your whole test suite, a slice
+would take all day; if none did, broken code would reach review. spry's rule: <strong>a slow check runs
+only when its answer could have changed</strong> — and the cheapest checks run first, so a slow one is
+never thrown away by a lint error.</p>
+
+<h2>Three speeds of checking</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Command</th><th>Runs</th><th>When</th></tr></thead>
+<tbody>
+<tr><td><code>gate --fast</code></td><td><code>spry check</code> → fast checks (format, lint, types, cheapest first). No tests, and it stamps nothing.</td><td>After each change while building, and for review fixes at close</td></tr>
+<tr><td><code>gate</code></td><td><code>spry check</code> → fast checks → <strong>affected</strong> tests, stopping at the first failure</td><td>Once per slice, at close — or whenever a test's answer is what you need</td></tr>
+<tr><td>Full suite</td><td>Every test</td><td>CI on the main branch and nightly; <code>/spry:test-all</code> on request. Never by the agent as a routine step.</td></tr>
+</tbody></table></div>
+
+<p><em>Affected</em> tests are the ones your change could affect, using the test runner's own
+mechanism — <code>vitest --changed</code>, turbo filters, <code>pytest-testmon</code> and so on. The setup
+interview captures your stack, and the stack profile turns on parallel test execution by default.</p>
+
+<h2>The stamp</h2>
+<p>When <code>gate</code> passes, it writes a stamp in <code>.spry/green</code> with a fingerprint of the code:
+every file outside <code>checks.docs</code> (by default <code>spry/**</code> and <code>**/*.md</code>). While the
+fingerprint still matches, the gate runs <code>check</code> alone.</p>
+<p><strong>Why:</strong> after the tests pass you still write the close summary, fix a typo in the work
+order, set the slice to closed. None of that can change a test result, so none of it re-runs the tests.
+The habit this teaches the agent: fix lint before tests run, and write documents after the gate, never
+the reverse.</p>
+
+<h3>A branch that changed only documents</h3>
+<p>The gate also runs <code>check</code> alone when the branch — working tree included — changed only
+documents since it forked from <code>origin/&lt;main&gt;</code>, stamp or no stamp. A rebase onto
+other people's code, or a fresh worktree, then doesn't re-run tests on code the branch never touched.
+When the gate is unsure, it runs them.</p>
+
+<h3>Timeouts on a busy machine</h3>
+<p>With <code>tests.retry</code> set, affected tests that fail on a timeout (<code>tests.retry_when</code>,
+by default matching "timed out", "timeout" or "ETIMEDOUT") run once more, quietly, with no
+parallelism. A machine under load is not a red gate; a real failure fails both runs. So the agent never
+re-runs the gate to get past a timeout.</p>
+
+<h2>CI follows the same order</h2>
+<ol class="steps">
+  <li><strong><code>spry check</code></strong> — which also prints <code>changed --base</code>:
+  <code>code=true</code> when anything outside <code>checks.docs</code> changed.</li>
+  <li><strong>Fast checks</strong> — only when <code>code=true</code>.</li>
+  <li><strong>Tests</strong> — only when <code>code=true</code>.</li>
+</ol>
+<p>A pull request that changes only the plan runs in seconds. A slice pushes twice at close — once for
+the review, once at the end — because every push runs CI again.</p>
+
+<h2>After a merge: run nothing, usually</h2>
+<p>When a slice merges, did the main branch move under it? <code>changed --base &lt;PR head&gt;</code>
+compares what the PR's checks saw with the main branch now:</p>
+<ul>
+  <li><strong><code>code=false</code></strong> — the only commits the main branch gained were documents.
+  Its code is exactly what the PR's checks passed. <strong>Run nothing.</strong></li>
+  <li><strong><code>code=true</code></strong> — it gained code the PR never saw, and a PR green against its
+  base can be red where it landed. Wait for CI on the main branch, which runs the full suite there —
+  never run it again locally. No CI on push, or CI that cannot run → run the full suite once and say why.</li>
+</ul>
+
+<h2>Why not run everything, always?</h2>
+<p>Because on a real project the full suite takes minutes or more, and an agent working on a slice
+would run it dozens of times. That is slow, and it teaches people to stop waiting for checks. spry
+moves the full suite to where it belongs — CI on the main branch and nightly — and keeps each check
+in a slice tied to what that check can actually tell you.</p>
+<p>The trade-off: an affected-only run trusts the runner's idea of "affected". After a change to
+dependencies or to build or test configuration, where that can't be trusted, run the full suite on
+purpose with <code>/spry:test-all</code>. <a href="../guides/testing.html">Test beyond the slice →</a></p>
+
+<h2>Finding the slow tests</h2>
+<ul>
+  <li><code>spry tests --slowest</code> reads JUnit XML and names the slowest tests.</li>
+  <li><code>/spry:test-all</code> runs the whole suite part by part (<code>tests.parts</code>: unit,
+  integration, …), timing each, starting the local services only when they are down and stopping only
+  what it started. It reports; it never fixes.</li>
+</ul>
+
+<h2>Fewer conflicts, too</h2>
+<p>Speed is also not fighting git. One file per item (<a href="plan-tree.html">the plan tree</a>) and no
+generated files on branches (<a href="pages.html">generated pages</a>) mean parallel slices rarely
+touch the same file.</p>
+
+</article>
+</main>
+</body>
+</html>

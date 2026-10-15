@@ -1,0 +1,272 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A worked example · spry</title>
+<meta name="description" content="A tour of Shelf, a small invented library-lending product run with spry: the plan as folders, a story and its criteria, a slice's work order, falsify results, QA's check log, the backlog and status.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>A worked example</h1>
+<p class="lead">Shelf is an invented product: a lending desk for a small community library. It has
+been taken from roadmap to slice — a <em>slice</em> being one small change, built and merged as one
+pull request — so you can see what a spry project actually looks like — every file
+below is real, and passes spry's own checks.</p>
+
+<h2>The team and the product</h2>
+
+<ul>
+  <li><strong>Asha</strong> (product) writes milestones, epics, features and stories.</li>
+  <li><strong>Ravi</strong> (developer) splits stories into slices and builds them.</li>
+  <li><strong>Meera</strong> (QA) writes and runs the checks for each story.</li>
+</ul>
+
+<p>Shelf replaces the paper lending register at Riverside Reading Room, which lends about 400 books a
+week. The first milestone: <em>members can borrow books</em> — lend at the desk, record returns, see
+what is overdue.</p>
+
+<h2>The plan is folders</h2>
+
+<p>The plan's hierarchy is the folder tree. On GitHub, opening a folder shows its
+<code>README.md</code>, so anyone can click down from the roadmap to a story without installing
+anything:</p>
+
+<pre data-label="spry/plan" class="tree"><code>README.md                               <span class="c"># roadmap: the milestones</span>
+M-1-members-borrow-books/
+  README.md                             <span class="c"># milestone</span>
+  E-1-lending/
+    README.md                           <span class="c"># epic</span>
+    F-1-lend-at-the-desk/
+      README.md                         <span class="c"># feature: how it works, its rules</span>
+      S-1-lend-a-book/
+        README.md                       <span class="c"># story + acceptance criteria</span>
+        checks.md                       <span class="c"># QA's scenarios and check log</span>
+        SL-1-record-a-loan.md           <span class="c"># a closed slice</span>
+      S-2-loan-limit/
+        README.md
+        SL-2-refuse-over-limit.md       <span class="c"># an open slice</span>
+      bugs/B-1-due-date-a-day-early/
+        README.md                       <span class="c"># a bug</span>
+        SL-4-due-date-in-library-time-zone.md
+        SL-5-correct-loans-already-made.md
+    F-2-return-a-book/
+      README.md                         <span class="c"># a draft feature</span>
+  tasks/T-1-set-up-ci/
+    README.md                           <span class="c"># technical work no story asks for</span>
+    SL-3-ci-pipeline.md</code></pre>
+
+<p>IDs like <code>M-1</code>, <code>S-2</code> and <code>SL-4</code> are simple counters per type, never
+nested numbers — so moving a story to another feature is just moving its folder.</p>
+
+<h2>A feature and its rules</h2>
+
+<p>Asha's feature page says how lending works, step by step, then the rules every story under it must
+follow. Rules are numbered so stories can cite them instead of repeating them:</p>
+
+<pre data-label="F-1 · Lend at the desk"><code>## Rules
+
+- R-1 A member may have at most 3 books on loan at once.
+- R-2 A loan lasts 14 days; the due date is printed on the receipt.
+- R-3 A book can be on loan to only one member at a time.
+- R-4 A member with an overdue book cannot borrow another until it is returned.</code></pre>
+
+<p>R-4 is there because the <strong>conflict check</strong> caught something: Asha's notes allowed overdue
+members to borrow, but the desk's paper rule did not. The check recorded the contradiction, Asha
+decided, and the rule was added — with the date and her name in the feature's
+<em>Conflict check</em> section.</p>
+
+<h2>A story and its criteria</h2>
+
+<p><em>S-2 Loan limit</em> is a story: one thing a person does, with acceptance criteria a person can
+check.</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>AC</th><th>Given</th><th>When</th><th>Then</th></tr></thead>
+  <tbody>
+    <tr><td>AC-1</td><td>a member with 3 books on loan</td><td>the librarian scans their library card</td><td>the desk shows "Limit reached: 3 books on loan" and <strong>Lend</strong> cannot be pressed (F-1/R-1)</td></tr>
+    <tr><td>AC-2</td><td>a member with an overdue book</td><td>the librarian scans their library card</td><td>the desk shows "Return overdue book first:" and the overdue book's title, and <strong>Lend</strong> cannot be pressed (F-1/R-4)</td></tr>
+  </tbody>
+</table>
+</div>
+
+<ul>
+  <li>Each criterion is one behaviour, observable on the screen — no code, no internals.</li>
+  <li>It cites the feature's rule (<code>F-1/R-1</code>) rather than restating it.</li>
+  <li>The story also says what is <em>not</em> in it, and gives test data: card <code>1003</code> is Sam, with
+  3 books on loan; card <code>1004</code> is Lee, with one book overdue.</li>
+</ul>
+
+<h2>A slice's work order</h2>
+
+<p>Ravi's slice <em>SL-2 Refuse a loan over the limit</em> covers both criteria. Before writing any code,
+the agent wrote its <strong>work order</strong>. The summary is for anyone; the rest is for developers:</p>
+
+<pre data-label="SL-2 · Work order (excerpt)"><code>### Summary
+- The desk refuses a loan when the member already has 3 books, or has an overdue one.
+- The refusal shows as soon as the library card is scanned, before any book.
+
+### Plan
+- src/loans/eligibility.ts — canBorrow(memberId, today); reads loans.due_on (D-1)
+- src/loans/lend.ts — call canBorrow before inserting
+- src/desk/LendPanel.tsx — show the refusal after the card scan; disable Lend
+- src/loans/eligibility.test.ts — unit tests below
+- db/seed.ts — members 1003 (3 loans) and 1004 (one overdue)
+
+### Must not
+- D-1 — overdue means due_on &lt; today, from the stored date.
+- PERF-1 — card scan to screen under 1 s: one query for both checks.
+
+### Tests
+- "S-2/AC-1 refuses a member with 3 books on loan"
+- "S-2/AC-2 refuses a member with an overdue book"
+
+### Conflict check
+- Checked 2026-10-07 against: S-2, S-1, SL-1, D-1, security, performance, open slices (none)
+- Overlap: SL-1's lend.ts already returns LendError → AtLimit and Overdue added to it
+- Dependency: B-1 changes how "today" is worked out → today is a parameter here</code></pre>
+
+<ul>
+  <li><strong>Must not</strong> links the rules this change could break — a recorded decision (D-1) and a
+  performance rule.</li>
+  <li><strong>Tests</strong> are named with the criterion they prove. That name is how spry knows a
+  criterion is proven — a mention in a comment does not count.</li>
+  <li>The <strong>conflict check</strong> found that the bug fix B-1 changes how "today" is worked out, so
+  this slice takes "today" as a parameter and both fixes line up.</li>
+</ul>
+
+<p>The work order becomes the draft pull request's body. When the slice closes, a close summary is
+added below it.</p>
+
+<h2>Falsify: proving the tests</h2>
+
+<p><em>SL-1 Record a loan</em> is closed. Before it merged, the tool broke each safeguard it added and
+ran the tests that should notice. In the table, the <strong>control</strong> is the safeguard in the
+code, and the <strong>mutation</strong> is how the tool broke it:</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Control</th><th>Mutation</th><th>Expect</th><th>Result</th></tr></thead>
+  <tbody>
+    <tr><td>book already on loan → refused</td><td>delete the check</td><td>S-1/AC-3</td><td><span class="badge green">caught</span></td></tr>
+    <tr><td>due date = today + 14</td><td><code>+ 13</code></td><td>S-1/AC-2</td><td><span class="badge green">caught</span></td></tr>
+    <tr><td>unknown library card → refused</td><td>delete the check</td><td>S-1/AC-1</td><td><span class="badge amber">survived</span> → test added "S-1/AC-1 refuses an unknown library card"; <span class="badge green">caught</span></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The third row is the point. The unknown-card check could be deleted and every test still passed —
+the tests looked fine but would not have noticed. Falsify found it, a test was added, and the run
+showed it caught. <a href="../design/falsify.html">How falsify works →</a></p>
+
+<h2>QA's check log</h2>
+
+<p>Meera keeps a log of manual checks in the story's <code>checks.md</code>, one row per criterion per run,
+appended and never edited. <em>Build</em> is the commit she tested:</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Date</th><th>AC</th><th>Build</th><th>By</th><th>Result</th><th>Notes</th></tr></thead>
+  <tbody>
+    <tr><td>2026-10-04</td><td>AC-1</td><td><code>a1c9e02</code></td><td>Meera</td><td>pass</td><td></td></tr>
+    <tr><td>2026-10-04</td><td>AC-2</td><td><code>a1c9e02</code></td><td>Meera</td><td>pass</td><td>printed at 11:20</td></tr>
+    <tr><td>2026-10-04</td><td>AC-3</td><td><code>a1c9e02</code></td><td>Meera</td><td>pass</td><td></td></tr>
+    <tr><td>2026-10-06</td><td>AC-2</td><td><code>a1c9e02</code></td><td>Meera</td><td><strong>fail</strong></td><td>printed at 19:05, due date one day early → B-1</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The <strong>latest row for a criterion decides it.</strong> A receipt printed in the evening showed the
+wrong due date, so AC-2 is un-proven even though its test passes. The failure became bug
+<em>B-1 Due date a day early on evening receipts</em>, and story S-1 now shows <strong>not proven</strong> —
+its slice is merged, but it is not done. <a href="../guides/qa.html">Checks for QA →</a></p>
+
+<h2>The backlog</h2>
+
+<p>Nobody keeps a priority list. The backlog page is generated from the plan on every merge, in plan
+order — bugs first, then tasks, then stories:</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Section</th><th>Shelf right now</th></tr></thead>
+  <tbody>
+    <tr><td><strong>In progress</strong></td><td>SL-2 Refuse a loan over the limit — Ravi, PR #14</td></tr>
+    <tr><td><strong>Ready to build</strong></td><td>SL-4 Due date in the library's time zone (bug B-1) — unblocks SL-5</td></tr>
+    <tr><td><strong>Blocked</strong></td><td>SL-5 Correct due dates on loans already made — waiting on SL-4</td></tr>
+    <tr><td><strong>Needs planning</strong></td><td>F-2 Return a book — still a draft, Asha's next step</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Every row says what it is part of and who owns it; ready rows also say what they unblock, and
+blocked rows what they wait on. A <strong>coverage</strong> page
+shows done versus defined at each level, and a <strong>done</strong> page lists what is finished, newest
+first. <a href="../design/pages.html">Generated pages →</a></p>
+
+<h2>Status at a glance</h2>
+
+<p><code>spry status</code> rolls it all up — computed, never typed:</p>
+
+<pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py status
+M-1 Members can borrow books                                  0 of 1 epics done · 1 open bug
+  E-1 Lending                                                 0 of 2 features done · 1 open bug
+    F-1 Lend at the desk                                      0 of 2 stories done · 1 open bug
+      S-1 Lend a book                                         not proven · 1 of 1 slices · 2 of 3 criteria proven
+        slice SL-1 Record a loan                              done · PR #9
+      S-2 Loan limit                                          in progress · 0 of 1 slices · 0 of 2 criteria proven
+        slice SL-2 Refuse a loan over the limit               open · PR #14
+      bug B-1 Due date a day early on evening receipts        0 of 2 slices done
+        slice SL-4 Due date in the library's time zone        planned
+        slice SL-5 Correct due dates on loans already made    planned
+    F-2 Return a book                                         no stories yet
+  task T-1 Set up CI                                          done
+    slice SL-3 CI pipeline                                    done · PR #7</code></pre>
+
+<p>Bugs and tasks are shown with their parent but do not count toward its progress — a feature is
+done when its stories are, not when its bugs are.</p>
+
+<h2>What's written and what's generated</h2>
+
+<ul>
+  <li><strong>Written</strong> — by a person, or an agent in an interview: everything outside the marked
+  blocks.</li>
+  <li><strong>Generated</strong> — by CI (the automatic checks GitHub runs on every push) on the main
+  branch, or by <code>/spry:merge</code> on the main branch when CI did not run: progress tables, proof tables and index
+  lines, between <code>&lt;!-- spry:… --&gt;</code> markers. Branches never touch them, so they never
+  conflict.</li>
+</ul>
+
+<h2>Try it yourself</h2>
+
+<p>Clone spry and run the tool against the example:</p>
+
+<pre data-label="Terminal"><code><span class="p">$ </span>git clone https://github.com/chetanism/spry &amp;&amp; cd spry
+<span class="p">$ </span>python3 plugins/spry/tool/spry.py --root docs/example status
+<span class="p">$ </span>python3 plugins/spry/tool/spry.py --root docs/example backlog
+<span class="p">$ </span>python3 plugins/spry/tool/spry.py --root docs/example coverage
+<span class="p">$ </span>python3 plugins/spry/tool/spry.py --root docs/example check</code></pre>
+
+<p>For reference, the files themselves are browsable on GitHub:
+<a href="https://github.com/chetanism/spry/blob/main/docs/example/spry/README.md">docs/example/spry/README.md</a>
+— start there and click down.</p>
+
+<div class="callout tip">
+  <span class="callout-title">Next</span>
+  <p>Ready to try it on your own project? <a href="../guides/new-project.html">Set up a new project</a>
+  or <a href="../guides/adopt.html">adopt an existing one</a>.</p>
+</div>
+
+</article>
+</main>
+</body>
+</html>

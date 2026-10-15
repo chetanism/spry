@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FAQ · spry</title>
+<meta name="description" content="Straight answers for people weighing spry: which agents it needs, solo or team, speed, existing code, where the data lives, what product people do, and how to stop.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>FAQ</h1>
+<p class="lead">Straight answers to the questions people ask before they try spry. If yours is not
+here, the <a href="../design/principles.html">design section</a> explains every rule and why it
+exists.</p>
+
+<h2>Getting started</h2>
+
+<h3>Do I need Claude Code?</h3>
+<p>No. spry is built as a Claude Code plugin, and that is the smoothest way to run it, but the skills
+also install for Cursor, Gemini and any agent that reads <code>AGENTS.md</code> (Codex among them):</p>
+<pre data-label="Terminal"><code><span class="p">$ </span>python3 &lt;clone of spry&gt;/plugins/spry/tool/spry.py install --agent generic   <span class="c"># or claude, cursor, gemini</span></code></pre>
+<p>The rules live in process files and the tool, not in the agent, so switching agents mid-slice loses
+nothing. One limit: reviews by fresh eyes need an agent that can start a second agent; without one,
+the review asks you to run it in a new session. <a href="../guides/other-agents.html">Use another agent</a>.</p>
+
+<h3>Does it work for one person?</h3>
+<p>Yes. A team is a section of the config, not a separate setup: leave <code>team.members</code> empty
+and you are solo. Nothing is routed for review, approval is not required to merge, and the
+<a href="../guides/reviews.html">fresh-eyes review</a> becomes the second pair of eyes you do not have a
+teammate for.</p>
+
+<h3>I already have a codebase. Do I have to plan it all backwards?</h3>
+<p>No. <code>/spry:adopt</code> surveys what exists and records it in
+<code>spry/knowledge/codebase.md</code>; the plan starts from your <em>next</em> piece of work. Existing
+tests are untouched — only new tests cite criteria — and spry's checks only read <code>spry/</code> and
+test names, so no existing file can fail them. <a href="../guides/adopt.html">Adopt an existing codebase</a>.</p>
+
+<h3>Which languages and test runners does it support?</h3>
+<p>Ready-made stack profiles exist for TypeScript / Node (Vitest or Jest) and Python (pytest). Any
+other stack works too: setup asks the developer for the commands — format, lint, types, affected tests,
+all tests, a runner for a list of test files — and records them in the
+<a href="config.html">configuration</a>.</p>
+
+<h3>Does it need GitHub?</h3>
+<p>In practice, today, yes. The CI workflow setup writes is GitHub Actions, pull requests and merges
+go through the <code>gh</code> command, <code>CODEOWNERS</code> is generated for GitHub, and the plan
+is designed to be read by clicking folders on GitHub. The files themselves are plain Markdown and the
+tool is plain Python, so another host is possible, but you would adapt the process yourself
+(<code>/spry:process-change</code>).</p>
+
+<h3>Does it work on Windows?</h3>
+<p>The tool is plain Python 3.10+. Falsify was made to work on Windows from a pilot team's
+feedback — quoted paths for <code>cmd</code>, process-tree kills on timeout, junctions where symlinks
+are refused, LF line endings.</p>
+
+<h3>Is it ready?</h3>
+<p>It is early. The tool has a test suite, and the process is being run on pilot projects — most recent
+changes came from them — but none has run a full milestone through it yet. Expect it to change; <code>/spry:update</code> offers each change rather than
+forcing it.</p>
+
+<h2>Trust</h2>
+
+<h3>What if my agent ignores a rule?</h3>
+<p>That is the problem spry is designed around. A rule that matters is in <code>spry check</code>, not
+only in prose — and <code>check</code> runs in the gate, in CI on every pull request, and inside
+<code>merge-check</code>. A skipped conflict check, a safeguard no test notices with no reason
+given, a criterion quietly reworded to fit the code: each one blocks the merge, whatever the agent
+remembered to do. A criterion with no test is put to you at the merge, as a manual check QA owes. <a href="../design/principles.html">Principles</a>.</p>
+
+<h3>How do I know "done" really means done?</h3>
+<p>Nobody types it. A story is done when its slices are merged <em>and</em> every acceptance criterion
+is proven — by a test whose name cites it, or by a QA check whose latest result is a pass. A QA
+<code>fail</code> un-proves a criterion even if a test passes. <a href="../design/status.html">Status is derived</a>.</p>
+
+<h3>Tests pass. Why isn't that enough?</h3>
+<p>Because a test can pass without testing the thing. Falsify removes each safeguard a slice added —
+a permission check, a limit, an error branch — and runs the tests that should notice. If they still
+pass, the safeguard <em>survived</em>, and the slice cannot merge until there is a test or a written
+reason you accept. <a href="../design/falsify.html">Falsify</a>.</p>
+
+<h3>Will the agent stop and ask me things all day?</h3>
+<p>No. A person decides three things: the acceptance criteria, the merge, and anything hard to undo
+(a database migration, a public API, a new dependency, deleting data). Everything between runs without
+stopping, because the checks stand in for a person watching. <a href="../design/decisions.html">Where a person decides</a>.</p>
+
+<h3>Can the agent merge on its own?</h3>
+<p>No. <code>/spry:merge</code> merges only on a yes given in that conversation, for that pull request,
+and never a red or pending one. On your own PR, a review's answer can be "post, fix, then merge" — that
+is the yes, unless the merge finds something the review did not report.</p>
+
+<h2>Cost and speed</h2>
+
+<h3>Is it slow?</h3>
+<p>The rule is that a slow check runs only when its answer could have changed. While building, the agent
+runs <code>gate --fast</code> — check, format, lint, types, no tests. The full gate runs the affected
+tests only, once per slice, at close. A pass is stamped against the code, so editing a document
+afterwards never re-runs tests. The full suite runs in CI on the main branch and nightly — never as an
+agent's routine step. <a href="../design/gate.html">The gate and test speed</a>.</p>
+
+<h3>What does it cost in tokens?</h3>
+<p>spry does not publish numbers, and it will vary with your project. What it does to keep the cost
+down: <code>AGENTS.md</code> — read on every task — has a hard line budget; agents open a process file
+only when a step names it; knowledge is split into an index plus one file per item, so an agent reads
+one line per item and opens the one it needs; and <code>spry find</code> searches instead of reading
+everything. The reviews, interviews and falsify runs are extra work compared with "just write the code"
+— that work is what you are buying.</p>
+
+<h2>Your process</h2>
+
+<h3>Can I change the process?</h3>
+<p>Yes — it is yours. <code>/spry:process-change</code> changes a rule, a template or a step in every
+file it touches at once, and records it so <code>/spry:update</code> keeps it. The one thing never
+changed locally is the tool; a tool change is offered back with <code>/spry:contribute</code>.
+<a href="../guides/maintaining.html">Keep spry yours</a>.</p>
+
+<h3>We don't use epics. Or milestones are too big.</h3>
+<p>Levels are set in the config. A small project can drop the epic level; features then sit straight
+under milestones. ID prefixes are chosen in the setup interview too.</p>
+
+<h3>What does a product manager actually do?</h3>
+<p>Answer interviews. <code>/spry:milestone</code>, <code>epic</code>, <code>feature</code> and
+<code>story</code> ask a few questions at a time, offer a drafted answer to confirm, and write it down in
+plain words — audience 2–3, no code or file paths. Then read the plan, backlog and progress on GitHub by
+clicking folders, with nothing to install. The one decision only product can make: saying yes to a
+story's criteria. <a href="../guides/planning.html">Plan the work</a>.</p>
+
+<h3>And QA?</h3>
+<p>Writes and runs the manual checks for each story with <code>/spry:test-scenarios</code>, and logs
+each run. A logged pass proves a criterion; a logged fail un-proves it and becomes a bug.
+<a href="../guides/qa.html">Checks for QA</a>.</p>
+
+<h3>Can several people — or several agent sessions — work at once?</h3>
+<p>Yes. Slices of stories that touch different files can be built side by side, each in its own git
+worktree and session. With <code>mint: main</code>, IDs and slice claims are taken on the main branch,
+so two sessions never take one number or start the same slice. Generated pages are written only on the
+main branch, so branches never conflict over them. <a href="../guides/team.html">Work as a team</a>.</p>
+
+<h3>Does it work in a monorepo?</h3>
+<p>Yes. The TypeScript profile covers Turborepo — filtering checks and tests to changed packages — and
+falsify runners can run in each test file's nearest package (<code>"cwd": "package"</code>), including
+pnpm workspaces.</p>
+
+<h2>Data and leaving</h2>
+
+<h3>Where does my data live?</h3>
+<p>In your repository, as Markdown files under <code>spry/</code>, plus <code>AGENTS.md</code>,
+<code>CLAUDE.md</code> and a CI workflow. There is no server, database or account. A local
+<code>.spry/</code> folder — gitignored — holds a search index, your personal tone, the gate's stamp and
+caches. Nothing leaves your machine except what you push, and <code>/spry:contribute</code>, which files
+an issue on spry only after you have read it and said yes.</p>
+
+<h3>Will spry end up in my production build?</h3>
+<p>No. Setup excludes <code>spry/</code> from deploy builds (<code>.dockerignore</code> or the stack's
+build config), and the pre-launch review checks it.</p>
+
+<h3>Can I stop using it?</h3>
+<p>Yes. Nothing in your product's code depends on spry. Stop running the skills, and remove
+<code>spry/</code>, the spry lines in <code>AGENTS.md</code>, and the spry CI workflow when you want them
+gone — or keep the files as a readable record of what was planned and why. Tests keep working; the
+<code>S-1/AC-2</code> in their names is only text.</p>
+
+<h3>How is it related to writ?</h3>
+<p>Inspired by it, not based on it: the same aim, rebuilt around what running writ on real projects
+taught. A writ project can be adopted. <a href="../design/writ.html">Coming from writ</a>.</p>
+
+</article>
+</main>
+</body>
+</html>

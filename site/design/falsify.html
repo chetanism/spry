@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Falsify · spry</title>
+<meta name="description" content="How spry proves a slice's tests would notice its safeguards breaking — each guard removed on purpose, the tests run, and the result recorded — and every rule that keeps that proof honest.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+<h1>Falsify</h1>
+<p class="lead">A passing test tells you the code works today. It doesn't tell you the test would notice
+if the code broke. Falsify answers that: for each safeguard a slice adds, it removes the safeguard on
+purpose, runs the tests, and expects one to fail.</p>
+
+<h2>The problem it solves</h2>
+<p>Agents write a lot of tests, quickly, and many of them pass for the wrong reason: they check that a
+function returns <em>something</em>, or test the happy path next to the rule rather than the rule. A
+suite like that is green whether the safeguard is there or not. You only find out when the bug ships.</p>
+<p>Falsify is a targeted form of what testers call <em>mutation testing</em>: make a small, deliberate
+change to the code (a <em>mutation</em>) and see whether the tests <em>catch</em> it. spry does it only
+for the lines that matter — the safeguards the slice added — so it takes minutes, not hours.</p>
+
+<div class="callout note">
+  <span class="callout-title">From the worked example</span>
+  <p>SL-1 <em>Record a loan</em> added three safeguards. Falsify deleted the "unknown library card"
+  check, and every test still passed — no test noticed. The slice added "S-1/AC-1 refuses an unknown
+  library card", ran falsify again, and the check was caught.</p>
+</div>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Control</th><th>Mutation</th><th>Expect</th><th>Result</th></tr></thead>
+<tbody>
+<tr><td>book already on loan → <code>AlreadyOnLoan</code></td><td>delete the check</td><td>S-1/AC-3</td><td>caught</td></tr>
+<tr><td><code>due_on = today + 14</code></td><td><code>+ 13</code></td><td>S-1/AC-2</td><td>caught</td></tr>
+<tr><td>unknown library card → <code>NoSuchMember</code></td><td>delete the check</td><td>S-1/AC-1</td><td>survived → added a test; caught</td></tr>
+</tbody></table></div>
+
+<h2>How it runs</h2>
+<ol class="steps">
+  <li><strong>The plan is drafted from the diff</strong>, not by hand.
+    <p><code>falsify suggest</code> reads the source lines the branch added and lists each
+    <em>control</em> — a guard, a validation, an authorisation check, an error branch — with a mutation
+    that removes it. Each plan entry names the line with <code>find</code> and its replacement with
+    <code>with</code> — writ's form. A person can edit the plan before it runs.</p></li>
+  <li><strong>Each control names what should catch it.</strong>
+    <p><code>expect</code> names acceptance criteria (<code>S-1/AC-2</code>) — or, for a bug's slice, the
+    bug (<code>B-4</code>), since a bug has no criteria. Tests are found by those IDs in their names.</p></li>
+  <li><strong>Only those tests run</strong>, with the runner's fail-fast flag — one failure is enough.</li>
+  <li><strong>The result is recorded</strong> in the slice file's Falsify table, with <code>--record</code>.</li>
+</ol>
+
+<h2>Which mutations</h2>
+<ul>
+  <li><strong>A guard made <em>never true</em></strong> — <code>if (loans &gt;= 3)</code> becomes a condition that never fires.</li>
+  <li><strong>A comparison's boundary flipped</strong> — <code>&gt;=</code> ↔ <code>&gt;</code>. Never <code>==</code> ↔ <code>!=</code>,
+  and never inside a generic's <code>&lt;…&gt;</code>, which isn't a comparison at all.</li>
+  <li><strong>A <code>throw</code>, <code>raise</code> or error return deleted.</strong></li>
+</ul>
+<h3>Why not negate the guard?</h3>
+<p>Negating <code>if (overLimit)</code> to <code>if (!overLimit)</code> also breaks the normal path — now every
+member is refused. Any test at all "catches" that, including ones that know nothing about the limit.
+It is a false catch: it says the safeguard is tested when it may not be. Making the guard never true
+removes <em>only</em> the safeguard.</p>
+
+<h3>When there is no guard to remove</h3>
+<ul>
+  <li><strong>The slice changes a value</strong> — a key, a digest, a calculation — and adds no guard:
+  falsify offers up to five lines that compute or store something, each deleted. Keep the ones a test
+  must notice. <code>merge-check</code> never requires these.</li>
+  <li><strong>The slice adds no source line at all</strong> — only tests or documents: there is nothing
+  to falsify, and <code>merge-check</code> accepts an empty table.</li>
+</ul>
+
+<h2>The diff decides, not the agent</h2>
+<p>The one thing an agent must not be able to do is leave out the control it suspects would survive.
+So:</p>
+<ul>
+  <li><strong><code>merge-check</code> runs <code>suggest</code> again</strong> at merge time and blocks when a
+  control it lists has no row in the table.</li>
+  <li><strong>The agent can add controls, never drop one.</strong> A control that cannot run — it needs a
+  real clock, a network — is recorded <code>skipped — &lt;reason&gt;</code>, for a person to accept.</li>
+  <li><strong>Rows are matched by a key</strong>, a hash of the file and the line found
+  (<code>&lt;!-- f:… --&gt;</code> in each row). So renaming a control in plain words, to help the reader,
+  never forces a re-run.</li>
+</ul>
+
+<h2>Results</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Result</th><th>Means</th><th>Then</th></tr></thead>
+<tbody>
+<tr><td><span class="badge green">caught</span></td><td>A test failed with the safeguard removed</td><td>Nothing — this is the goal</td></tr>
+<tr><td><span class="badge amber">survived</span></td><td>Every test still passed</td><td>Add a test and run again — or write why no test should catch it. A bare <code>survived</code> blocks the merge.</td></tr>
+<tr><td><span class="badge">unreliable</span></td><td>The tests were red, or timed out, before anything was changed</td><td>Fix the baseline first</td></tr>
+<tr><td><span class="badge">skipped</span></td><td>The control can't be run here</td><td>A written reason, accepted by a person at merge</td></tr>
+</tbody></table></div>
+<ul>
+  <li><strong><code>survived</code> only when every group of its tests ran.</strong> One group red or timed
+  out makes it <code>unreliable</code> — never a survivor that might have been caught.</li>
+  <li><strong>A reason on a survivor or a skip</strong> (<code>survived — logged only; no rule depends on
+  it</code>) is a <code>!</code> in <code>merge-check</code>, which a person accepts in the merge's one ask.</li>
+  <li><strong>Re-running only the survivors</strong> is fine: <code>--record</code> replaces their rows and
+  keeps the rest. A control whose line has changed since has a new key; run the whole plan with
+  <code>--replace</code> to drop its old row.</li>
+</ul>
+
+<h2>Making it fast</h2>
+<ul>
+  <li><strong>Only the citing test files run</strong>, through a per-runner command with a
+  <code>{files}</code> placeholder.</li>
+  <li><strong>Files that name the control's source file run first</strong>; the rest run only if those
+  miss it. A control cited by more than 20 files is flagged <code>wide:</code> at the run — list the files
+  that matter to cap it.</li>
+  <li><strong>The baseline runs once</strong> for all the files together, not once per control.</li>
+  <li><strong>Parallel in git worktrees</strong> (<code>falsify.parallel</code>: <code>false</code>, <code>true</code>
+  or a number; or <code>--jobs N</code>). Each worker gets its own detached copy of the code outside your
+  repository, so your working tree is never written to. Installed dependencies
+  (<code>node_modules</code>, <code>.venv</code>, <code>venv</code>, plus <code>falsify.share</code>) are linked in,
+  not reinstalled — except a pnpm package's own <code>node_modules</code>, whose links are copied, so a
+  workspace sibling resolves to the worktree's mutated copy rather than the untouched one.</li>
+  <li><strong>The baseline runs in a worktree too</strong>, so anything a worktree is missing shows up as
+  <code>unreliable</code> — never as every control looking <code>caught</code>.</li>
+  <li><strong>It falls back to serial</strong> when tracked files have uncommitted changes or a cited test
+  file isn't committed. A runner marked <code>"parallel": false</code> (integration tests on a shared
+  database, fixed ports) runs its controls one at a time.</li>
+</ul>
+
+<h2>Safety</h2>
+<ul>
+  <li><strong>It refuses</strong> a mutation that changes nothing, a file with uncommitted changes, and an
+  <code>expect</code> no test cites.</li>
+  <li><strong>It always restores</strong> the code — after an error, Ctrl-C or a kill signal too — and
+  checks the files are exactly as committed afterwards.</li>
+  <li><strong>A runner that times out is stopped with its whole process group</strong>, so no stray test
+  process keeps running.</li>
+  <li><strong>It works on Windows:</strong> paths are quoted for <code>cmd</code>, <code>taskkill /T</code> stops a
+  timed-out run, a directory junction stands in when a symlink is refused, pnpm projects run serially,
+  and files are written with Unix line endings.</li>
+  <li><strong>Every write gets a fresh, increasing file timestamp.</strong> <em>Why:</em> this bug was
+  found while building falsify. Two mutations of the same size written in the same second let build
+  caches that check only size and timestamp — Python's <code>.pyc</code> files — run the
+  <em>previous</em> mutation's code. That produced a false <code>caught</code>.</li>
+</ul>
+
+<h2>Where it fits in a slice</h2>
+<p>At close, falsify runs <strong>after the review and before the gate</strong>:</p>
+<div class="flow" role="list" aria-label="Order at close">
+  <span class="step" role="listitem"><b>Review</b><small>and its fixes</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step hi" role="listitem"><b>Falsify</b><small>tests added for survivors</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>Gate</b><small>once, on the code that merges</small></span>
+</div>
+<p><strong>Why that order:</strong> a review fix changes code falsify would have proved, and a test
+added for a survivor changes code a gate already passed. In this order each runs once. Falsify runs its
+own baseline, so it doesn't need a gate first. <a href="../guides/closing.html">Close and merge →</a></p>
+
+<h2>Is it worth it?</h2>
+<p>The cost is a few minutes per slice, mostly unattended. The trade-off is honest: falsify proves the
+tests notice the safeguards <em>this slice added</em>. It does not prove your whole suite is good, and
+it can't run a control that needs a real clock or network — those are written down and accepted by a
+person rather than silently passed.</p>
+
+</article>
+</main>
+</body>
+</html>

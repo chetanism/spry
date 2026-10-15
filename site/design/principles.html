@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Principles · spry</title>
+<meta name="description" content="The eight principles behind every spry rule, why each one exists, and how the plugin, the process files and the tool fit together in your project.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+<h1>Principles</h1>
+<p class="lead">Every rule in spry comes from a handful of principles. If you know these, you can predict
+how spry behaves in a situation this site never mentions — and decide whether that behaviour suits
+your team.</p>
+
+<h2>The eight principles</h2>
+
+<h3>One parent per item</h3>
+<p>The plan is a strict tree: milestone → epic → feature → story → slice. Each link is one-to-many, and
+nothing in the plan belongs to two parents.</p>
+<p><strong>Why:</strong> writ, the process spry grew out of, let one piece of work claim several
+requirements at once. Working out "is this requirement done?" then meant following a web of claims,
+and the answer drifted. With one parent, "done" rolls up by simple counting, and moving a piece of
+work is moving one folder. <strong>Trade-off:</strong> work that really serves two stories has to be
+split, or linked as <code>related</code> — a pointer that does not count toward progress.</p>
+
+<h3>Status is derived, never typed</h3>
+<p>People write intent: what should be built and how to tell it works. Nobody writes "done". The tool
+works it out from facts — the slice is merged, the criterion has a test that names it, or a passing QA check.</p>
+<p><strong>Why:</strong> a status someone types is a status someone forgets to update, or updates
+optimistically. An agent is the most optimistic typist there is. <a href="status.html">Status is derived →</a></p>
+
+<h3>Written for its reader</h3>
+<p>Every kind of document declares an <em>audience level</em> from 1 (no technical knowledge) to 10
+(an engineer in this codebase). Planning documents are written in plain words; slices are
+technical. The same level governs how the agent talks to you while it works on that document.</p>
+<p><strong>Why:</strong> product owners stop reading plans full of file paths, and developers waste
+time on prose. Writing each page for the person who reads it keeps both in the loop.
+<a href="audience.html">Written for its reader →</a></p>
+
+<h3>Incremental</h3>
+<p>No big requirements document up front. You plan one milestone, then one epic, then one feature —
+as the work needs it.</p>
+<p><strong>Why:</strong> writ started every project with a full business requirements document. It
+went stale as soon as the first slice taught the team something. spry plans a level when you are
+about to need it, so what is written is still true when it is built.</p>
+
+<h3>Checked or not written</h3>
+<p>A rule that matters is enforced by <code>spry check</code> — the tool's validator — rather than left as a
+sentence an agent may or may not follow.</p>
+<p><strong>Why:</strong> an agent follows written rules most of the time. "Most of the time" is the
+problem: the one time it doesn't is the time nobody is watching. Rules that can be checked are
+checked, in the agent's session and again in CI.</p>
+
+<h3>Small files, indexed</h3>
+<p>Anything that grows — conventions, decisions, notes about an external service — becomes an
+<code>INDEX.md</code> with one line per item, plus one file per item.</p>
+<p><strong>Why:</strong> an agent reading a 900-line file to find one rule burns its context and still
+misses things. An index lets it read one line per item and open only the item it needs.
+<a href="knowledge.html">Knowledge and size →</a></p>
+
+<h3>Agent-neutral</h3>
+<p>The logic lives in templates, process files and the tool. Skills are thin pointers to them.
+State lives in files, never in a chat session.</p>
+<p><strong>Why:</strong> sessions end, context windows fill, and teams use different agents. Because
+everything is in files, you can switch agent — or hand the slice to a colleague — halfway through
+and lose nothing.</p>
+
+<h3>Same for one person or ten</h3>
+<p>A team is a section of the configuration file, not a different way of working. Solo, nothing is
+routed for review; add members and roles, and review routing and code owners follow.</p>
+<p><strong>Why:</strong> most projects start with one person and grow. Changing process when the
+second person joins is when things break.</p>
+<pre data-label="spry.config.json — team"><code>"team": {
+  "members": [{"name": "Asha", "github": "asha", "roles": ["product"]}],
+  "review": {"spry/plan/**": ["product"], "src/**": ["developer"]}
+}</code></pre>
+<ul>
+  <li>Empty <code>members</code> means solo: nothing is routed for review.</li>
+  <li>GitHub's <code>CODEOWNERS</code> file is generated from <code>review</code>, so plan changes go to product
+  and code changes to developers.</li>
+  <li>Skills read the roles to decide who an item goes to. <a href="../guides/team.html">Work as a team →</a></li>
+</ul>
+
+<h2>How the pieces fit</h2>
+
+<p>spry has three parts. Knowing where each lives explains why your project behaves the same whichever
+agent you use, and why CI can check things without any agent at all.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Part</th><th>What it is</th><th>Where it lives</th></tr></thead>
+<tbody>
+<tr><td><strong>Skills</strong></td><td>Short entry points you type, like <code>/spry:story</code>. Each names the process file to follow.</td><td>The plugin (or, for other agents, copied into your project)</td></tr>
+<tr><td><strong>Process files</strong></td><td>The rules every agent follows: how to interview, slice, review, merge, reply. Plus a template for every document type.</td><td>Copied into your project at <code>spry/process/</code></td></tr>
+<tr><td><strong>The tool</strong></td><td><code>spry.py</code> — one Python file, standard library only, Python 3.10+. Checks the rules, works out progress, writes generated pages, runs falsify.</td><td>Copied into your project at <code>spry/tool/spry.py</code></td></tr>
+</tbody></table></div>
+
+<h3>Why the process and tool are copied into your project</h3>
+<p>This is called <em>vendoring</em>: the process files and the tool are copied into your repository,
+not read from the plugin each time.</p>
+<ul>
+  <li><strong>Any agent reads the same rules.</strong> A teammate on Cursor and one on Claude Code follow
+  identical text, because it is in the repository they both cloned.</li>
+  <li><strong>CI runs without an agent.</strong> GitHub Actions runs <code>python3 spry/tool/spry.py check</code>
+  with nothing installed but Python.</li>
+  <li><strong>Your project can change its own process.</strong> <code>/spry:process-change</code> edits your
+  copy and records why, so <code>/spry:update</code> keeps your change when it brings in spry's newer ones.
+  The tool itself is never edited locally — it is replaced whole on update, and a change your project
+  needs in it is offered back to spry with <code>/spry:contribute</code>.</li>
+</ul>
+<p>The trade-off: your copy can fall behind. <code>/spry:update</code> exists for that, and offers each
+change one by one. <a href="../guides/maintaining.html">Keep spry yours →</a></p>
+
+<h3>How it is installed</h3>
+<ul>
+  <li><strong>Claude Code:</strong> add the marketplace, install the plugin, and the skills appear as
+  <code>/spry:&lt;name&gt;</code>.</li>
+  <li><strong>Any other agent:</strong> <code>spry.py install --agent generic</code> writes the skills to
+  <code>spry/skills/</code> and lists them in a generated block of <code>AGENTS.md</code>, which most agents
+  (Codex among them) read. <code>--agent claude</code> writes project skills for people not using the
+  plugin, <code>cursor</code> writes Cursor commands, and <code>gemini</code> writes Gemini commands. The four
+  skills that need the plugin itself — <code>init</code>, <code>adopt</code>, <code>update</code>, <code>contribute</code>
+  — point at the folder <code>install</code> ran from.</li>
+</ul>
+<p><a href="../start/install.html">Installation →</a> · <a href="../guides/other-agents.html">Use another agent →</a></p>
+
+<h3>The spry repository itself</h3>
+<p>For reference, spry's own repository holds the marketplace listing, the <code>spry</code> plugin
+(skills, process files, templates, the tool, and per-stack setup profiles for TypeScript/Node, Python
+and a generic fallback), the tool's tests, and the worked example under <code>docs/example/</code>. A
+second plugin, <code>spry-web</code>, for design-system and other "how to do X" skills, is planned
+for later.</p>
+
+</article>
+</main>
+</body>
+</html>

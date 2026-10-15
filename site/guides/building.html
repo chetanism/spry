@@ -1,0 +1,189 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Build a slice · spry</title>
+<meta name="description" content="How /spry:slice-open claims a slice, writes its work order before any code, checks it for conflicts, opens a draft pull request and builds it.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Build a slice</h1>
+<p class="lead"><code>/spry:slice-open</code> is where code starts — but not before a written plan. The
+agent writes a <strong>work order</strong> first, checks it against everything else in flight, opens a
+draft pull request with it, and then builds. It only stops to ask when the plan does something hard to
+undo.</p>
+
+<h2>Pick a slice</h2>
+
+<pre data-label="In your agent"><code><span class="p">&gt; </span>/spry:slice-open SL-2
+<span class="c"># or, with no ID, pick from the backlog's "Ready to build"</span>
+<span class="p">&gt; </span>/spry:slice-open</code></pre>
+
+<p>With no ID, the agent reads <em>Ready to build</em> from the backlog and asks which to open. By default
+it recommends the first row and offers the next two. A project can set <code>slices.pick: ask</code> in its config instead:
+then it lists the first four and recommends none, because what else bears on the choice — a design
+not settled, an outside team's date — is the person's call. See <a href="team.html">Work as a team</a>.</p>
+
+<h2>What happens</h2>
+
+<ol class="steps">
+  <li><strong>Claim it.</strong>
+    <p><code>spry.py claim SL-2</code> runs before anything else, so nobody spends an hour on a work order
+    someone else is writing. It creates and switches to the branch <code>sl-2-refuse-over-limit</code>. With
+    <code>mint: main</code> set (IDs and claims taken on the main branch), the claim is pushed to the main branch, and refused if someone already
+    holds the slice. Not going ahead after all? <code>spry.py release SL-2</code> gives it back.</p></li>
+  <li><strong>Read.</strong>
+    <p>The story and its feature, every knowledge file the change could touch — conventions,
+    decisions, how external services behave, security and performance rules — and the code.</p></li>
+  <li><strong>Write the work order.</strong>
+    <p>Every section of the slice file's <em>Work order</em>, before any code. What goes in each is below.</p></li>
+  <li><strong>Conflict check.</strong>
+    <p>Against the story, its siblings, decisions — and every open slice, including which files each
+    one touches. Findings and how each was resolved are written into the work order. See
+    <a href="../design/conflicts.html">The conflict check</a>.</p></li>
+  <li><strong>Show the summary and the plan.</strong>
+    <p>The agent asks for approval <em>only</em> when the plan does something hard to undo or departs from
+    the story. Otherwise it goes straight on.</p></li>
+  <li><strong>Open the pull request.</strong>
+    <p>The slice goes <code>open</code>; the work order is the branch's first commit, before any code. It's
+    pushed, and a <strong>draft</strong> pull request titled <code>SL-2 Refuse a loan over the limit</code> is
+    opened, its body generated from the slice file. With <code>slices.issue</code> on, a GitHub issue is
+    created first from the work order.</p></li>
+  <li><strong>Build.</strong>
+    <p>In the same session, unless you said to open only. Then the agent goes on to
+    <a href="closing.html">close the slice</a>.</p></li>
+</ol>
+
+<h2>The work order</h2>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>Section</th><th>What it holds</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Summary</strong></td><td>2–4 bullets anyone on the team can read: what will be done, and what a person will see</td></tr>
+    <tr><td><strong>Covers</strong></td><td>The criteria this slice proves, as links — never restated</td></tr>
+    <tr><td><strong>Plan</strong></td><td>One bullet per file and what changes in it</td></tr>
+    <tr><td><strong>Must not</strong></td><td>The decisions and rules this change could break, linked, each with one line on how</td></tr>
+    <tr><td><strong>Tests</strong></td><td>At least one per criterion, each name containing the criterion, like <code>S-2/AC-1</code></td></tr>
+    <tr><td><strong>Demo</strong></td><td>Steps anyone can copy and paste to see it working — no values to fill in by hand</td></tr>
+    <tr><td><strong>Conflict check</strong></td><td>What it was checked against, each finding, and its resolution</td></tr>
+  </tbody>
+</table></div>
+
+<p>Here is SL-2 from the worked example — an open slice, work order only:</p>
+
+<pre data-label="SL-2-refuse-over-limit.md — the work order"><code>### Summary
+
+- The desk refuses a loan when the member already has 3 books, or has an overdue one.
+- The refusal shows on the desk as soon as the library card is scanned, before any book.
+
+### Covers
+
+- [S-2](README.md) AC-1, AC-2
+
+### Plan
+
+- `src/loans/eligibility.ts` — `canBorrow(memberId, today): Result&lt;void, AtLimit | Overdue&gt;`; reads `loans.due_on` (D-1)
+- `src/loans/lend.ts` — call `canBorrow` before inserting; same errors
+- `src/desk/LendPanel.tsx` — show the refusal after the card scan; disable **Lend**
+- `src/loans/eligibility.test.ts` — unit tests below
+- `db/seed.ts` — members `1003` (3 loans) and `1004` (one overdue)
+
+### Must not
+
+- [D-1](../../../../../knowledge/decisions/D-1-store-the-due-date.md) — overdue means `due_on &lt; today`, from the stored date.
+- [PERF-1](../../../../../knowledge/performance.md) — card scan to screen under 1 s: one query for both checks.
+
+### Tests
+
+- "S-2/AC-1 refuses a member with 3 books on loan"
+- "S-2/AC-2 refuses a member with an overdue book"
+
+### Demo
+
+```bash
+pnpm db:reset &amp;&amp; pnpm db:seed &amp;&amp; pnpm dev
+open http://localhost:3000/desk   # card 1003 → "Limit reached"; card 1004 → "Return overdue book first"
+```
+
+### Conflict check
+
+- Checked 2026-10-07 against: S-2, S-1, SL-1, D-1, security, performance, open slices (none)
+- Overlap: SL-1's `lend.ts` already returns `LendError` → `AtLimit` and `Overdue` added to that union, not a new type
+- Dependency: B-1 changes how "today" is worked out → `today` is a parameter here, so B-1's fix applies to both</code></pre>
+
+<div class="callout note">
+  <span class="callout-title">Why a test's name carries the criterion</span>
+  <p>A criterion counts as proven when a test whose <em>name</em> contains <code>S-2/AC-1</code> exists — in its
+  title, docstring or parametrize id. A citation in a comment or in code proves nothing, and a skipped
+  test proves nothing either. That is how spry knows a story is really done without anyone typing it.
+  More in <a href="../design/status.html">Status is derived</a>.</p>
+</div>
+
+<h2>When the agent stops to ask</h2>
+
+<p>A person decides three things: the criteria, the merge, and anything hard to undo. While building,
+only the third comes up:</p>
+
+<ul>
+  <li>a database migration;</li>
+  <li>a public API or event shape;</li>
+  <li>a new dependency;</li>
+  <li>deleting data or files;</li>
+  <li>breaking a <em>Must not</em> rule.</li>
+</ul>
+
+<p>Everything else runs as one piece of work, because the checks stand in for a person watching. See
+<a href="../design/decisions.html">Where a person decides</a>.</p>
+
+<h2>While building</h2>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>Do</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td>Check each change with <code>spry.py gate --fast</code></td><td>Runs <code>spry check</code> and the fast checks (format, lint, types — cheapest first). No tests, so it takes seconds</td></tr>
+    <tr><td>Run <code>spry.py gate</code> (with affected tests) only when a test's answer is what you need</td><td>It adds the affected tests — minutes on a big project — and it runs once more at close anyway</td></tr>
+    <tr><td>Never run the full suite</td><td>CI runs it on the main branch and nightly; <code>/spry:test-all</code> runs it when someone asks</td></tr>
+    <tr><td>Push only at close</td><td>Each push runs CI again</td></tr>
+    <tr><td>Never run <code>spry.py index</code> on a branch</td><td>The progress pages are written only on the main branch, so branches never conflict over them. For fresh pages locally, use <code>spry.py view</code></td></tr>
+    <tr><td>Never edit the work order to match the code</td><td>The close summary says what differed. The difference is the record</td></tr>
+  </tbody>
+</table></div>
+
+<pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py gate --fast   <span class="c"># after each change</span>
+<span class="p">$ </span>python3 spry/tool/spry.py gate          <span class="c"># when you need the tests' answer</span></code></pre>
+
+<p>A departure from the plan is noted for the close summary's <em>What changed</em>. A new rule learned
+along the way goes into the project's knowledge later, with <a href="knowledge.html"><code>/spry:record</code></a>.</p>
+
+<h2>If the session ends mid-slice</h2>
+
+<p>Nothing is lost. The work order, the branch and the draft pull request are all in git, so any agent —
+in a new session, or a different tool — reads the slice file and carries on.</p>
+
+<h2>Next</h2>
+
+<div class="cards">
+  <a class="card" href="closing.html">
+    <p class="card-title">Close and merge a slice</p>
+    <p>Review, falsify, gate — then merge on your yes.</p>
+  </a>
+  <a class="card" href="../design/gate.html">
+    <p class="card-title">The gate and test speed</p>
+    <p>Why slow checks run only when their answer could have changed.</p>
+  </a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

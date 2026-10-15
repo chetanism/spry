@@ -13,12 +13,16 @@ is the source of truth for every decision; read the section you are changing fir
 - **Tool:** Python standard library only, 3.10+. One file.
 - **The worked example** (`docs/example/`) must pass `check` and `index --check` — it is what people
   read first.
+- **The site** (`site/`, published to GitHub Pages) explains spry to newcomers in full. A change to
+  how spry works updates the page that describes it. Plain HTML, CSS and JS — no build step; the
+  navigation lives once, in `site/assets/site.js`.
 - Replies follow `plugins/spry/process/chat.md`.
 
 ## Before committing
 
 ```bash
 python3 tests/test_spry.py
+python3 tests/test_site.py
 python3 plugins/spry/tool/spry.py --root docs/example check
 python3 plugins/spry/tool/spry.py --root docs/example index --check
 claude plugin validate plugins/spry

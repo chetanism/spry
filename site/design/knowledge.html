@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Knowledge and size · spry</title>
+<meta name="description" content="Where spry keeps what a project learns — decisions, conventions, how external services behave, security and performance rules — and how line budgets, indexes and search keep it small enough for an agent to use.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+<h1>Knowledge and size</h1>
+<p class="lead">An agent is only as good as what it reads before it starts. spry keeps what your project
+has learned in small, findable files, and puts hard limits on the ones an agent reads every time.</p>
+
+<h2>What gets recorded</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Kind</th><th>Lives in</th><th>Holds</th></tr></thead>
+<tbody>
+<tr><td><strong>Decisions</strong></td><td><code>knowledge/decisions/</code>, one file each (<code>D-1</code>, …)</td><td>The context, the decision, the options rejected and why, the consequences. Superseding one makes a new decision; the old one is marked <em>superseded by D-n</em>.</td></tr>
+<tr><td><strong>Conventions</strong></td><td><code>knowledge/conventions/</code>, one file per area of code</td><td>Rules about how code is written here that the code doesn't make obvious — one per bullet, each with its why.</td></tr>
+<tr><td><strong>External behaviour</strong></td><td><code>knowledge/external/&lt;service&gt;/</code>, one file per behaviour</td><td>What was observed, when, the evidence, the source (<code>documented</code> or <code>observed</code>), confidence, and which items it affects. Observed wins when the two disagree.</td></tr>
+<tr><td><strong>Interview outputs</strong></td><td><code>security.md</code>, <code>performance.md</code>, <code>constraints.md</code>, people and roles</td><td>Numbered rules — <code>SEC-1</code>, <code>PERF-1</code> — from the setup interview, each in its own file.</td></tr>
+<tr><td><strong>Glossary</strong></td><td><code>knowledge/glossary.md</code></td><td>One term per concept, and the words not to use. <a href="audience.html#one-term-per-concept">One term per concept →</a></td></tr>
+</tbody></table></div>
+
+<p><strong>Why external behaviour gets its own place:</strong> a service's documentation says one thing
+and the service does another — a rate limit lower than documented, a field that is sometimes missing.
+Someone spends a day finding that out. Written down with its evidence, the next agent doesn't spend the
+day again. <code>/spry:record</code> writes any of these. <a href="../guides/knowledge.html">Record what you learn →</a></p>
+
+<h2>Line budgets</h2>
+<p>Each file type has a budget in configuration, and <code>spry check</code> enforces it. The defaults:</p>
+<div class="table-wrap"><table>
+<thead><tr><th>File</th><th>Budget</th></tr></thead>
+<tbody>
+<tr><td><code>AGENTS.md</code></td><td>150 lines</td></tr>
+<tr><td>Any knowledge item</td><td>120 lines</td></tr>
+<tr><td>A plan item's <code>README.md</code></td><td>150 lines</td></tr>
+<tr><td>A slice file</td><td>200 lines</td></tr>
+<tr><td>Any <code>INDEX.md</code> entry</td><td>one line</td></tr>
+</tbody></table></div>
+<p><strong>Why budgets:</strong> files grow from every slice, record and interview, and nothing else takes
+lines out. Without a limit, the always-read file becomes the never-read file. When a file goes over,
+<code>/spry:compact</code> moves whole sections to the files that own them, leaving a one-line pointer and
+losing no fact. It moves text; it never decides a rule is wrong.</p>
+
+<h2>AGENTS.md and its admission test</h2>
+<p><code>AGENTS.md</code> is read on every task, so every line costs on every task. The admission test is
+written at its top:</p>
+<blockquote>A line stays only if it is a <strong>pointer</strong> (where something lives), a <strong>rule an
+agent breaks by default</strong>, or a <strong>rule that cannot be checked by a tool</strong>.</blockquote>
+<p>The question to ask of each line: <em>would an agent write the wrong code without it, on a task that
+never opens the file it came from?</em> A rule that passes — "Never compute a due date from the loan date
+— read <code>loans.due_on</code> (D-1)" — stays. Everything else lives in <code>spry/knowledge/</code> and is
+linked from an index. <code>CLAUDE.md</code> is a single line, <code>@AGENTS.md</code>, so Claude Code reads
+the same file.</p>
+
+<h2>Index, then item</h2>
+<p>Conventions, decisions, external behaviour, security notes and audit reports are each an <code>INDEX.md</code> plus one
+file per item. The index is generated from each item's <code>title</code> and <code>summary</code>. An agent
+reads the index — one line per item — and opens only the one it needs.</p>
+<p>That is why a <code>summary</code> must say the fact itself. From the Shelf example: "Open Library —
+lookups are rate-limited without a User-Agent: about 100 lookups per 5 minutes, then HTTP 429" is
+useful in an index; "Rate limit notes" is not.</p>
+
+<h2>Search</h2>
+<p><code>spry find &lt;query&gt;</code> searches <code>spry/</code> and <code>AGENTS.md</code> and lists the best
+sections first. It uses SQLite's full-text search (FTS5), through the standard library's <code>sqlite3</code>, with one
+row per section — document title, heading, body — leaving out link targets and generated blocks. The
+index lives in <code>.spry/index.db</code> and refreshes per file when it changes. Where FTS5 isn't
+available it falls back to plain search. Writ's slice summaries, kept in an adopted project's history,
+are listed last.</p>
+<p><strong>Why:</strong> agents are told to search before they plan or code. Search that returns the right
+section, not the right 900-line file, is what makes that habit cheap.</p>
+
+</article>
+</main>
+</body>
+</html>

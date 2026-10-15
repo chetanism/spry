@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quick start · spry</title>
+<meta name="description" content="Your first hour with spry: set up a project, plan one milestone down to a story, split it into slices, build one, close it and merge it.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Quick start</h1>
+<p class="lead">Your first hour: set up a project, plan just enough to have one story, then take it
+through a slice to a merge. Every step is a command you type into your agent; it asks a few questions
+at a time and writes the answers into files as you go.</p>
+
+<div class="callout note">
+  <span class="callout-title">Before you start</span>
+  <p>Install spry (<a href="install.html">Installation</a>), have the GitHub command-line tool (<code>gh</code>) signed in, and open
+  your agent in the project's folder. The examples below use the <a href="example.html">Shelf</a>
+  example — a lending desk for a small library. A word you don't know? The
+  <a href="../reference/glossary.html">glossary</a> has every one.</p>
+</div>
+
+<h2>The path</h2>
+
+<div class="flow" role="list" aria-label="The first hour">
+  <span class="step" role="listitem"><b>init</b><small>set up</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>milestone</b></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>epic</b></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>feature</b></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step person" role="listitem"><b>story</b><small>you approve criteria</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step hi" role="listitem"><b>slice</b></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step hi" role="listitem"><b>slice-open</b><small>builds it</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step hi" role="listitem"><b>slice-close</b></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step person" role="listitem"><b>merge</b><small>your yes</small></span>
+</div>
+<div class="legend"><span>planning, in plain words</span><span class="hi">building</span><span class="person">a person decides</span></div>
+
+<h2>1. Set up the project</h2>
+
+<pre data-label="Claude Code"><code>/spry:init</code></pre>
+
+<p>Use <code>/spry:adopt</code> instead if there is code already. The agent starts by asking what you are
+building, for whom and why now — a paragraph or a pasted document both work. Then it interviews you,
+in this order:</p>
+
+<ol>
+  <li>the product and the people who use it;</li>
+  <li>the team — names, GitHub handles, who reviews what (or nobody: solo is fine);</li>
+  <li>the plan's shape — keep epics, or drop them for a small project;</li>
+  <li>the roadmap — your milestones in order;</li>
+  <li>constraints, security, performance and outside services you depend on;</li>
+  <li>the stack and how tests run (this part is for a developer);</li>
+  <li>the words you use, for the glossary.</li>
+</ol>
+
+<p>It asks at most three things at a time, and offers a drafted answer to confirm or correct rather
+than an open question. Say "you decide" and it takes its recommendation and notes it as an assumption.
+Say "I don't know yet" and it records an open question and moves on.</p>
+
+<p><strong>You end up with</strong> a <code>spry/</code> folder, an <code>AGENTS.md</code>, and a CI workflow.
+It asks before committing. <a href="../guides/new-project.html">More on setup →</a></p>
+
+<h2>2. Plan one level at a time</h2>
+
+<p>Each planning skill defines one level, never the level below. Define just enough to reach one
+story you can build:</p>
+
+<pre data-label="Claude Code"><code>/spry:milestone M-1    <span class="c"># why, done-when, in and out of scope</span>
+/spry:epic             <span class="c"># a body of work under the milestone</span>
+/spry:feature          <span class="c"># how it works, step by step, and its numbered rules</span>
+/spry:story            <span class="c"># stories with acceptance criteria</span></code></pre>
+
+<p>These are written for product people: plain words, no code. For Shelf, Asha (product) defined
+<em>M-1 Members can borrow books</em>, then <em>E-1 Lending</em>, then <em>F-1 Lend at the desk</em> with
+rules like <strong>R-1</strong> "a member may have at most 3 books on loan at once".</p>
+
+<p>Before anything goes <strong>ready</strong>, the agent runs a <strong>conflict check</strong> — it reads the
+parent, the siblings, the glossary and your decisions, and resolves or asks about every clash. Then
+it shows you a summary and asks to mark it ready. <a href="../guides/planning.html">Plan the work →</a></p>
+
+<h3>The story is where you decide</h3>
+
+<p>A story's <strong>acceptance criteria</strong> are what "done" means. Each is something a person can see,
+written as <em>Given / When / Then</em>, numbered <code>AC-1</code>, <code>AC-2</code>…:</p>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>AC</th><th>Given</th><th>When</th><th>Then</th></tr></thead>
+  <tbody>
+    <tr><td>AC-1</td><td>a member with 3 books on loan</td><td>the librarian scans their library card</td><td>the desk shows "Limit reached: 3 books on loan" and <strong>Lend</strong> cannot be pressed</td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>The story goes ready only on your yes. Tests will be named after these criteria, and QA will check
+them by hand. <a href="../guides/criteria.html">Write acceptance criteria →</a></p>
+
+<h2>3. Split the story into slices</h2>
+
+<pre data-label="Claude Code"><code>/spry:slice S-2</code></pre>
+
+<p>The agent reads the story, its feature's rules, your conventions and the code it will touch, then
+proposes slices in one reply: a title for each, which criteria it covers, and the visible change it
+makes. Each slice is <strong>one pull request a reviewer can read in one sitting</strong>. It also says
+which slices need an earlier one and which could be built side by side.</p>
+
+<p>Approve, and each slice becomes a small file, state <code>planned</code>.
+<a href="../guides/slicing.html">Split a story into slices →</a></p>
+
+<h2>4. Open and build a slice</h2>
+
+<pre data-label="Claude Code"><code>/spry:slice-open       <span class="c"># or name one: /spry:slice-open SL-2</span></code></pre>
+
+<p>With no ID, it lists the slices ready to build and recommends the first. Then, without stopping unless it must:</p>
+
+<ol class="steps">
+  <li><strong>Claims the slice</strong> and creates its branch — and, if your project takes claims on the main branch (<code>mint: main</code>), so nobody else can start it.</li>
+  <li><strong>Writes the work order</strong> — a short summary anyone can read, the plan file by file, the rules it must not break, the tests (each named after a criterion, like <code>"S-2/AC-1 refuses a member with 3 books on loan"</code>), and a copy-paste demo.</li>
+  <li><strong>Runs the conflict check</strong> — against the story, the project's rules and decisions, and open slices touching the same files.</li>
+  <li><strong>Opens a draft pull request</strong> (one marked not yet ready to merge) with the work order as its body.</li>
+  <li><strong>Builds it</strong>, running quick checks after each change — then goes straight on to close it (step 5), unless you asked it to open only.</li>
+</ol>
+
+<div class="callout warn">
+  <span class="callout-title">When it will stop and ask</span>
+  <p>Only if the plan does something hard to undo — a database migration, a public API change, a new
+  dependency, deleting data — or departs from the story. Otherwise it carries on.</p>
+</div>
+
+<p><a href="../guides/building.html">Build a slice →</a></p>
+
+<h2>5. Close it</h2>
+
+<pre data-label="Claude Code"><code>/spry:slice-close</code></pre>
+
+<p>slice-open does this for you; type <code>/spry:slice-close</code> yourself only for a slice you opened
+only, or picked up in a new session. Closing is where the slice earns its merge:</p>
+
+<ol class="steps">
+  <li><strong>Rebase</strong> — bring the branch up to date with the latest main branch.</li>
+  <li><strong>What changed</strong> — only where the code differs from the plan, and why.</li>
+  <li><strong>Proof</strong> — every covered criterion has a test naming it, or QA is told which need a manual check.</li>
+  <li><strong>Follow-ups</strong> — bugs, tasks and decisions found along the way are recorded.</li>
+  <li><strong>Review</strong> by a fresh agent that never saw the work being written; you choose which findings to fix.</li>
+  <li><strong>Falsify</strong> — each safeguard the slice added is broken on purpose to prove a test notices.</li>
+  <li><strong>Gate</strong> — the project's checks and the tests the change affects, once, on the code that will merge.</li>
+  <li>The slice is marked <code>closed</code> and the pull request <strong>ready for review</strong>.</li>
+</ol>
+
+<p><a href="../guides/closing.html">Close and merge a slice →</a></p>
+
+<h2>6. Merge</h2>
+
+<pre data-label="Claude Code"><code>/spry:merge</code></pre>
+
+<p>The merge checks that CI is green, the slice is ready, the pull request is approved (on a team),
+and the main branch has not moved under it. Then it asks you <strong>one question</strong>: what will merge,
+plus anything you need to accept — a safeguard no test caught, with its reason; a criterion with no
+test. Only your yes merges it.</p>
+
+<p>Afterwards it updates your main branch, makes sure the progress pages are fresh, and tells you
+what the merge unblocked.</p>
+
+<h2>Check where you are</h2>
+
+<p>At any point:</p>
+
+<pre data-label="Claude Code"><code>/spry:status</code></pre>
+
+<p>It shows done versus total at every level, open slices and bugs, and what to pick up next — at your
+level of technical detail. Not technical? Set it once with <code>/spry:tone 2</code>.</p>
+
+<div class="cards">
+  <a class="card" href="example.html">
+    <p class="card-title">See it all in one place</p>
+    <p>The worked example has every one of these files, filled in.</p>
+  </a>
+  <a class="card" href="../guides/team.html">
+    <p class="card-title">Bring in your team</p>
+    <p>Roles, review routing, and slices built side by side.</p>
+  </a>
+  <a class="card" href="../reference/skills.html">
+    <p class="card-title">Every skill</p>
+    <p>What each command does and when to use it.</p>
+  </a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

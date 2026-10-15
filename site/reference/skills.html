@@ -1,0 +1,379 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Skills · spry</title>
+<meta name="description" content="Every spry skill — what it does, when to use it, its arguments, who it is written for, and what it writes.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Skills</h1>
+<p class="lead">A skill is a command you type into your agent — <code>/spry:story</code>,
+<code>/spry:slice-close</code>. Each one runs one step of the work by following a process file in
+your project. This page lists all 25, grouped by when you reach for them.</p>
+
+<div class="callout note">
+  <span class="callout-title">How to read each entry</span>
+  <p><strong>Audience</strong> is how technical the conversation and the document are, from 1 (no
+  technical knowledge) to 10 (an engineer in this codebase) — see
+  <a href="../design/audience.html">Written for its reader</a>. <strong>Arguments</strong> are
+  optional unless shown in angle brackets; leave them out and the skill asks or picks the obvious
+  one. In other agents the names differ slightly (<code>spry-slice-open</code> in Cursor, for
+  example) — see <a href="../guides/other-agents.html">Use another agent</a>.</p>
+</div>
+
+<h2>At a glance</h2>
+
+<table>
+  <thead><tr><th>Group</th><th>Skills</th></tr></thead>
+  <tbody>
+    <tr><td>Set up</td><td><a href="#spryinit"><code>init</code></a>, <a href="#spryadopt"><code>adopt</code></a></td></tr>
+    <tr><td>Plan</td><td><a href="#sprymilestone"><code>milestone</code></a>, <a href="#spryepic"><code>epic</code></a>, <a href="#spryfeature"><code>feature</code></a>, <a href="#sprystory"><code>story</code></a>, <a href="#sprybug"><code>bug</code></a>, <a href="#sprytask"><code>task</code></a></td></tr>
+    <tr><td>Build</td><td><a href="#spryslice"><code>slice</code></a>, <a href="#spryslice-open"><code>slice-open</code></a>, <a href="#spryslice-close"><code>slice-close</code></a></td></tr>
+    <tr><td>Review and merge</td><td><a href="#spryreview"><code>review</code></a>, <a href="#sprymerge"><code>merge</code></a></td></tr>
+    <tr><td>QA and testing</td><td><a href="#sprytest-scenarios"><code>test-scenarios</code></a>, <a href="#sprytest-all"><code>test-all</code></a>, <a href="#spryexplore"><code>explore</code></a>, <a href="#sprysecurity-audit"><code>security-audit</code></a>, <a href="#spryprelaunch"><code>prelaunch</code></a></td></tr>
+    <tr><td>Knowledge</td><td><a href="#spryrecord"><code>record</code></a>, <a href="#sprycompact"><code>compact</code></a></td></tr>
+    <tr><td>Keeping spry current</td><td><a href="#spryprocess-change"><code>process-change</code></a>, <a href="#spryupdate"><code>update</code></a>, <a href="#sprycontribute"><code>contribute</code></a></td></tr>
+    <tr><td>Status and tone</td><td><a href="#sprystatus"><code>status</code></a>, <a href="#sprytone"><code>tone</code></a></td></tr>
+  </tbody>
+</table>
+
+<p>Five skills only run when you type them — the agent never starts them on its own:
+<code>init</code>, <code>adopt</code>, <code>update</code>, <code>contribute</code> and
+<code>prelaunch</code>. They set up, change the whole project, or send something out.</p>
+
+<!-- ============================================================ -->
+<h2>Set up</h2>
+
+<h3 id="spryinit">/spry:init</h3>
+<p>Sets up spry in a project that has little or no code yet. It interviews you — product and the
+people who use it, team, plan shape, roadmap, constraints, security, performance, external
+services, stack and tests, and the words you use — then writes everything a project needs.</p>
+<ul>
+  <li><strong>When:</strong> once, at the start of a new project. For existing code, use <code>adopt</code>.</li>
+  <li><strong>Arguments:</strong> a high-level description of what you are building, or a path to a file holding one.</li>
+  <li><strong>Audience:</strong> 3 — until the stack questions, which are for a developer.</li>
+  <li><strong>Writes:</strong> <code>spry/spry.config.json</code>, the roadmap and first milestones, knowledge files (glossary, security, performance, constraints, external services), the backlog, coverage and done pages, <code>AGENTS.md</code>, <code>CLAUDE.md</code>, a CI workflow, <code>CODEOWNERS</code> for a team, and <code>spry/README.md</code> last.</li>
+  <li><strong>Stops part-way?</strong> Run it again; it resumes from the first topic with no answer.</li>
+  <li><strong>Guide:</strong> <a href="../guides/new-project.html">Set up a new project</a>.</li>
+</ul>
+
+<h3 id="spryadopt">/spry:adopt</h3>
+<p>Puts spry around a codebase that already exists. It surveys the code first — stack, test
+commands, main areas, existing documents, external services, domain words — and offers what it
+found for you to confirm, instead of asking from scratch. No existing file can fail spry's checks,
+so it blocks nobody.</p>
+<ul>
+  <li><strong>When:</strong> once, on a project that already has code.</li>
+  <li><strong>Arguments:</strong> the next piece of work, optional — it seeds the roadmap. The plan starts from the next work, not from what is already built.</li>
+  <li><strong>Audience:</strong> 5.</li>
+  <li><strong>Writes:</strong> everything <code>init</code> writes, plus <code>spry/knowledge/codebase.md</code>. Existing instructions are merged into <code>AGENTS.md</code>; existing decision records move to <code>spry/knowledge/decisions/</code>; existing CI is added to, never replaced; existing tests are untouched.</li>
+  <li><strong>From writ:</strong> a project that ran writ is planned from a mapping file writ's agent writes first — <a href="../design/writ.html">Coming from writ</a>.</li>
+  <li><strong>Guide:</strong> <a href="../guides/adopt.html">Adopt an existing codebase</a>.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>Plan</h2>
+
+<p>The four planning skills share one procedure: find the parent, read everything around it, create
+a draft, interview into it, run the conflict check, and mark it <code>ready</code> on your yes. Each
+defines its own level only — never the level below.</p>
+
+<h3 id="sprymilestone">/spry:milestone</h3>
+<p>Defines one milestone with the product owner: why it matters, what "done" looks like in terms a
+person can check, what is in and out of scope, and constraints. Does not define its epics.</p>
+<ul>
+  <li><strong>When:</strong> planning the next big outcome.</li>
+  <li><strong>Arguments:</strong> a milestone ID to continue (for example one <code>init</code> drafted), or a title. Empty → it offers the roadmap's <em>Later</em> lines.</li>
+  <li><strong>Audience:</strong> 2.</li>
+  <li><strong>Writes:</strong> <code>spry/plan/M-n-&lt;slug&gt;/README.md</code>.</li>
+  <li><strong>Guide:</strong> <a href="../guides/planning.html">Plan the work</a>.</li>
+</ul>
+
+<h3 id="spryepic">/spry:epic</h3>
+<p>Defines one epic under a milestone: why, who it is for, done-when, and scope. Does not define its features.</p>
+<ul>
+  <li><strong>Arguments:</strong> the parent milestone ID and a title. Without a parent, it lists the milestones and asks.</li>
+  <li><strong>Audience:</strong> 2.</li>
+  <li><strong>Writes:</strong> <code>E-n-&lt;slug&gt;/README.md</code> inside the milestone's folder.</li>
+  <li><strong>Note:</strong> a small project can drop the epic level in its config; features then sit straight under milestones.</li>
+  <li><strong>Guide:</strong> <a href="../guides/planning.html">Plan the work</a>.</li>
+</ul>
+
+<h3 id="spryfeature">/spry:feature</h3>
+<p>Defines one feature: a summary, who uses it, how it works step by step, numbered rules
+(<code>R-1</code>, <code>R-2</code> …) that stories cite, and what is out of scope. Does not write its stories.</p>
+<ul>
+  <li><strong>Arguments:</strong> the parent epic (or milestone, without epics) and a title.</li>
+  <li><strong>Audience:</strong> 3.</li>
+  <li><strong>Writes:</strong> <code>F-n-&lt;slug&gt;/README.md</code> inside its parent's folder.</li>
+  <li><strong>Guide:</strong> <a href="../guides/planning.html">Plan the work</a>.</li>
+</ul>
+
+<h3 id="sprystory">/spry:story</h3>
+<p>Writes the stories of one feature with the product owner and QA. Each story has acceptance
+criteria in Given / When / Then form, each one something a person using the product can observe.
+It asks QA's question as it goes: "how would you check this by hand?"</p>
+<ul>
+  <li><strong>When:</strong> a feature is ready to be broken into stories.</li>
+  <li><strong>Arguments:</strong> the parent feature and a title. One run can write several stories — it offers the list of titles first.</li>
+  <li><strong>Audience:</strong> 3.</li>
+  <li><strong>Writes:</strong> <code>S-n-&lt;slug&gt;/README.md</code> per story. A story with more than six criteria is offered a split.</li>
+  <li><strong>Guide:</strong> <a href="../guides/criteria.html">Write acceptance criteria</a>.</li>
+</ul>
+
+<h3 id="sprybug">/spry:bug</h3>
+<p>Records a bug against the feature or story it breaks: what happens, what should, how to
+reproduce it, where, its impact and severity (<code>blocker</code>, <code>major</code>,
+<code>minor</code>). It reads the open bugs under the same feature first, to catch duplicates.</p>
+<ul>
+  <li><strong>When:</strong> someone reports something not working as the plan says.</li>
+  <li><strong>Arguments:</strong> the feature or story ID, and what goes wrong.</li>
+  <li><strong>Audience:</strong> 4.</li>
+  <li><strong>Writes:</strong> <code>bugs/B-n-&lt;slug&gt;/README.md</code> under its parent. A bug that breaks a criterion names it in <code>breaks</code>. Bugs do not count toward their parent's progress.</li>
+  <li><strong>Guide:</strong> <a href="../guides/bugs-and-tasks.html">Bugs and tasks</a>.</li>
+</ul>
+
+<h3 id="sprytask">/spry:task</h3>
+<p>Records technical work no story asks for — set-up, upgrades, refactors, infrastructure — under the
+milestone or epic it serves: why, what changes, how to tell it is done, and the risks. If a user
+would notice the result, it offers <code>/spry:story</code> instead.</p>
+<ul>
+  <li><strong>Arguments:</strong> the milestone or epic ID, and the work.</li>
+  <li><strong>Audience:</strong> 7.</li>
+  <li><strong>Writes:</strong> <code>tasks/T-n-&lt;slug&gt;/README.md</code>. Tasks do not count toward progress.</li>
+  <li><strong>Guide:</strong> <a href="../guides/bugs-and-tasks.html">Bugs and tasks</a>.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>Build</h2>
+
+<h3 id="spryslice">/spry:slice</h3>
+<p>Splits a ready story, task or bug into planned slices. Each slice is one change a reviewer can
+read in one sitting, with a demo that shows something that was not there before. It proposes all the
+slices in one reply — which criteria each covers, and which need an earlier one — and creates them
+on your approval.</p>
+<ul>
+  <li><strong>When:</strong> a story is ready to be built.</li>
+  <li><strong>Arguments:</strong> <code>&lt;story, task or bug ID&gt;</code>. Without one, it lists ready items with no slices and asks.</li>
+  <li><strong>Audience:</strong> 8.</li>
+  <li><strong>Writes:</strong> one <code>SL-n-&lt;slug&gt;.md</code> per slice, in state <code>planned</code>, with only its summary, <code>covers</code> and <code>blocked_by</code>. No branch, no code.</li>
+  <li><strong>Guide:</strong> <a href="../guides/slicing.html">Split a story into slices</a>.</li>
+</ul>
+
+<h3 id="spryslice-open">/spry:slice-open</h3>
+<p>Opens a slice and builds it. It claims the slice, writes the work order (summary, plan per
+file, must-not rules, tests, demo), runs the conflict check against open slices and the project's
+rules, creates the branch and a draft pull request, and then builds — asking first only when the
+plan does something hard to undo or departs from the story.</p>
+<ul>
+  <li><strong>Arguments:</strong> a slice ID. Without one, it reads <em>Ready to build</em> on the backlog and offers the first row (or lists four, with <code>slices.pick: ask</code>).</li>
+  <li><strong>Audience:</strong> 8 — except the work order's summary, which anyone can read.</li>
+  <li><strong>Writes:</strong> the slice file's <em>Work order</em>, the branch <code>sl-n-&lt;slug&gt;</code>, a draft PR whose body comes from the slice file, and — with <code>slices.issue</code> on — a GitHub issue. Then the code and tests.</li>
+  <li><strong>Guide:</strong> <a href="../guides/building.html">Build a slice</a>.</li>
+</ul>
+
+<h3 id="spryslice-close">/spry:slice-close</h3>
+<p>Closes a slice whose code is finished. In order: rebase, write <em>What changed</em> from the diff,
+confirm every covered criterion has a citing test (or name the manual checks QA owes), create
+follow-ups, get a fresh-eyes review on the draft PR and apply the accepted fixes, falsify the
+safeguards the slice added, run the gate once, and mark the PR ready. It merges only through
+<code>/spry:merge</code> — and runs that at its end when you answered <em>post, fix, then merge</em> to
+the review.</p>
+<ul>
+  <li><strong>Arguments:</strong> a slice ID; without one, the open slice on the current branch.</li>
+  <li><strong>Audience:</strong> 8.</li>
+  <li><strong>Writes:</strong> the slice file's <em>Close summary</em> (what changed, falsify table, follow-ups), <code>state: closed</code> and <code>closed: &lt;date&gt;</code>, the PR body, and a comment on the slice's issue if it has one.</li>
+  <li><strong>Guide:</strong> <a href="../guides/closing.html">Close and merge a slice</a>.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>Review and merge</h2>
+
+<h3 id="spryreview">/spry:review</h3>
+<p>A review by fresh eyes — a new agent that did not write the work and carries nothing from the
+session that did. It reviews a slice's PR against its work order, a plan item against its parent,
+the code and the glossary, or any other PR. Every finding is verified on its line before you see it;
+on your yes, each is posted as an inline comment, with a suggested change wherever the fix is wording.</p>
+<ul>
+  <li><strong>When:</strong> a PR or a newly written plan item is ready for review — solo or on a team.</li>
+  <li><strong>Arguments:</strong> PR numbers, slice IDs or plan item IDs; several at once are reviewed in parallel. Without one, the current branch's PR.</li>
+  <li><strong>Audience:</strong> 8.</li>
+  <li><strong>Writes:</strong> nothing in your branch. It posts comments only on a yes, and only <code>COMMENT</code> on your own PR. On your own PR, one answer can be <em>post, fix, then merge</em> — the session that ran the review does the fixing and merging, never the reviewing agent.</li>
+  <li><strong>Guide:</strong> <a href="../guides/reviews.html">Reviews with fresh eyes</a>.</li>
+</ul>
+
+<h3 id="sprymerge">/spry:merge</h3>
+<p>Merges a slice's PR safely. Every step, every time: checks green, <code>merge-check</code>
+passes, PR body current, approval (on a team), base not moved under it, no ID taken twice. Then one
+ask listing anything a person must accept, a squash merge with the slice's trailers, and a look at the
+main branch afterwards.</p>
+<ul>
+  <li><strong>Arguments:</strong> a PR number or slice ID; without one, the current branch's PR. It never guesses between two.</li>
+  <li><strong>Audience:</strong> 8.</li>
+  <li><strong>Writes:</strong> the squash commit on the main branch. Afterwards it re-tests only if the main branch gained code the PR's checks never saw, refreshes the progress tables when CI did not, and reports what is unblocked.</li>
+  <li><strong>Never:</strong> merges a red or pending PR, merges without a yes for this PR, or uses <code>--admin</code>. When CI never ran at all, the gate on the PR's head stands in — you accept that at the ask, and the commit says so.</li>
+  <li><strong>Guide:</strong> <a href="../guides/closing.html">Close and merge a slice</a>.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>QA and testing</h2>
+
+<h3 id="sprytest-scenarios">/spry:test-scenarios</h3>
+<p>Writes the steps QA follows by hand to check each acceptance criterion of a story — what to set
+up first and who provides it, the exact data, and what you should see at each step. The list is read
+back and cut with QA before any steps are written.</p>
+<ul>
+  <li><strong>When:</strong> once a story is ready, before or while it is built.</li>
+  <li><strong>Arguments:</strong> <code>&lt;story ID&gt;</code>; without one, it lists ready stories with no checks file.</li>
+  <li><strong>Audience:</strong> 4.</li>
+  <li><strong>Writes:</strong> the story's <code>checks.md</code>. An existing one is extended, never rewritten; its check log is never reordered.</li>
+  <li><strong>Guide:</strong> <a href="../guides/qa.html">Checks for QA</a>.</li>
+</ul>
+
+<h3 id="sprytest-all">/spry:test-all</h3>
+<p>Runs the whole test suite on purpose: <code>spry check</code> first, then each part in order,
+timed, with local services started only when they are down and stopped only if this run started
+them. Names failures, slow tests and flaky ones.</p>
+<ul>
+  <li><strong>When:</strong> before closing a slice that touched shared code, after a dependency or configuration change, or when asked. Never as a routine step — CI runs the full suite on the main branch.</li>
+  <li><strong>Arguments:</strong> a part name, optional.</li>
+  <li><strong>Audience:</strong> 8.</li>
+  <li><strong>Writes:</strong> nothing. Report only — it never fixes, skips, retries or quarantines a test.</li>
+  <li><strong>Guide:</strong> <a href="../guides/testing.html">Test beyond the slice</a>.</li>
+</ul>
+
+<h3 id="spryexplore">/spry:explore</h3>
+<p>Exploratory testing by an agent: a seeded, replayable random walk over a real, isolated instance
+of the product. It combines actions in orders nobody wrote down, predicts each step's outcome from the
+area's acceptance criteria before running it, and ends with a report of defects and gaps.</p>
+<ul>
+  <li><strong>Arguments:</strong> area, depth (<code>sanity</code> ~15 steps, <code>regular</code> ~50, <code>deep</code> ~150, <code>adversarial</code> ~300) and a seed to replay. It asks for any you leave out.</li>
+  <li><strong>Audience:</strong> 8.</li>
+  <li><strong>Writes:</strong> nothing in the repository — a transcript in <code>.spry/explore/&lt;seed&gt;/</code>. A defect becomes a bug only on your yes.</li>
+  <li><strong>Needs:</strong> the <code>explore</code> section of the config filled in. It never falls back to your development instance.</li>
+  <li><strong>Guide:</strong> <a href="../guides/testing.html">Test beyond the slice</a>.</li>
+</ul>
+
+<h3 id="sprysecurity-audit">/spry:security-audit</h3>
+<p>Reviews the product, a milestone, an area or a branch for security problems against the
+project's security rules — access, sign-in and sessions, input, personal data, secrets, dependencies,
+external services — looking at the code, not only the documents.</p>
+<ul>
+  <li><strong>Arguments:</strong> the scope: product, a milestone ID, an area, or a branch.</li>
+  <li><strong>Audience:</strong> 8 while working, 6 in the report.</li>
+  <li><strong>Writes:</strong> a report in <code>spry/knowledge/audits/</code>. Findings become bugs or tasks you approve — it never fixes anything in passing.</li>
+  <li><strong>Guide:</strong> <a href="../guides/testing.html">Test beyond the slice</a>.</li>
+</ul>
+
+<h3 id="spryprelaunch">/spry:prelaunch</h3>
+<p>A go / no-go review before a release: every story proven, no open blocker bugs, a recent security
+audit, manual rule checks done, production configuration and secrets, data migrations and backups,
+alerting, and that <code>spry/</code> is not in the build.</p>
+<ul>
+  <li><strong>Arguments:</strong> the milestone ID or release name.</li>
+  <li><strong>Audience:</strong> 8 while working, 6 in the report.</li>
+  <li><strong>Writes:</strong> a report with a verdict — <code>go</code>, <code>go with conditions</code> or <code>no-go</code>. It never deploys and never changes production configuration.</li>
+  <li><strong>Guide:</strong> <a href="../guides/testing.html">Test beyond the slice</a>.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>Knowledge</h2>
+
+<h3 id="spryrecord">/spry:record</h3>
+<p>Records what the project learned so the next person — or the next agent session — finds it: a
+decision and the options rejected, a coding convention the code does not make obvious, how an
+external service actually behaves, or a security, performance or constraint rule.</p>
+<ul>
+  <li><strong>Arguments:</strong> <code>decision</code>, <code>convention</code> or <code>external</code>, and what. It asks when the kind is unclear.</li>
+  <li><strong>Audience:</strong> 6–7.</li>
+  <li><strong>Writes:</strong> one file under <code>spry/knowledge/</code>, found from its <code>INDEX.md</code>. It searches first and extends an existing entry rather than adding a second.</li>
+  <li><strong>Guide:</strong> <a href="../guides/knowledge.html">Record what you learn</a>.</li>
+</ul>
+
+<h3 id="sprycompact">/spry:compact</h3>
+<p>Brings a file back under its line budget — <code>AGENTS.md</code> first — by moving whole sections
+to the knowledge, plan or process files that own them, leaving a one-line pointer behind. It moves
+text; it does not edit it, and no fact is lost.</p>
+<ul>
+  <li><strong>When:</strong> <code>spry check</code> reports a file over budget, or <code>AGENTS.md</code> has grown long or repetitive.</li>
+  <li><strong>Arguments:</strong> a file, optional; by default every file <code>check</code> reports over budget.</li>
+  <li><strong>Audience:</strong> 7.</li>
+  <li><strong>Writes:</strong> the moves, on a branch, one commit per destination — shown to you first and applied only on a yes.</li>
+  <li><strong>Guide:</strong> <a href="../guides/maintaining.html">Keep spry yours</a>.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>Keeping spry current</h2>
+
+<h3 id="spryprocess-change">/spry:process-change</h3>
+<p>Changes how this project runs spry — a rule, a template, a step — in every file the change
+touches at once, and records it so a later <code>/spry:update</code> keeps it.</p>
+<ul>
+  <li><strong>When:</strong> part of the process does not fit the team.</li>
+  <li><strong>Arguments:</strong> the change, in a sentence.</li>
+  <li><strong>Audience:</strong> 7.</li>
+  <li><strong>Writes:</strong> the process files, templates, config, <code>AGENTS.md</code> or CI it touches, plus a row in <code>spry/knowledge/process-changes.md</code>. It never edits the tool — a tool change is offered to spry with <code>contribute</code>.</li>
+  <li><strong>Guide:</strong> <a href="../guides/maintaining.html">Keep spry yours</a>.</li>
+</ul>
+
+<h3 id="spryupdate">/spry:update</h3>
+<p>Brings the project up to date with what spry has gained since it was set up. It first updates the
+installed plugin, then offers each changelog entry since the project's baseline, explained in the
+project's own terms: take it as is, take it adapted, or skip it. Your own process changes are kept.</p>
+<ul>
+  <li><strong>When:</strong> whenever you want what is new — it changes nothing until you have answered every ask.</li>
+  <li><strong>Arguments:</strong> none.</li>
+  <li><strong>Audience:</strong> 7.</li>
+  <li><strong>Writes:</strong> the chosen changes to <code>spry/process/</code>, a whole new <code>spry/tool/spry.py</code>, the config's <code>spry</code> and <code>spry_baseline</code>, and one row per entry in <code>process-changes.md</code>.</li>
+  <li><strong>Guide:</strong> <a href="../guides/maintaining.html">Keep spry yours</a>.</li>
+</ul>
+
+<h3 id="sprycontribute">/spry:contribute</h3>
+<p>Offers spry something this project built — a process change, a skill, a stack profile. It judges
+honestly whether another project would use it, strips everything private (product, people, domain
+words, emails, URLs), and files an issue on spry after you have read it and said yes.</p>
+<ul>
+  <li><strong>Arguments:</strong> what to contribute, optional; otherwise it looks for candidates.</li>
+  <li><strong>Audience:</strong> 7.</li>
+  <li><strong>Writes:</strong> a draft in <code>.spry/</code> (never committed), the GitHub issue on your yes, and a row in <code>process-changes.md</code>. Never a pull request, a fork, or a push to spry's repository.</li>
+  <li><strong>Guide:</strong> <a href="../guides/maintaining.html">Keep spry yours</a>.</li>
+</ul>
+
+<!-- ============================================================ -->
+<h2>Status and tone</h2>
+
+<h3 id="sprystatus">/spry:status</h3>
+<p>Shows how far the project has got — done versus total at every level, open slices and open bugs —
+and what to pick up next, explained at your tone. Everything comes from the tool's output; it never
+invents progress.</p>
+<ul>
+  <li><strong>Arguments:</strong> an ID for one branch of the plan, or a level such as <code>feature</code>.</li>
+  <li><strong>Audience:</strong> yours. At tone 1–4 it is a few plain bullets per milestone; at 5–10, the tree as printed plus what stands out.</li>
+  <li><strong>Writes:</strong> nothing. It reads <code>status</code>, and <code>coverage</code> or <code>backlog</code> when you ask what is proven or what to do next.</li>
+  <li><strong>Guide:</strong> <a href="../design/pages.html">Generated pages</a>.</li>
+</ul>
+
+<h3 id="sprytone">/spry:tone</h3>
+<p>Sets how technical the agent's replies are for you, from 1 (no technical knowledge) to 10
+(engineer in this codebase), or resets to each document's own audience.</p>
+<ul>
+  <li><strong>Arguments:</strong> <code>&lt;1-10 | reset&gt;</code>. Empty → it says your current tone and where it comes from.</li>
+  <li><strong>Writes:</strong> <code>.spry/tone</code> — yours alone, never committed.</li>
+  <li><strong>Guide:</strong> <a href="../design/audience.html">Written for its reader</a>.</li>
+</ul>
+
+</article>
+</main>
+</body>
+</html>

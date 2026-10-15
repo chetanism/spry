@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Status is derived · spry</title>
+<meta name="description" content="How spry decides that a slice, a criterion, a story and everything above it is done — from merges, test names and QA checks, never from a status someone types.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+<h1>Status is derived</h1>
+<p class="lead">Nobody in spry marks anything "done". The tool works it out from facts that are hard to
+fake: the slice is merged, and every acceptance criterion has a test or a QA check that proves it.
+When you read "done" in spry, it means something.</p>
+
+<h2>Why not just a status field?</h2>
+<p>A typed status is an opinion. People forget to update it, update it too early, or update it for the
+part that works and not the part that doesn't. An agent is worse: asked whether it finished, it will
+say yes. And when a story is "done" but nobody can say which test proves it, the next change can
+quietly break it with nobody noticing.</p>
+<p>So spry asks for two kinds of evidence instead — one about the code, one about the behaviour —
+and counts.</p>
+
+<h2>The rules, level by level</h2>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Level</th><th>Done when</th></tr></thead>
+<tbody>
+<tr><td><strong>Slice</strong></td><td><code>state: closed</code>. <code>/spry:slice-close</code> sets it in the pull request's last commit, so on the main branch "closed" means merged.</td></tr>
+<tr><td><strong>Acceptance criterion</strong></td><td><em>Proven</em>: a test whose name contains <code>S-1/AC-1</code>, or a <code>pass</code> as the latest row for it in the story's <code>checks.md</code>.</td></tr>
+<tr><td><strong>Story</strong></td><td>All its slices are done <strong>and</strong> every criterion is proven.</td></tr>
+<tr><td><strong>Feature, epic, milestone</strong></td><td>All counted children are done. Dropped ones are left out; bugs and tasks never count.</td></tr>
+</tbody></table></div>
+
+<div class="callout note">
+  <span class="callout-title">Built is not the same as done</span>
+  <p>A story can have every slice merged and still not be done, because a criterion is unproven. In
+  the <a href="../start/example.html">worked example</a>, S-1 <em>Lend a book</em> has its only slice
+  merged, but QA's latest check of AC-2 failed — so S-1 shows "not proven". That is the point: built
+  and working are different claims.</p>
+</div>
+
+<h2>What counts as proof</h2>
+
+<h3>A test, by its name</h3>
+<p>A test proves a criterion when the criterion's ID is <strong>in the string that names the test</strong>
+— its title, its docstring, a parametrize id:</p>
+<pre data-label="TypeScript"><code>it("S-2/AC-1 refuses a member with 3 books on loan", () =&gt; { … })</code></pre>
+<ul>
+  <li><strong>A comment or code doesn't count.</strong> <code>// covers S-2/AC-1</code> above a test proves
+  nothing, and <code>check</code> warns about it. <em>Why:</em> a comment survives the test being deleted,
+  renamed or rewritten to test something else. A test's name is what the runner reports.</li>
+  <li><strong>A skipped test doesn't count.</strong> A line that skips the test or leaves it for later
+  (<code>it.skip</code>, <code>test.todo</code>, <code>xit</code>, <code>@pytest.mark.skip</code>) proves nothing.</li>
+</ul>
+<p>Why a name and not a mapping file? Because there is nothing to keep in sync. Rename the test and the
+proof goes with it; delete it and the proof disappears, visibly.</p>
+
+<h3>A QA check</h3>
+<p>Some criteria are checked by a person — a printed receipt, a layout on a real device. QA logs each
+run as a row in the story's <code>checks.md</code>: date, criterion, build, who, <code>pass</code> or
+<code>fail</code>. <a href="../guides/qa.html">Checks for QA →</a></p>
+
+<h3>A later fail un-proves it — test or not</h3>
+<p>When the latest check-log row for a criterion is <code>fail</code>, the criterion is unproven even if
+a passing test cites it. <strong>Why:</strong> a person saw it broken. A green test that disagrees with
+what someone saw is a test that tests the wrong thing.</p>
+
+<h2>Seeing progress</h2>
+<p><code>spry status</code> prints, at every level, how much is done out of how much is defined, grouped
+by parent: milestones, epics by milestone, features by epic, stories by feature, slices by story.</p>
+<pre data-label="spry status — the worked example"><code>M-1 Members can borrow books                                  0 of 1 epics done · 1 open bug
+  E-1 Lending                                                 0 of 2 features done · 1 open bug
+    F-1 Lend at the desk                                      0 of 2 stories done · 1 open bug
+      S-1 Lend a book                                         not proven · 1 of 1 slices · 2 of 3 criteria proven
+        slice SL-1 Record a loan                              done · PR #9
+      S-2 Loan limit                                          in progress · 0 of 1 slices · 0 of 2 criteria proven
+        slice SL-2 Refuse a loan over the limit               open · PR #14
+      bug B-1 Due date a day early on evening receipts        0 of 2 slices done
+        slice SL-4 Due date in the library's time zone        planned
+        slice SL-5 Correct due dates on loans already made    planned
+    F-2 Return a book                                         no stories yet
+  task T-1 Set up CI                                          done
+    slice SL-3 CI pipeline                                    done · PR #7</code></pre>
+<p>A plan longer than 100 lines prints only the levels that fit and says how to go deeper:
+<code>status &lt;ID&gt;</code> for one branch of the tree, <code>--level</code> to choose the depth, or
+<code>--all</code> for everything. <code>/spry:status</code> explains the same thing at your tone and says what
+to pick up next. The same numbers also appear on the <a href="pages.html">generated pages</a>.</p>
+
+<h2>Changing a story after work has started</h2>
+<p>Stories change. spry allows it — git history is the record — but it watches for one specific
+danger: <strong>the quiet way to "pass" is to weaken the criterion to fit the code.</strong></p>
+<ul>
+  <li><strong>A warning</strong> when a branch edits the text of a criterion that a test already cites,
+  or that its story's <code>checks.md</code> scenarios or check-log rows relied on and the branch left
+  as they were. (<code>check --base</code>, which CI runs on every pull request, compares against the main
+  branch.)</li>
+  <li><strong>A block</strong> when a branch changes a criterion <strong>and</strong> code together:
+  <code>merge-check</code> refuses to merge until the slice carries <code>criteria_approved_by:</code> the
+  story's owner. Only their yes, in their words, puts that line in — never the agent's judgement.</li>
+</ul>
+<p>The trade-off is one extra question when a criterion really did need to change. In exchange, the
+criteria stay what product agreed to.</p>
+
+<h2>Criteria are never renumbered</h2>
+<p>A criterion's number is permanent. Dropping one strikes it through (<code>~~AC-2~~</code>) rather than
+deleting it, so <code>AC-3</code> always means the same thing in every test name, check row and
+conversation.</p>
+
+</article>
+</main>
+</body>
+</html>

@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The conflict check · spry</title>
+<meta name="description" content="How spry checks every milestone, epic, feature, story, task and slice against everything it could clash with before it goes ready — what is gathered, the seven kinds of finding, and how each is resolved and recorded.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+<h1>The conflict check</h1>
+<p class="lead">The most expensive mistakes are the ones found after the code is written: a story that
+contradicts a decision made last month, two slices editing the same file, a feature that quietly
+duplicates another. The conflict check looks for them before any of that happens.</p>
+
+<h2>When it runs</h2>
+<p>On the draft, before it goes <code>ready</code> (a milestone, epic, feature, story or task) or
+<code>open</code> (a slice). The skills that write those — <code>milestone</code>, <code>epic</code>,
+<code>feature</code>, <code>story</code>, <code>task</code> and <code>slice-open</code> — run it for you, and run it
+again if the draft's scope changes. A bug gets one too, looking for duplicates among open bugs.</p>
+
+<h2>How it works</h2>
+<ol class="steps">
+  <li><strong>Gather.</strong>
+    <p><code>spry related &lt;file&gt;</code> lists the candidates, and the agent reads every one:</p>
+    <ul>
+      <li>the parent, and its parent;</li>
+      <li>siblings under the same parent;</li>
+      <li>items sharing a glossary term with the draft;</li>
+      <li>full-text hits on the draft's key phrases across the whole plan;</li>
+      <li>the knowledge files your project always checks (<code>always_check</code> — by default security,
+      performance and the decisions index);</li>
+      <li>decisions whose <code>affects</code> names the draft or one of its parents;</li>
+      <li><strong>for a slice:</strong> every open slice, and the files its plan lists.</li>
+    </ul>
+  </li>
+  <li><strong>Classify</strong> each finding as one of the seven kinds below.</li>
+  <li><strong>Resolve</strong> it — some the agent can settle; some are your call.</li>
+  <li><strong>Record</strong> the result in the document's own <em>Conflict check</em> section.</li>
+</ol>
+
+<h2>The seven kinds of finding</h2>
+<div class="table-wrap"><table>
+<thead><tr><th>Kind</th><th>Means</th><th>Resolved by</th></tr></thead>
+<tbody>
+<tr><td><code>Duplicate</code></td><td>Another item already says this</td><td><span class="badge amber">asks you</span> merge, drop, or tell them apart</td></tr>
+<tr><td><code>Overlap</code></td><td>Part of this is already covered elsewhere</td><td>Narrow one of them, and say which in both</td></tr>
+<tr><td><code>Contradiction</code></td><td>This says the opposite of an item, decision or rule</td><td><span class="badge amber">asks you</span> which one wins</td></tr>
+<tr><td><code>Dependency</code></td><td>This needs another item first</td><td>Added to <code>blocked_by</code> — never a dropped item, or one that waits on this</td></tr>
+<tr><td><code>Scope</code></td><td>This is outside its parent's in/out scope</td><td><span class="badge amber">asks you</span> move it, or widen the parent</td></tr>
+<tr><td><code>Term</code></td><td>A word clashes with the glossary</td><td>Use the glossary's word, or add a row</td></tr>
+<tr><td><code>Collision</code></td><td>A slice touches the same files as an open slice</td><td>Order them, or merge them</td></tr>
+</tbody></table></div>
+
+<p>Why some are asked and some aren't: a dependency or a glossary clash has a mechanical answer. A
+duplicate, a contradiction or a scope question is a product decision — the agent can lay out the
+options, but which story wins is not its call.</p>
+
+<h2>What gets recorded</h2>
+<pre data-label="Conflict check section"><code>## Conflict check
+
+- Checked 2026-10-05 against: F-1, S-1, F-2, glossary, security
+- Overlap: S-1 described the "fewer than 3" case → S-1 keeps allowed lending; S-2 has the refusals
+- Contradiction: overdue members — allowed in the draft, refused by the paper rule → refused; F-1/R-4 (Asha, 2026-09-30)</code></pre>
+<ul>
+  <li>The first line says when, and against what: <code>Checked &lt;date&gt; against: …</code></li>
+  <li>One line per finding: <code>&lt;Kind&gt;: &lt;item or file&gt; &lt;what&gt; → &lt;resolution&gt;</code>.</li>
+  <li><code>→ open</code> for anything not yet resolved.</li>
+  <li>No findings → <code>- No conflicts found.</code> under the first line.</li>
+</ul>
+
+<div class="callout warn">
+  <span class="callout-title">It can't be skipped</span>
+  <p><code>spry check</code> refuses <code>ready</code> or <code>open</code> without a dated <em>Checked</em>
+  line, or with any finding still marked <code>→ open</code>. A reviewer also checks the section is
+  honest — that it names what <code>related</code> lists.</p>
+</div>
+
+<h2>Why write it down?</h2>
+<ul>
+  <li><strong>It is evidence the check happened</strong> — and against what. "No conflicts" means
+  little if nobody can see what was looked at.</li>
+  <li><strong>The resolutions are decisions.</strong> "S-1 narrowed to the allowed case" explains, months
+  later, why S-1 doesn't mention refusals.</li>
+  <li><strong>It travels with the item.</strong> Any agent, in any later session, can read why the
+  item looks the way it does.</li>
+</ul>
+
+<h2>Collisions between slices</h2>
+<p>A <code>Collision</code> is the conflict check's most practical finding: two open slices about to
+edit the same file. Caught at open, it costs a sentence — "SL-2 goes first, SL-3 rebases". Caught at
+merge, it costs a painful rebase. It is also how spry decides that two slices can safely be built at
+the same time in separate worktrees: no shared file. <a href="../guides/team.html">Work as a team →</a></p>
+
+</article>
+</main>
+</body>
+</html>

@@ -1,0 +1,329 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tool commands · spry</title>
+<meta name="description" content="Every command of spry.py, the one-file Python tool behind spry — what it does, its flags, and examples.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Tool commands</h1>
+<p class="lead"><code>spry.py</code> is one Python file — standard library only, Python 3.10 or
+newer — copied into every project at <code>spry/tool/spry.py</code>. The skills call it; CI calls it;
+you can call it too. This page lists every command.</p>
+
+<div class="callout tip">
+  <span class="callout-title">You rarely type these yourself</span>
+  <p>The skills run the right command at the right moment. This page is for when you want to see
+  what a skill is doing, run a check by hand, or wire spry into CI.</p>
+</div>
+
+<h2>Running it</h2>
+
+<pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py &lt;command&gt; [options]
+<span class="p">$ </span>python3 spry/tool/spry.py --help            <span class="c"># every command</span>
+<span class="p">$ </span>python3 spry/tool/spry.py gate --help       <span class="c"># one command's flags</span>
+<span class="p">$ </span>python3 spry/tool/spry.py --version</code></pre>
+
+<table>
+  <thead><tr><th>Global option</th><th>Does</th></tr></thead>
+  <tbody>
+    <tr><td><code>--root ROOT</code></td><td>The project root. Default: the nearest folder holding <code>spry/spry.config.json</code>, so it works from any subfolder.</td></tr>
+    <tr><td><code>--version</code></td><td>Prints the tool's version.</td></tr>
+  </tbody>
+</table>
+
+<p>A few commands — <code>vendor</code> and <code>install</code> — are run from the plugin's copy,
+because they copy spry <em>into</em> a project. Everything else runs from the project's copy.</p>
+
+<h2>Checking</h2>
+
+<h3 id="check">check</h3>
+<p>The consistency of the plan, the knowledge and the links. This is the command that turns spry's
+written rules into rules that are actually enforced.</p>
+<pre><code>spry check [--base BASE]</code></pre>
+<ul>
+  <li>Always: front-matter, IDs, each item's place in the folder tree, the glossary's banned words,
+  line budgets, links, references to acceptance criteria, QA scenarios, conflict checks present and
+  resolved before <code>ready</code> / <code>open</code>, guide comments and placeholders left in
+  finished documents, <code>blocked_by</code> pointing at a dropped item or forming a circle.</li>
+  <li><code>--base BASE</code> — the git ref the branch merges into. Adds: a warning when a criterion's
+  text changed under a test, a QA scenario or a check-log row that relied on it; a refusal when the
+  branch changed a generated block; and an ID the branch and the base both took. CI passes it on pull
+  requests.</li>
+</ul>
+
+<h3 id="gate">gate</h3>
+<p>The one command that says "this code is good to go": <code>spry check</code>, then the fast checks
+(format, lint, types — cheapest first), then the affected tests, stopping at the first failure.</p>
+<pre><code>spry gate [--force] [--fast]</code></pre>
+<ul>
+  <li>A pass is stamped in <code>.spry/green</code> against a fingerprint of the code. While the code
+  matches, the gate runs <code>check</code> alone — so fixing a document after the tests passed never
+  re-runs the tests.</li>
+  <li>It also runs <code>check</code> alone when the branch changed only documents since its merge
+  base with the main branch.</li>
+  <li>With <code>tests.retry</code> set, affected tests that fail on a timeout run once more with no
+  parallelism. A real failure fails both runs.</li>
+  <li><code>--fast</code> — <code>check</code> and the fast checks only, no tests; stamps nothing. Used
+  for each change while building.</li>
+  <li><code>--force</code> — run everything even if the code is unchanged.</li>
+</ul>
+<p>More: <a href="../design/gate.html">The gate and test speed</a>.</p>
+
+<h3 id="changed">changed</h3>
+<p>For CI: prints <code>code=true</code> when any file outside <code>checks.docs</code> changed since
+<code>--base</code>, else <code>code=false</code>. CI skips the fast checks and tests when it is false;
+<code>/spry:merge</code> uses it to decide whether the main branch needs re-testing.</p>
+<pre><code>spry changed --base BASE</code></pre>
+
+<h3 id="merge-check">merge-check</h3>
+<p>Is a closed slice ready to merge? Exits 1 if anything blocks it.</p>
+<pre><code>spry merge-check [--base BASE] slice</code></pre>
+<p>It blocks (<code>✗</code>) when the slice is not closed or has no <code>closed:</code> date or PR
+number, when a control the diff adds has no falsify row, when a survivor has no reason, when the branch
+changed a criterion and code together without <code>criteria_approved_by:</code> the story's owner,
+or when <code>check</code> is not clean. It warns (<code>!</code>) about things a person must accept
+at the merge — a survivor or skipped control with a reason, a covered criterion no test cites (QA
+checks it by hand after the merge), or one whose latest manual check failed.</p>
+
+<h3 id="review-check">review-check</h3>
+<p>Would GitHub take this review as it stands? Exits 1 if not.</p>
+<pre><code>spry review-check --diff DIFF [--own] payload</code></pre>
+<ul>
+  <li><code>payload</code> — the review's JSON: <code>commit_id</code>, <code>event</code>, <code>body</code>, <code>comments</code>.</li>
+  <li><code>--diff DIFF</code> — the PR's diff (<code>gh pr diff &lt;n&gt;</code>), or <code>-</code> for stdin.</li>
+  <li><code>--own</code> — the reviewer wrote the PR, so only <code>COMMENT</code> is allowed.</li>
+</ul>
+<p>It checks every comment is anchored on lines the diff shows, every suggestion is closed, none
+overlap, none is a no-op.</p>
+
+<h2>Progress</h2>
+
+<h3 id="status">status</h3>
+<p>Done versus total at every level, grouped by parent: milestones, epics, features, stories, slices.</p>
+<pre><code>spry status [--level LEVEL] [--all] [id]</code></pre>
+<ul>
+  <li>A plan over 100 lines prints only the levels that fit and says how to go deeper.</li>
+  <li><code>id</code> — only this item's branch of the plan.</li>
+  <li><code>--level LEVEL</code> — stop at this level, for example <code>feature</code>.</li>
+  <li><code>--all</code> — every level, however long.</li>
+</ul>
+
+<h3 id="coverage">coverage</h3>
+<p>Defined versus done for the whole plan, criteria proven, slices, tasks and bugs — and what is built
+but not proven. Prints the coverage page on any branch.</p>
+<pre><code>spry coverage</code></pre>
+
+<h3 id="backlog">backlog</h3>
+<p>What is being built, what to build next, and what stands in the way: <em>In progress</em>,
+<em>Ready to build</em>, <em>Needs slicing</em>, <em>Blocked</em> and <em>Needs planning</em>, in plan
+order.</p>
+<pre><code>spry backlog</code></pre>
+
+<h3 id="done">done</h3>
+<p>Finished stories, tasks and bugs, newest first, with the day each closed (from the slices'
+<code>closed:</code> dates — never from git).</p>
+<pre><code>spry done</code></pre>
+
+<h3 id="index">index</h3>
+<p>Regenerates the marker blocks (children tables, proof tables, coverage, backlog, done) and every
+<code>INDEX.md</code>. Run by CI on the main branch only.</p>
+<pre><code>spry index [--check | --restore BASE]</code></pre>
+<ul>
+  <li><code>--check</code> — change nothing; exit 1 if anything is stale.</li>
+  <li><code>--restore BASE</code> — on a branch: put back BASE's copy of every generated block the branch changed.</li>
+</ul>
+
+<h3 id="view">view</h3>
+<p>Writes the backlog, coverage and done pages for this working tree to <code>.spry/view/</code>
+(gitignored) — fresh pages on a branch without touching the committed ones.</p>
+<pre><code>spry view [--since SINCE]</code></pre>
+<p><code>--since SINCE</code> — only when the plan or a test changed since this commit (used by the git hooks).</p>
+
+<h3 id="hooks">hooks</h3>
+<p>Installs git hooks, per clone, that refresh <code>.spry/view/</code> after a checkout or pull
+that changed the plan or a test.</p>
+<pre><code>spry hooks [--remove]</code></pre>
+
+<h2>Creating and linking items</h2>
+
+<h3 id="new">new</h3>
+<p>Creates an item from its template, with the next ID, in the right folder.</p>
+<pre><code>spry new [--parent PARENT] --title TITLE [--owner OWNER] [--dependency DEPENDENCY] type</code></pre>
+<ul>
+  <li>Item types, with IDs: <code>milestone</code>, <code>epic</code>, <code>feature</code>, <code>story</code>, <code>slice</code>, <code>task</code>, <code>bug</code>, <code>decision</code>.</li>
+  <li>Documents without an ID of their own: <code>checks</code> (a story's QA file; <code>--parent</code> is the story), <code>convention</code>, <code>external</code> (<code>--dependency</code> names the service), <code>audit</code>.</li>
+  <li>With <code>mint: main</code>, the ID is taken on the main branch, pushed there, and merged into the current branch, so two sessions never take one number.</li>
+</ul>
+<pre data-label="Example"><code><span class="p">$ </span>python3 spry/tool/spry.py new story --parent F-1 --title "Loan limit" --owner Asha</code></pre>
+
+<h3 id="next">next</h3>
+<p>The next free ID for a type.</p>
+<pre><code>spry next type</code></pre>
+
+<h3 id="claim">claim</h3>
+<p>Takes a slice before opening it, then cuts its branch <code>sl-&lt;n&gt;-&lt;slug&gt;</code>. With
+<code>mint: main</code> the claim is made on the main branch and refused when someone already holds it.</p>
+<pre><code>spry claim [--owner OWNER] [--no-switch] slice</code></pre>
+<ul>
+  <li><code>--owner OWNER</code> — who is building it, from <code>team.members</code>.</li>
+  <li><code>--no-switch</code> — make the branch without switching to it, for a separate worktree.</li>
+</ul>
+
+<h3 id="release">release</h3>
+<p>Gives back a claimed slice nobody is building: <code>planned</code> again, <code>branch:</code> cleared.
+The branch itself is left for its owner to delete.</p>
+<pre><code>spry release slice</code></pre>
+
+<h3 id="link">link</h3>
+<p>Sets a slice's <code>branch</code>, <code>pr</code> or <code>issue</code> in its front-matter.</p>
+<pre><code>spry link [--branch BRANCH] [--pr PR] [--issue ISSUE] slice</code></pre>
+
+<h3 id="related">related</h3>
+<p>Conflict-check candidates for a document: its parent, siblings, items sharing glossary terms,
+full-text hits on its key phrases, the files in <code>always_check</code>, decisions that name it —
+and for a slice, every open slice and the files its plan touches.</p>
+<pre><code>spry related file</code></pre>
+
+<h2>Pull requests and issues</h2>
+
+<h3 id="pr-body">pr-body</h3>
+<p>A slice's pull request body: <em>For the reviewer</em> first (covered criteria in words, criteria
+changed, falsify gaps, manual checks due), then the work order and close summary. The PR body is always
+copied from the slice file, never edited by hand.</p>
+<pre><code>spry pr-body [--base BASE] slice</code></pre>
+<p><code>--base BASE</code> — the ref the PR merges into, to show criteria the branch changed.</p>
+
+<h3 id="issue-body">issue-body</h3>
+<p>A slice's GitHub issue (with <code>slices.issue</code> on): the work order as agreed, saying it is
+never updated — or, with <code>--close</code>, the close summary for a comment on it.</p>
+<pre><code>spry issue-body [--close] slice</code></pre>
+
+<h3 id="merge-message">merge-message</h3>
+<p>The squash commit for a slice: subject, summary, and the <code>Slice:</code>, <code>Parent:</code>
+and <code>Covers:</code> trailers.</p>
+<pre><code>spry merge-message [--ci-local REASON] slice</code></pre>
+<p><code>--ci-local REASON</code> — CI never ran, for this reason; the gate stood in for it. Adds a
+<code>CI:</code> trailer.</p>
+
+<h2>Falsify</h2>
+
+<p>Proves a slice's tests notice its safeguards. Background: <a href="../design/falsify.html">Falsify</a>.</p>
+
+<h3 id="falsify-suggest">falsify suggest</h3>
+<p>Drafts a plan from the source lines the branch added: one candidate per guard, comparison or error
+line, each with a mutation that removes it, and <code>expect</code> taken from the slice's
+<code>covers</code> (or the bug, for a bug's slice). With no guard added, it offers up to five lines that
+compute or store something. With no source line added, there is nothing to falsify.</p>
+<pre><code>spry falsify suggest [--base BASE] [--out OUT] slice</code></pre>
+<ul>
+  <li><code>--base BASE</code> — the branch to diff against (default: <code>main_branch</code>).</li>
+  <li><code>--out OUT</code> — where to write the plan (default: <code>.spry/falsify/&lt;slice&gt;.json</code>).</li>
+</ul>
+
+<h3 id="falsify-run">falsify run</h3>
+<p>Removes each control in turn, runs only the tests that should notice, and restores every file —
+including on an error, Ctrl-C or SIGTERM.</p>
+<pre><code>spry falsify run [--dry-run] [--record SLICE] [--replace] [--jobs JOBS] plan</code></pre>
+<ul>
+  <li><code>--dry-run</code> — validate the plan and list what would run.</li>
+  <li><code>--record SLICE</code> — write the results into the slice's Falsify table; rows for controls not run stay.</li>
+  <li><code>--replace</code> — with <code>--record</code>: drop the rows this run did not write.</li>
+  <li><code>--jobs JOBS</code> — worktrees to run in parallel (default: <code>falsify.parallel</code>; 1 = serial).</li>
+</ul>
+<pre data-label="At slice close"><code><span class="p">$ </span>python3 spry/tool/spry.py falsify suggest SL-2
+<span class="p">$ </span>python3 spry/tool/spry.py falsify run .spry/falsify/SL-2.json --dry-run
+<span class="p">$ </span>python3 spry/tool/spry.py falsify run .spry/falsify/SL-2.json --record SL-2</code></pre>
+
+<h2>Knowledge and search</h2>
+
+<h3 id="find">find</h3>
+<p>Full-text search over <code>spry/</code> and <code>AGENTS.md</code>, best sections first. Uses
+SQLite's full-text search (FTS5), through the standard library's <code>sqlite3</code>, kept in <code>.spry/index.db</code> and refreshed per file;
+falls back to plain search without FTS5.</p>
+<pre><code>spry find [--limit LIMIT] [--rebuild] query [query ...]</code></pre>
+<p><code>--rebuild</code> — rebuild the local index from scratch.</p>
+
+<h3 id="scrub">scrub</h3>
+<p>Lists private words still in a file meant to leave the project: the product name, team names and
+handles, glossary terms, emails and URLs. Used by <code>/spry:contribute</code>.</p>
+<pre><code>spry scrub file</code></pre>
+
+<h2>Setting up</h2>
+
+<h3 id="vendor">vendor</h3>
+<p>Copies <code>process/</code> and the tool into a project, at <code>spry/process/</code> and
+<code>spry/tool/</code>. Run the plugin's copy.</p>
+<pre><code>spry vendor [--force] [--root VENDOR_ROOT] [--diff]</code></pre>
+<ul>
+  <li><code>--diff</code> — change nothing; list what differs from the plugin.</li>
+  <li><code>--force</code> — overwrite an existing <code>spry/process/</code>.</li>
+  <li><code>--root</code> — the project to copy into (default: the current folder).</li>
+</ul>
+
+<h3 id="install">install</h3>
+<p>Puts the skills where another agent finds them. Run the plugin's copy.</p>
+<pre><code>spry install --agent {generic,claude,cursor,gemini} [--root INSTALL_ROOT]</code></pre>
+<table>
+  <thead><tr><th>Agent</th><th>Writes</th></tr></thead>
+  <tbody>
+    <tr><td><code>generic</code></td><td>The skills to <code>spry/skills/</code>, listed in a generated block of <code>AGENTS.md</code> — any agent that reads <code>AGENTS.md</code> can run them.</td></tr>
+    <tr><td><code>claude</code></td><td>Project skills in <code>.claude/skills/spry-*</code>, for people not using the plugin.</td></tr>
+    <tr><td><code>cursor</code></td><td><code>.cursor/commands/spry-*.md</code>.</td></tr>
+    <tr><td><code>gemini</code></td><td><code>.gemini/commands/spry/*.toml</code>, run as <code>/spry:&lt;name&gt;</code>.</td></tr>
+  </tbody>
+</table>
+
+<h3 id="codeowners">codeowners</h3>
+<p>Writes <code>.github/CODEOWNERS</code> from <code>team.review</code> in the config.</p>
+<pre><code>spry codeowners [--check]</code></pre>
+<p><code>--check</code> — change nothing; exit 1 if it is stale.</p>
+
+<h2>Testing helpers</h2>
+
+<h3 id="tests">tests</h3>
+<p>Test-suite reports from JUnit XML.</p>
+<pre><code>spry tests --slowest [--junit JUNIT] [--limit LIMIT]</code></pre>
+<ul>
+  <li><code>--slowest</code> — the slowest tests and files.</li>
+  <li><code>--junit JUNIT</code> — a report file, folder or glob (default: <code>tests.junit</code>).</li>
+</ul>
+
+<h3 id="draw">draw</h3>
+<p>A replayable choice for an exploratory walk (<code>/spry:explore</code>): the same seed and
+counter always give the same answer.</p>
+<pre><code>spry draw (--seed | --pick | --sample K | --shuffle | --int N) [seed] [counter]</code></pre>
+<ul>
+  <li><code>--seed</code> — print a fresh seed.</li>
+  <li><code>--pick</code> — one line from stdin. <code>--sample K</code> — K distinct lines. <code>--shuffle</code> — every line, reordered.</li>
+  <li><code>--int N</code> — a number from 0 to N−1.</li>
+  <li><code>counter</code> — the step number; add 1 on every draw.</li>
+</ul>
+
+<h2>In CI</h2>
+
+<p>The workflow <code>init</code> writes runs the tool in the same order as the gate — cheapest first,
+and tests only when code changed:</p>
+<ol>
+  <li><code>check</code> — with <code>--base origin/&lt;main&gt;</code> on pull requests — then <code>changed</code>, which prints <code>code=true|false</code>.</li>
+  <li>The fast checks, one step each — only when <code>code</code> is true.</li>
+  <li>On a pull request: the affected tests. On a push to the main branch: every test. Nightly: every test.</li>
+  <li>On the main branch: <code>index</code> refreshes the generated pages and commits them with <code>[skip ci]</code>.</li>
+</ol>
+<p>A change to documents alone runs <code>check</code> and nothing else.</p>
+
+</article>
+</main>
+</body>
+</html>

@@ -1,0 +1,257 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Why spry · spry</title>
+<meta name="description" content="The problems teams hit when coding agents join the work — unreviewable pull requests, done by assertion, tests that don't test, lost context — and what spry does about each one.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Why spry</h1>
+<p class="lead">A coding agent is fast. The trouble is everything around the code: what to build, how
+anyone checks it, and how the team knows where things stand. These are the problems people hit when
+agents join the work — and what spry does about each one.</p>
+
+<p>None of this is the agent's fault. Agents are good at writing code and bad at remembering, at
+saying "I'm not sure", and at stopping where a person should decide. A process built for people
+assumed those things came for free. spry puts them back in, as files and checks rather than habits.</p>
+
+<h2>The pull request nobody can review</h2>
+
+<p>Ask an agent for a feature and you get one: thirty files, three concerns, a migration and a
+refactor nobody asked for. The reviewer skims, approves, and hopes. The review has become a ritual.</p>
+
+<div class="compare">
+  <div>
+    <h4>What happens</h4>
+    <ul>
+      <li>One huge change per feature</li>
+      <li>The reviewer cannot tell what was meant from what was done</li>
+      <li>Scope creep hides inside the diff</li>
+    </ul>
+  </div>
+  <div class="after">
+    <h4>What spry does</h4>
+    <ul>
+      <li>Work is cut into <strong>slices</strong>: one pull request a reviewer reads in one sitting, showing one visible change</li>
+      <li>Each slice has a written <strong>work order</strong> — the plan, file by file — before any code</li>
+      <li>The review checks the diff against the work order, so anything extra stands out</li>
+    </ul>
+  </div>
+</div>
+
+<p><a href="../guides/slicing.html">Split a story into slices →</a></p>
+
+<h2>"Done" because the agent said so</h2>
+
+<p>An agent will tell you, cheerfully, that the feature is complete and all tests pass. Sometimes it
+is right. A status column someone types into — a ticket moved to <em>Done</em> — has the same
+problem: it records a claim, not a fact.</p>
+
+<div class="compare">
+  <div>
+    <h4>What happens</h4>
+    <ul>
+      <li>Status is typed by whoever last touched it</li>
+      <li>"Done" and "works" drift apart</li>
+    </ul>
+  </div>
+  <div class="after">
+    <h4>What spry does</h4>
+    <ul>
+      <li>Nobody writes "done". The tool <strong>derives</strong> it</li>
+      <li>A story is done when its slices are merged <strong>and</strong> every acceptance criterion is proven — by a test named after it, or a QA check that passed</li>
+      <li>A later failed QA check un-proves it, even if the tests pass</li>
+    </ul>
+  </div>
+</div>
+
+<p>In the <a href="example.html">worked example</a>, the story <em>S-1 Lend a book</em> has its only
+slice merged — yet it shows <strong>not proven</strong>, because QA's latest check of one criterion
+failed in the evening and became bug B-1. That is the point: the page tells the truth without anyone
+having to remember to update it. <a href="../design/status.html">Status is derived →</a></p>
+
+<h2>Tests that pass but would not notice the bug</h2>
+
+<p>Agents write tests readily. Whether those tests would actually fail if the code broke is another
+matter — a test that checks the wrong thing passes forever.</p>
+
+<div class="compare">
+  <div>
+    <h4>What happens</h4>
+    <ul>
+      <li>Coverage looks high</li>
+      <li>A safeguard can be deleted and every test still passes</li>
+    </ul>
+  </div>
+  <div class="after">
+    <h4>What spry does</h4>
+    <ul>
+      <li><strong>Falsify</strong>: before a slice merges, the tool breaks each safeguard the slice added — deletes a check, flips a limit — and runs the tests that should notice</li>
+      <li>A safeguard whose break goes unnoticed ("survived") needs a new test, or a written reason a person accepts</li>
+      <li>The tool decides which safeguards to break, from the diff — the agent can add, never leave one out</li>
+    </ul>
+  </div>
+</div>
+
+<p><a href="../design/falsify.html">How falsify works →</a></p>
+
+<h2>Context that lives in a chat</h2>
+
+<p>Yesterday's session knew why the due date is stored rather than computed. Today's session does
+not, and "fixes" it. Long agent sessions also fill up and forget their own beginning.</p>
+
+<div class="compare">
+  <div>
+    <h4>What happens</h4>
+    <ul>
+      <li>Decisions vanish when the session ends</li>
+      <li>Switching agent or teammate means starting over</li>
+    </ul>
+  </div>
+  <div class="after">
+    <h4>What spry does</h4>
+    <ul>
+      <li><strong>State lives in files</strong>, never in a session. Every answer in an interview is written into the document as it is given</li>
+      <li>Decisions, conventions and how outside services really behave are <strong>recorded</strong> in small, indexed files an agent searches before it plans</li>
+      <li>A short <code>AGENTS.md</code> holds only what an agent would get wrong without it</li>
+    </ul>
+  </div>
+</div>
+
+<p><a href="../guides/knowledge.html">Record what you learn →</a></p>
+
+<h2>Product can't see what's happening</h2>
+
+<p>When the work happens in a terminal, the people who own the product are left asking "where are
+we?" — and the answer is whatever the developer remembers.</p>
+
+<div class="compare">
+  <div>
+    <h4>What happens</h4>
+    <ul>
+      <li>The plan is in one tool, the code in another, progress in someone's head</li>
+      <li>Non-technical people need a developer to translate</li>
+    </ul>
+  </div>
+  <div class="after">
+    <h4>What spry does</h4>
+    <ul>
+      <li>The plan is <strong>folders on GitHub</strong>: milestone → epic → feature → story. Click down; each page explains itself and shows progress</li>
+      <li>Planning pages are written in plain words for their reader — no code, no paths</li>
+      <li>A <strong>backlog</strong>, a <strong>coverage</strong> page and a <strong>done</strong> page are regenerated on every merge</li>
+    </ul>
+  </div>
+</div>
+
+<p><a href="../design/pages.html">Generated pages →</a></p>
+
+<h2>Agents drift — in words and in scope</h2>
+
+<p>The product calls it a <em>loan</em>. The agent writes <em>checkout</em> in one place,
+<em>borrowing</em> in another. A story quietly grows a feature its parent never asked for. Nobody
+notices until two parts of the product disagree.</p>
+
+<div class="compare">
+  <div>
+    <h4>What happens</h4>
+    <ul>
+      <li>Three words for one thing, and bugs where they meet</li>
+      <li>New items that contradict or duplicate old ones</li>
+    </ul>
+  </div>
+  <div class="after">
+    <h4>What spry does</h4>
+    <ul>
+      <li>A <strong>glossary</strong> with one term per concept and the words not to use — <code>spry check</code> fails on a banned word in the plan and knowledge files</li>
+      <li>A <strong>conflict check</strong> before anything goes ready: the parent, siblings, decisions and open work are read, and each clash is resolved or put to you</li>
+    </ul>
+  </div>
+</div>
+
+<p><a href="../design/conflicts.html">The conflict check →</a></p>
+
+<h2>Parallel sessions trip over each other</h2>
+
+<p>Two agents, two branches — and both create "story 12", or both start on the same slice, or both
+edit the same progress table and conflict at every merge.</p>
+
+<div class="compare">
+  <div>
+    <h4>What happens</h4>
+    <ul>
+      <li>Duplicate numbers, duplicate work</li>
+      <li>Merge conflicts in files nobody meant to change</li>
+    </ul>
+  </div>
+  <div class="after">
+    <h4>What spry does</h4>
+    <ul>
+      <li>One file per item, so two pieces of work rarely touch the same file</li>
+      <li>Generated pages are written only on the main branch, never on a branch</li>
+      <li>Optionally, IDs and slice claims are taken on the main branch, so two sessions never take one number or one slice</li>
+    </ul>
+  </div>
+</div>
+
+<p><a href="../guides/team.html">Work as a team →</a></p>
+
+<h2>Test runs that eat the afternoon</h2>
+
+<p>An agent that runs the whole suite after every edit is slow; one that runs nothing is reckless.
+Neither is a policy.</p>
+
+<div class="compare">
+  <div>
+    <h4>What happens</h4>
+    <ul>
+      <li>Ten-minute suites run for a typo in a README</li>
+      <li>Or tests are skipped "to save time"</li>
+    </ul>
+  </div>
+  <div class="after">
+    <h4>What spry does</h4>
+    <ul>
+      <li>The <strong>gate</strong>: cheapest checks first (format, lint, types), then only the tests the change affects</li>
+      <li>A pass is stamped against the code — fixing a document afterwards never re-runs the tests</li>
+      <li>The full suite runs in CI on the main branch, nightly, and when you ask</li>
+    </ul>
+  </div>
+</div>
+
+<p><a href="../design/gate.html">The gate and test speed →</a></p>
+
+<h2>What stays with you</h2>
+
+<p>spry does not try to remove people from the loop. It narrows the loop to the three places a person
+really matters, and makes the agent stop there:</p>
+
+<ul>
+  <li><strong>The criteria</strong> — what "done" means for a story.</li>
+  <li><strong>The merge</strong> — the yes that puts code on the main branch.</li>
+  <li><strong>Anything hard to undo</strong> — a database migration, a public API change, a new dependency, deleting data.</li>
+</ul>
+
+<p>Everything between runs without stopping, because the checks stand in for a person watching each
+step. <a href="../design/decisions.html">Where a person decides →</a></p>
+
+<div class="callout tip">
+  <span class="callout-title">Next</span>
+  <p>Wondering whether this fits your team? <a href="fit.html">Is spry for you?</a> is honest about
+  who it suits and what it costs.</p>
+</div>
+
+</article>
+</main>
+</body>
+</html>

@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bugs and tasks · spry</title>
+<meta name="description" content="Record a bug against what it breaks with /spry:bug, and plan technical work no story asks for with /spry:task — attached to the plan, but not counted toward progress.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Bugs and tasks</h1>
+<p class="lead">Not all work is a story. A <strong>bug</strong> is something not working as the plan
+says; a <strong>task</strong> is technical work no story asks for — set-up, upgrades, refactors,
+infrastructure. Both hang off the plan tree where they belong, get built in slices like everything
+else, and neither counts toward its parent's progress.</p>
+
+<h2>At a glance</h2>
+
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>Bug — <code>/spry:bug</code></th><th>Task — <code>/spry:task</code></th></tr></thead>
+<tbody>
+<tr><td><strong>Attached to</strong></td><td>the feature or story it breaks, in a <code>bugs/</code> folder</td><td>the milestone or epic it serves, in a <code>tasks/</code> folder</td></tr>
+<tr><td><strong>Written for</strong></td><td>anyone who found it, QA, developers <span class="badge">audience 4</span></td><td>developers <span class="badge">audience 7</span> — on spry's 1–10 scale of how technical a page is (<a href="../design/audience.html">Written for its reader</a>)</td></tr>
+<tr><td><strong>Settles</strong></td><td>what happens, what should, steps to reproduce, where, impact, severity, the criterion it breaks</td><td>why, what changes, done when, risks</td></tr>
+<tr><td><strong>Before ready</strong></td><td>reproduced by the reporter or the agent; checked for duplicates among open bugs</td><td>a conflict check</td></tr>
+<tr><td><strong>Next</strong></td><td colspan="2"><code>/spry:slice &lt;ID&gt;</code> — then slices as usual</td></tr>
+</tbody>
+</table></div>
+
+<h2>Recording a bug</h2>
+
+<pre data-label="Your agent"><code><span class="p">&gt; </span>/spry:bug F-1 the due date on evening receipts is a day early</code></pre>
+
+<ol class="steps">
+  <li><strong>Find the parent.</strong> From the argument, or the agent asks which screen or story it's about.</li>
+  <li><strong>Duplicates first.</strong> The open bugs under the same feature are read before anything is written.</li>
+  <li><strong>The interview</strong> — what happens, what should happen, steps, where it was seen, who is affected.</li>
+  <li><strong>Reproduced</strong> by the reporter or the agent before it goes <code>ready</code>.</li>
+  <li><strong>Your yes</strong>, then <code>spry check</code> and a commit. spry offers <code>/spry:slice &lt;ID&gt;</code>.</li>
+</ol>
+
+<p>The bug from the worked example:</p>
+
+<pre data-label="B-1 · Due date a day early on evening receipts (excerpt)"><code>severity: major
+breaks: [S-1/AC-2]
+
+## What happens
+- A receipt printed after about 18:30 shows a due date one day earlier than 14 days from today.
+
+## What should happen
+- The due date is always 14 days from the day of the loan (F-1/R-2, S-1 AC-2).
+
+## Steps to reproduce
+1. After 18:30, lend book 9780141439518 to library card 1001.
+2. Read the due date on the receipt → it is 13 days from today.
+
+## Where
+- Build a1c9e02, Riverside desk computer, Chrome.
+
+## Impact
+- Every loan made in the evening — about a quarter of all loans. Members may return books a day early or be told they are overdue when they are not.</code></pre>
+
+<h3>Severity</h3>
+
+<ul>
+  <li><span class="badge amber">blocker</span> stops a release.</li>
+  <li><span class="badge">major</span> a criterion or a feature rule fails.</li>
+  <li><span class="badge">minor</span> anything else.</li>
+</ul>
+
+<h3>A bug that breaks a criterion</h3>
+
+<p>Name it in <code>breaks: [S-1/AC-2]</code>. If QA saw it on a build, they also add a <code>fail</code> row
+to the story's check log — that's what un-proves the criterion, so the story stops showing as done
+until the fix lands and QA logs a new <code>pass</code> for that criterion. See <a href="qa.html">Checks for QA</a>.</p>
+
+<h3>A bug's slices and their tests</h3>
+
+<p>A bug has no acceptance criteria of its own, so its tests name the bug instead: for example, a test called
+<code>"B-1 prints the due date in the library's time zone"</code>. When the slice is closed, the tests
+proven to catch its safeguards are the ones that name <code>B-1</code>. See
+<a href="../design/falsify.html">Falsify</a>.</p>
+
+<p>A bug can need more than one slice. B-1 has two: one to fix the calculation, and one to correct
+the due dates on loans already made — which waits for the first.</p>
+
+<h2>Recording a task</h2>
+
+<pre data-label="Your agent"><code><span class="p">&gt; </span>/spry:task M-1 set up CI</code></pre>
+
+<div class="callout tip">
+  <span class="callout-title">Is it really a task?</span>
+  <p>If a user would notice the result, it's a story, and spry offers <code>/spry:story</code> instead.
+  Tasks are for work whose value is to the team: the result shows up in a command that passes or a
+  number that drops, not on a screen.</p>
+</div>
+
+<p>The worked example's task:</p>
+
+<pre data-label="T-1 · Set up CI (excerpt)"><code>## Why
+- No slice can prove its acceptance criteria until tests run on every pull request.
+
+## What changes
+- A pull request runs affected tests, spry check and the type check, in parallel.
+- main runs every test, then spry index; a nightly job runs every test again.
+
+## Done when
+- A pull request with a failing test cannot show green.
+- Affected tests on a typical pull request finish in under 3 minutes.</code></pre>
+
+<p><em>Done when</em> is checkable: a command that passes, a number reached, a thing removed.</p>
+
+<h2>Why they don't count toward progress</h2>
+
+<p>A milestone's progress is about outcomes for the people it serves — epics, features and stories
+done. Counting bugs and tasks would let a milestone look further along because there was more to
+fix. They still show everywhere you'd look: in their parent's page, on the backlog — where, within a
+milestone, bugs come first, then tasks, then stories — and as "1 open bug" next to their parent's
+progress.</p>
+
+<h2>What's next</h2>
+
+<div class="cards">
+  <a class="card" href="slicing.html"><p class="card-title">Split it into slices</p><p>Bugs and tasks are built like stories.</p></a>
+  <a class="card" href="../design/pages.html"><p class="card-title">Generated pages</p><p>Where bugs and tasks appear in the backlog.</p></a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

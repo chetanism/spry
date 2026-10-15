@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Installation · spry</title>
+<meta name="description" content="Install spry as a Claude Code plugin or for Cursor, Gemini and other agents, what it needs, what setup writes into your project, and how to keep it current.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Installation</h1>
+<p class="lead">Two commands put spry into Claude Code; one more starts it in your project. Other
+agents get the same skills from a clone of the repository. Nothing is hosted — everything ends up as
+files in your repository.</p>
+
+<h2>What you need</h2>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th>Needs</th><th>Why</th></tr></thead>
+  <tbody>
+    <tr><td><strong>Python 3.10 or newer</strong></td><td>The spry tool is a single Python file using only the standard library — nothing to <code>pip install</code>.</td></tr>
+    <tr><td><strong>git</strong></td><td>Every slice is a branch; the plan is versioned with the code.</td></tr>
+    <tr><td><strong>A GitHub repository</strong> and the <a href="https://cli.github.com/">GitHub CLI</a> (<code>gh</code>), signed in</td><td>Skills open draft pull requests, read check results, post review comments and merge through <code>gh</code>. CI runs on GitHub Actions.</td></tr>
+    <tr><td><strong>An agent</strong></td><td>Claude Code by default; Cursor, Gemini, Codex or any agent that reads <code>AGENTS.md</code> also work.</td></tr>
+    <tr><td><strong>Your own test tooling</strong></td><td>spry calls your test runner, formatter, linter and type checker — it does not replace them.</td></tr>
+  </tbody>
+</table>
+</div>
+
+<h2>Claude Code</h2>
+
+<p>Add the marketplace, install the plugin, then open your project and run setup:</p>
+
+<pre data-label="Terminal"><code><span class="p">$ </span>claude plugin marketplace add chetanism/spry
+<span class="p">$ </span>claude plugin install spry@spry
+<span class="p">$ </span>cd ~/projects/your-project &amp;&amp; claude</code></pre>
+
+<p>Then, inside Claude Code, pick one:</p>
+
+<pre data-label="Claude Code"><code>/spry:init     <span class="c"># a new project</span>
+/spry:adopt    <span class="c"># code that already exists</span></code></pre>
+
+<p>Both are interviews. They are covered step by step in
+<a href="../guides/new-project.html">Set up a new project</a> and
+<a href="../guides/adopt.html">Adopt an existing codebase</a>.</p>
+
+<h2>Other agents</h2>
+
+<p>Clone the spry repository anywhere you will keep it — the installed skills point at that folder — then run its tool from inside your project with the agent you
+use:</p>
+
+<pre data-label="Terminal"><code><span class="p">$ </span>git clone https://github.com/chetanism/spry ~/tools/spry
+<span class="p">$ </span>cd ~/projects/your-project
+<span class="p">$ </span>python3 ~/tools/spry/plugins/spry/tool/spry.py install --agent generic</code></pre>
+
+<div class="table-wrap">
+<table>
+  <thead><tr><th><code>--agent</code></th><th>Writes</th><th>For</th><th>Then type</th></tr></thead>
+  <tbody>
+    <tr><td><code>generic</code></td><td>the skills into <code>spry/skills/</code>, listed in a generated block of <code>AGENTS.md</code></td><td>any agent that reads <code>AGENTS.md</code> — Codex among them</td><td><code>/spry:init</code> — the agent finds it in <code>AGENTS.md</code></td></tr>
+    <tr><td><code>claude</code></td><td>project skills in <code>.claude/skills/spry-*</code></td><td>Claude Code without the plugin</td><td><code>/spry-init</code></td></tr>
+    <tr><td><code>cursor</code></td><td>commands in <code>.cursor/commands/spry-*.md</code></td><td>Cursor</td><td><code>/spry-init</code></td></tr>
+    <tr><td><code>gemini</code></td><td>commands in <code>.gemini/commands/spry/*.toml</code></td><td>Gemini CLI</td><td><code>/spry:init</code></td></tr>
+  </tbody>
+</table>
+</div>
+
+<p>Then start setup with <em>init</em> (a new project) or <em>adopt</em> (existing code), as above.
+Teammates can mix agents on one project: the rules and the tool are copied into the project, so
+every agent reads the same ones. <a href="../guides/other-agents.html">Use another agent →</a></p>
+
+<h2>What setup writes</h2>
+
+<p>Setup copies spry's rules and tool into your project, then writes the rest from your answers. All
+of it is plain files you commit:</p>
+
+<pre data-label="Your project" class="tree"><code>AGENTS.md                  <span class="c"># always read by agents; kept short</span>
+CLAUDE.md                  <span class="c"># one line: @AGENTS.md</span>
+.github/workflows/spry.yml <span class="c"># CI: check, fast checks, tests</span>
+.github/CODEOWNERS         <span class="c"># who reviews what (teams only)</span>
+spry/
+  README.md                <span class="c"># start here — for humans</span>
+  spry.config.json         <span class="c"># levels, IDs, team, test commands</span>
+  BACKLOG.md  COVERAGE.md  DONE.md   <span class="c"># generated progress pages</span>
+  plan/                    <span class="c"># the roadmap, then one folder per item</span>
+  knowledge/               <span class="c"># glossary, security, performance, decisions…</span>
+  process/                 <span class="c"># the rules every agent follows (copied in)</span>
+  tool/spry.py             <span class="c"># the tool (copied in)</span>
+.spry/                     <span class="c"># local only, gitignored: search index, caches</span></code></pre>
+
+<ul>
+  <li><strong>Copied in, not linked.</strong> <code>spry/process/</code> and <code>spry/tool/</code> live in your
+  repository, so CI runs without any agent, and every teammate reads the same rules.</li>
+  <li><strong>Kept out of your build.</strong> Setup adds <code>spry/</code> to <code>.dockerignore</code> or your
+  stack's build ignore, so none of it ships.</li>
+  <li><strong>Resumable.</strong> Setup writes <code>spry/README.md</code> last. If it stops part-way, run it
+  again and it continues from the first unanswered topic.</li>
+</ul>
+
+<p>The layout is explained in <a href="../design/plan-tree.html">The plan is a folder tree</a>.</p>
+
+<h2>Optional: fresh pages on every pull</h2>
+
+<p>The committed progress pages show the main branch as of CI's last run. To see them for the branch
+you are on, each person can run this once per clone:</p>
+
+<pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py hooks</code></pre>
+
+<p>After a checkout or pull that changed the plan or a test, it refreshes the backlog, coverage and
+done pages into <code>.spry/view/</code>, which is never committed.</p>
+
+<h2>Keeping spry current</h2>
+
+<p>spry changes often. To take what it gained since you set up, run:</p>
+
+<pre data-label="Claude Code"><code>/spry:update</code></pre>
+
+<p>It updates the installed plugin first, then reads spry's changelog from where your project last
+left off and offers each change one at a time — take it, take it adapted, or skip it. Changes you
+made to your own process are kept. Nothing is rewritten without a yes.
+<a href="../guides/maintaining.html">Keep spry yours →</a></p>
+
+<div class="callout note">
+  <span class="callout-title">After an update in Claude Code</span>
+  <p>Run <code>/reload-plugins</code> once the update is done, so every skill runs the new copy.</p>
+</div>
+
+<div class="callout tip">
+  <span class="callout-title">Next</span>
+  <p>Installed? The <a href="quick-start.html">Quick start</a> takes you from setup to your first
+  merged slice.</p>
+</div>
+
+</article>
+</main>
+</body>
+</html>

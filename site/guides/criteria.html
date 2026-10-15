@@ -1,0 +1,178 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Write acceptance criteria · spry</title>
+<meta name="description" content="How to write acceptance criteria spry can prove: observable, one behaviour each, Given / When / Then, never renumbered — and how tests and QA checks cite them.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Write acceptance criteria</h1>
+<p class="lead">Acceptance criteria are what "done" means. In spry they are not a nice-to-have at the
+bottom of a ticket: tests are named after them, QA checks them by hand, and a story is done only when
+every one is proven. Write them well and the rest of the process mostly runs itself.</p>
+
+<div class="callout warn">
+  <span class="callout-title">The one decision you can't hand to the agent</span>
+  <p>A story goes <code>ready</code> only on a person's yes, because its criteria decide what gets built
+  and what counts as finished. It's one of the three things a person always decides — see
+  <a href="../design/decisions.html">Where a person decides</a>.</p>
+</div>
+
+<h2>Where they live</h2>
+
+<p>Criteria live <strong>only in stories</strong>, in a table numbered <code>AC-1</code>, <code>AC-2</code>, and
+so on. Everywhere else they are cited by story and number: <code>S-2/AC-1</code>. Here is a story from
+the worked example:</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th>AC</th><th>Given</th><th>When</th><th>Then</th></tr></thead>
+<tbody>
+<tr><td>AC-1</td><td>a member with 3 books on loan</td><td>the librarian scans their library card</td><td>the desk shows "Limit reached: 3 books on loan" and <strong>Lend</strong> cannot be pressed (F-1/R-1)</td></tr>
+<tr><td>AC-2</td><td>a member with an overdue book</td><td>the librarian scans their library card</td><td>the desk shows "Return overdue book first:" and the overdue book's title, and <strong>Lend</strong> cannot be pressed (F-1/R-4)</td></tr>
+</tbody>
+</table></div>
+
+<p><strong>Given</strong> is the starting situation, <strong>When</strong> is what the person does, and
+<strong>Then</strong> is what they see.</p>
+
+<h2>The rules for a good criterion</h2>
+
+<h3>Observable by a person using the product</h3>
+
+<p>Written at audience 3 — something a person would see on a screen, a receipt, an email. Not a table,
+a function or a status code.</p>
+
+<div class="compare">
+  <div><h4>Not this</h4><ul><li>The <code>loans</code> table gets a row with <code>due_on</code> set</li></ul></div>
+  <div class="after"><h4>This</h4><ul><li>The receipt shows the title, the member's name and a due date 14 days from today</li></ul></div>
+</div>
+
+<h3>One behaviour each</h3>
+
+<p>If <em>Then</em> joins two outcomes with "and", ask whether they could fail separately. If they could,
+they are two criteria. (Showing a refusal message <em>and</em> disabling the button is one behaviour —
+the refusal. Lending a book <em>and</em> printing the right due date are two.)</p>
+
+<div class="compare">
+  <div><h4>Not this</h4><ul><li>the book is lent and the receipt shows the due date and the member is emailed</li></ul></div>
+  <div class="after"><h4>This</h4><ul><li>AC-1 — the desk shows "Lent to" and the member's name</li><li>AC-2 — the receipt shows a due date 14 days from today</li></ul></div>
+</div>
+
+<h3>Specific enough to fail</h3>
+
+<p>Every criterion becomes a test name and a manual check. A <em>Then</em> that can't be wrong — "it
+works", "the page loads correctly", "an error is shown" — can't be proven either. Name the exact
+message, number or state.</p>
+
+<div class="compare">
+  <div><h4>Not this</h4><ul><li>an appropriate error is shown</li></ul></div>
+  <div class="after"><h4>This</h4><ul><li>the desk shows "Already on loan to" and the member's name, and <strong>Lend</strong> cannot be pressed</li></ul></div>
+</div>
+
+<h3>Cite the feature's rules, don't restate them</h3>
+
+<p>A feature holds numbered business rules (<code>R-1</code>, <code>R-2</code>…). A criterion that depends on
+one cites it — <code>(F-1/R-2)</code> — rather than copying the rule. If the loan length changes, it
+changes in one place.</p>
+
+<h3>Use the glossary's words</h3>
+
+<p>If the glossary says <em>lend</em>, a criterion never says <em>check out</em>. <code>spry check</code> fails on
+a banned synonym. QA will look for the words in the criterion on the screen, so they must match.</p>
+
+<h3>Six at most</h3>
+
+<p>A story with more than six criteria is usually two stories. spry offers to split it before going on.</p>
+
+<h2>Numbers are forever</h2>
+
+<ul>
+  <li><strong>Never renumber.</strong> Tests, QA logs and slices point at <code>S-1/AC-2</code>. If numbers
+  shifted, they would silently point at the wrong thing.</li>
+  <li><strong>Dropping a criterion strikes it through</strong> — <code>~~AC-2~~</code> — rather than deleting
+  it. The number is never reused.</li>
+  <li><strong>A new criterion takes the next number</strong>, even if it belongs logically between two others.</li>
+</ul>
+
+<h2>How a criterion gets proven</h2>
+
+<p>A criterion is proven in one of two ways.</p>
+
+<h3>By a test whose name cites it</h3>
+
+<p>The citation goes in the string that <em>names</em> the test — the title, a docstring, or a
+parametrize id:</p>
+
+<pre data-label="src/loans/eligibility.test.ts"><code>it("S-2/AC-1 refuses a member with 3 books on loan", () =&gt; { … });
+it("S-2/AC-2 refuses a member with an overdue book", () =&gt; { … });</code></pre>
+
+<ul>
+  <li><strong>A citation in a comment or in code proves nothing</strong>, and <code>spry check</code> warns about
+  it. Names are what test runners report, so names are what count.</li>
+  <li><strong>A skipped or to-do test proves nothing</strong> — <code>it.skip</code>, <code>test.todo</code>,
+  <code>xit</code>, <code>@pytest.mark.skip</code>.</li>
+</ul>
+
+<h3>By a QA check</h3>
+
+<p>Some criteria are best checked by a person — a printed receipt, a layout on a real device. A
+<code>pass</code> as the latest row for that criterion in the story's <code>checks.md</code> proves it.
+See <a href="qa.html">Checks for QA</a>.</p>
+
+<div class="callout note">
+  <span class="callout-title">A person who saw it broken wins</span>
+  <p>If the latest QA row for a criterion is <code>fail</code>, the criterion is <strong>not proven</strong> —
+  even if a test passes. In the worked example, story S-1 has all its slices merged, but QA saw the
+  due date print a day early in the evening, so S-1 shows "not proven" until bug B-1 is fixed and QA logs a new <code>pass</code> for AC-2.</p>
+</div>
+
+<h2>Changing criteria after slicing</h2>
+
+<p>Editing a story after work has started is allowed — sometimes you learn something. But changing a
+criterion under its tests is also the quiet way to make failing work "pass", so spry watches for it:</p>
+
+<ul>
+  <li><strong>A warning on the pull request</strong> when a branch changes the text of a criterion that a test
+  already cites, or that the story's QA scenarios or check-log rows relied on and the branch left
+  as they were. Re-read those scenarios in the same pull request.</li>
+  <li><strong>A block at merge</strong> when the same branch changes a criterion <em>and</em> code. The merge
+  waits until the slice carries <code>criteria_approved_by:</code> with the name of the story's owner. The
+  agent shows them the old and new text, and only their yes — in their words — puts that line in.
+  The agent's own judgement never does.</li>
+</ul>
+
+<h2>A quick checklist</h2>
+
+<ul>
+  <li>Could someone using the product see whether it's true?</li>
+  <li>Is it one behaviour?</li>
+  <li>Could a test of it fail?</li>
+  <li>Does it name exact messages and numbers?</li>
+  <li>Does it cite the feature rule instead of restating it?</li>
+  <li>Does it use the glossary's words?</li>
+  <li>Are there six or fewer in this story?</li>
+</ul>
+
+<h2>What's next</h2>
+
+<div class="cards">
+  <a class="card" href="slicing.html"><p class="card-title">Split a story into slices</p><p>Each slice covers some of the criteria.</p></a>
+  <a class="card" href="qa.html"><p class="card-title">Checks for QA</p><p>Steps a tester follows for each criterion.</p></a>
+  <a class="card" href="../design/status.html"><p class="card-title">Status is derived</p><p>How proof rolls up into progress.</p></a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

@@ -1,0 +1,226 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Close and merge a slice · spry</title>
+<meta name="description" content="How /spry:slice-close reviews, falsifies and gates a finished slice, and how /spry:merge merges it only when it is green, ready, current and approved.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Close and merge a slice</h1>
+<p class="lead">When the code is written, <code>/spry:slice-close</code> turns "the agent says it's done"
+into evidence: a summary written from the diff (the lines the branch changed), a review by a fresh
+agent, proof that the tests notice the safeguards, and one run of the gate — the project's checks and the
+affected tests. Then <code>/spry:merge</code> merges — only on your yes.</p>
+
+<h2>The close, at a glance</h2>
+
+<div class="flow" role="list" aria-label="The close, in order">
+  <span class="step" role="listitem"><b>Rebase</b></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>What changed</b></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>Proof</b></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>Follow-ups</b></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step person" role="listitem"><b>Review</b><small>you answer its first question</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>Falsify</b></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>Gate</b></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step hi" role="listitem"><b>Ready for review</b></span>
+</div>
+<div class="legend"><span>the agent runs it</span><span class="person">a person decides</span><span class="hi">the result</span></div>
+
+<p>Normally <code>/spry:slice-open</code> runs this for you once the code is built; type it yourself
+for a slice you opened only, or picked up in a new session. New words — rebase, squash, trailer — are in
+the <a href="../reference/glossary.html">glossary</a>.</p>
+
+<p>The order matters. The review comes first and the slow proof last, so falsify and the gate each run
+<strong>once</strong>, on the code that merges. A review fix made after the gate would mean a second gate.</p>
+
+<pre data-label="In your agent"><code><span class="p">&gt; </span>/spry:slice-close
+<span class="c"># with no ID, it closes the open slice whose branch you're on</span></code></pre>
+
+<h2>Closing, step by step</h2>
+
+<ol class="steps">
+  <li><strong>Rebase.</strong>
+    <p>Everything committed, then <code>git fetch</code>; if the main branch moved, rebase onto it —
+replay the branch's commits on top of the latest main branch.
+    <code>gate --fast</code> passes. The gate later stands for the code that merges, so the rebase comes
+    before it, not after.</p></li>
+  <li><strong>What changed.</strong>
+    <p>The agent compares the diff with the work order's <em>Plan</em> and writes only the differences, and
+    why. If it matches the plan, the section is deleted.</p></li>
+  <li><strong>Proof.</strong>
+    <p>Every criterion the slice covers has a test that cites it by name — or the agent tells QA which
+    ones need a manual check, as a <code>[Test]</code> item for them.</p></li>
+  <li><strong>Follow-ups.</strong>
+    <p>Bugs, tasks and decisions found along the way are created now, with real IDs, and listed.</p></li>
+  <li><strong>Review.</strong>
+    <p>Committed and pushed; the draft PR's body refreshed from the slice file. Then
+    <a href="reviews.html"><code>/spry:review</code></a>: a new agent, with none of this session's reasoning,
+    reads the PR against its work order. You answer its first question, one choice for what happens next:
+    <em>a</em> post its comments, fix every blocker and should, then merge; <em>b</em> post and fix, but stop
+    before the merge; <em>c</em> post only; <em>d</em> neither. Accepted fixes are applied before falsify; on
+    <em>c</em> or <em>d</em> the close goes on to falsify with nothing fixed.</p></li>
+  <li><strong>Falsify.</strong>
+    <p>Each safeguard the slice added is broken on purpose, one at a time, and the tests citing its
+    criteria are run. They should fail. Details below.</p></li>
+  <li><strong>Gate.</strong>
+    <p><code>spry.py gate</code>: check, fast checks, affected tests. If it fails, fix and run again — it
+    repeats only what the fix could change.</p></li>
+  <li><strong>Mark it closed and ready.</strong>
+    <p><code>state: closed</code> and <code>closed:</code> today's date, committed with a <code>Slice: SL-n</code>
+    trailer (a labelled line at the end of the commit message), pushed; the PR body refreshed with both parts; the PR marked ready for review. With a GitHub
+    issue, the close summary is posted as a comment on it.</p></li>
+  <li><strong>Merge — only through <code>/spry:merge</code>.</strong>
+    <p>If your answer to the review was <em>a</em> (post, fix, then merge), the close runs it now. Otherwise the PR is
+    ready for it, and a teammate may still review.</p></li>
+</ol>
+
+<h2>Falsify</h2>
+
+<p>A test that passes proves little: it would also pass if it tested nothing. Falsify proves the tests
+<em>notice</em>. The tool drafts a plan from the source lines the branch added — one control per guard,
+comparison or error — each with a mutation that removes it:</p>
+
+<ul>
+  <li>a guard made <em>never true</em>;</li>
+  <li>a comparison's boundary flipped (<code>&gt;=</code> ↔ <code>&gt;</code>);</li>
+  <li>a <code>throw</code> or <code>raise</code> deleted.</li>
+</ul>
+
+<p>Never negation: negating a guard also breaks the normal path, so any test "catches" it. That is a
+false catch.</p>
+
+<pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py falsify suggest SL-1
+<span class="p">$ </span>python3 spry/tool/spry.py falsify run .spry/falsify/SL-1.json --dry-run
+<span class="p">$ </span>python3 spry/tool/spry.py falsify run .spry/falsify/SL-1.json --record SL-1</code></pre>
+
+<p>The run restores every file, even on Ctrl-C, and writes the results into the slice. SL-1 from the
+worked example — its third control first survived; a test was added and falsify run again:</p>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>Control</th><th>Mutation</th><th>Expect</th><th>Result</th></tr></thead>
+  <tbody>
+    <tr><td>book already on loan → <code>AlreadyOnLoan</code></td><td>delete the check</td><td>S-1/AC-3</td><td>caught</td></tr>
+    <tr><td><code>due_on = today + 14</code></td><td><code>+ 13</code></td><td>S-1/AC-2</td><td>caught</td></tr>
+    <tr><td>unknown library card → <code>NoSuchMember</code></td><td>delete the check</td><td>S-1/AC-1</td><td>survived → added "S-1/AC-1 refuses an unknown library card"; caught</td></tr>
+  </tbody>
+</table></div>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>Result</th><th>Means</th><th>What to do</th></tr></thead>
+  <tbody>
+    <tr><td><span class="badge green">caught</span></td><td>A test failed, as it should</td><td>Nothing</td></tr>
+    <tr><td><span class="badge amber">survived</span></td><td>Every test still passed with the safeguard gone</td><td>Write a test and run again — or, if no test should catch it, write the reason in the row; a person accepts it at the merge</td></tr>
+    <tr><td><span class="badge">unreliable</span></td><td>The tests were red or timed out before any mutation</td><td>Fix that first</td></tr>
+    <tr><td><span class="badge">skipped</span></td><td>The control can't run here (a clock, a network)</td><td>Write <code>skipped — &lt;reason&gt;</code>; a person accepts it at the merge</td></tr>
+  </tbody>
+</table></div>
+
+<div class="callout warn">
+  <span class="callout-title">The diff decides, not the agent</span>
+  <p>The agent can add controls, never drop one. At merge time the tool drafts the list again from the
+  diff and blocks if any control has no row. A slice that adds no source line at all — only tests or
+  documents — has nothing to falsify.</p>
+</div>
+
+<div class="callout note">
+  <span class="callout-title">How the tool reads that third row</span>
+  <p>The worked example keeps the history in the row (<em>survived → added …; caught</em>). <code>merge-check</code>
+  reads any row that starts <em>survived</em> with text after it as a survivor with a reason — a <code>!</code>
+  a person accepts at the merge. A re-run with <code>--record</code> replaces the row with plain <em>caught</em>,
+  which needs no ask.</p>
+</div>
+
+<p>The full design is in <a href="../design/falsify.html">Falsify</a>.</p>
+
+<h2>Merging</h2>
+
+<pre data-label="In your agent"><code><span class="p">&gt; </span>/spry:merge SL-2
+<span class="c"># or a PR number; with none, the current branch's PR</span></code></pre>
+
+<p>Every step runs, every time — each exists because skipping it once went wrong.</p>
+
+<ol class="steps">
+  <li><strong>Checks are green.</strong>
+    <p>Red or pending → stop. Nothing on the platform may stop a bad merge, so this step is the only guard.</p></li>
+  <li><strong>The slice is ready.</strong>
+    <p><code>spry.py merge-check</code> blocks when a control the diff adds has no falsify row, when a
+    row says only <em>survived</em> with no reason, when a criterion was changed together with code without
+    the story owner's approval (<code>criteria_approved_by:</code>), or when the slice isn't closed with a
+    date and a PR number. Softer issues — a survivor
+    with a reason, a criterion with no test — are marked <code>!</code> and carried to the ask.</p></li>
+  <li><strong>The PR body matches the slice file.</strong>
+    <p>Refreshed if they differ. The file is the source; the body is never edited by hand.</p></li>
+  <li><strong>Approval.</strong>
+    <p>With a team configured, the PR must be approved. Solo projects skip this.</p></li>
+  <li><strong>The base hasn't moved under it.</strong>
+    <p>If the main branch gained commits touching the same files, the green checks are against an old
+    base: rebase, push, start again. It also looks for an ID the branch and the main branch both took.</p></li>
+  <li><strong>The ask.</strong>
+    <p>One line: what merges, and each <code>!</code> item for you to accept. It merges only on a yes in
+    this conversation, for this PR — or on your earlier <em>fix, then merge</em> answer, if nothing new
+    has come up.</p></li>
+  <li><strong>Squash.</strong>
+    <p>All the branch's commits become one commit on the main branch, with a commit message from <code>spry.py merge-message</code>: the subject, the summary, and
+    <code>Slice:</code>, <code>Parent:</code> and <code>Covers:</code> trailers. A squash keeps nothing else, so the
+    trailers live in the commit.</p></li>
+  <li><strong>After the merge.</strong>
+    <p>The main branch is pulled. If it moved under the PR with code the PR's checks never saw, the agent
+    waits for CI on the main branch. If the progress pages are stale and no CI run will write them, it
+    writes them. Then it reports what is now unblocked.</p></li>
+</ol>
+
+<h3>When CI never ran</h3>
+
+<p>A billing lock, used-up minutes or an outage can stop CI from starting at all. A check that never
+ran is neither green nor red. Then the gate stands in for CI, on the PR's exact head: if it's green,
+the ask says <em>CI did not run (reason); gate green locally</em>, you accept it, and the squash commit
+carries a <code>CI:</code> trailer saying so. This is decided fresh for every merge — CI that was down
+yesterday may be up.</p>
+
+<h3>What the commit looks like</h3>
+
+<p>For SL-1 in the worked example, <code>merge-message</code> prints:</p>
+
+<pre data-label="Squash commit"><code>SL-1 Record a loan (#9)
+
+- A librarian can lend a book from the desk: scan card, scan book, press **Lend**.
+- The loan is saved with its due date, a receipt prints, and a book already on loan is refused.
+
+Slice: SL-1
+Parent: S-1
+Covers: S-1/AC-1, S-1/AC-2, S-1/AC-3</code></pre>
+
+<div class="callout warn">
+  <span class="callout-title">Never</span>
+  <p>Force-push the main branch, merge with <code>--admin</code> to skip checks, or merge a PR you haven't
+  named.</p>
+</div>
+
+<h2>Next</h2>
+
+<div class="cards">
+  <a class="card" href="reviews.html">
+    <p class="card-title">Reviews with fresh eyes</p>
+    <p>What the reviewing agent checks, and how comments are posted.</p>
+  </a>
+  <a class="card" href="qa.html">
+    <p class="card-title">Checks for QA</p>
+    <p>Criteria that need a person to check them by hand.</p>
+  </a>
+</div>
+
+</article>
+</main>
+</body>
+</html>

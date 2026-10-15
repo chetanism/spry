@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Split a story into slices · spry</title>
+<meta name="description" content="How /spry:slice turns a ready story, task or bug into small slices — each one reviewable in one sitting and showing one visible change.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Split a story into slices</h1>
+<p class="lead">A slice is the unit an agent builds and a person reviews: one small change, one pull
+request. <code>/spry:slice</code> takes a story the team has agreed on and proposes how to cut it, so
+nobody ends up reviewing a 3,000-line pull request the agent wrote in one go.</p>
+
+<h2>What a slice is</h2>
+
+<p>Two tests decide whether something is a good slice:</p>
+
+<ul>
+  <li><strong>One reviewable change.</strong> A reviewer can read the whole pull request in one sitting.</li>
+  <li><strong>One visible change.</strong> Its demo shows something that was not there before — a
+  screen, a refusal, a printed date.</li>
+</ul>
+
+<p>A slice covers one or more acceptance criteria of <strong>one</strong> story, and between them a
+story's slices cover all of its criteria. A slice under a task or a bug covers its <em>Done when</em> or
+the behaviour it fixes instead. Each slice is a single file, <code>SL-&lt;n&gt;-&lt;slug&gt;.md</code> (the slug is the title in
+lowercase words joined by dashes), sitting in its parent's folder.</p>
+
+<div class="flow" role="list" aria-label="A slice's states">
+  <span class="step" role="listitem"><b>planned</b><small>written by /spry:slice</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>open</b><small>work order, branch, draft PR</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step hi" role="listitem"><b>closed</b><small>set in the PR's last commit</small></span>
+</div>
+
+<p>A slice can also be <code>dropped</code>. Because <code>closed</code> is set in the pull request's last
+commit, a closed slice on the main branch always means a merged one.</p>
+
+<h2>When to run it</h2>
+
+<ul>
+  <li>The story (or task, or bug) is <code>ready</code> — its owner has said yes to the criteria. spry
+  refuses to slice a draft, because the criteria are what the slices will be built and tested against.</li>
+  <li>If the parent waits on something unfinished (its <code>blocked_by</code> list — the items it waits for), the agent says which, and asks
+  whether to plan anyway.</li>
+</ul>
+
+<pre data-label="In your agent"><code><span class="p">&gt; </span>/spry:slice S-2</code></pre>
+
+<h2>What happens</h2>
+
+<ol class="steps">
+  <li><strong>The agent reads first.</strong>
+    <p>The story, its feature's rules, the project's coding conventions and decisions, and the code the
+    change will touch.</p></li>
+  <li><strong>It proposes the slices in one reply.</strong>
+    <p>For each: a title, the criteria it covers, and one line on the visible change. They are ordered
+    so each builds on the last, and the agent says which ones <em>need</em> an earlier one — its code,
+    its data, its screen — and which could be built at the same time.</p></li>
+  <li><strong>You approve or adjust.</strong>
+    <p>Merge two, split one, reorder. This is a developer conversation, so expect paths and code names.</p></li>
+  <li><strong>The slice files are created.</strong>
+    <p>One <code>spry.py new slice</code> per slice, which picks the next ID and the right folder. Only the
+    <em>Summary</em>, <code>covers</code> and <code>blocked_by</code> are filled in now. Everything else waits for
+    <a href="building.html">opening the slice</a>.</p></li>
+  <li><strong>Checked and committed.</strong>
+    <p><code>spry check</code> runs, and the commit is <code>docs(plan): slices for S-2</code>.</p></li>
+</ol>
+
+<h2>What gets written</h2>
+
+<p>In the worked example, bug B-1 (<em>Due date a day early on evening receipts</em>) was split into two
+slices. The second one needs the first, so it says so:</p>
+
+<pre data-label="SL-5-correct-loans-already-made.md (excerpt)"><code>---
+id: SL-5
+title: Correct due dates on loans already made
+state: planned
+owner: Ravi
+…
+covers: []
+…
+blocked_by: [SL-4]
+…
+---
+# SL-5 · Correct due dates on loans already made
+
+## Work order
+
+### Summary
+
+- Loans made in the evening before the fix get their due date moved one day later.
+- A member who was told a book is overdue a day early is no longer shown as overdue.</code></pre>
+
+<p>Because SL-5 is blocked by SL-4, the backlog lists SL-4 under <em>Ready to build</em> and SL-5 under
+<em>Blocked</em>, naming what it waits on. Two people never pick up a pair that can't be built side by
+side.</p>
+
+<div class="callout tip">
+  <span class="callout-title">Needs, not just comes after</span>
+  <p>Put a slice in <code>blocked_by</code> only when it truly needs the earlier one's code, data or screen.
+  A slice that merely comes later in the story's order has no blocker — leaving it free lets someone
+  else build it at the same time.</p>
+</div>
+
+<h2>How big should a slice be?</h2>
+
+<p>spry doesn't set a line count. The agent judges against the two tests above, and you correct it.
+Some signals — rules of thumb, not checked by spry:</p>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>Sign (rule of thumb)</th><th>Usually means</th></tr></thead>
+  <tbody>
+    <tr><td>The demo needs three separate things to show</td><td>Too big — split along the visible changes</td></tr>
+    <tr><td>Nothing visible changes yet</td><td>Too small, or it belongs in a task — fold it into the slice that shows it</td></tr>
+    <tr><td>One slice covers every criterion of a big story</td><td>Check it can still be reviewed in one sitting</td></tr>
+    <tr><td>A migration plus the screens using it</td><td>Often two slices: the data change, then the screen</td></tr>
+  </tbody>
+</table></div>
+
+<h2>What can go wrong</h2>
+
+<ul>
+  <li><strong>A criterion no slice covers.</strong> The backlog lists the story under <em>Needs slicing</em>
+  until every criterion is covered by some slice.</li>
+  <li><strong>A circle of blockers.</strong> <code>spry check</code> refuses one, and refuses a blocker that was
+  dropped — it would never finish.</li>
+  <li><strong>The story changes after slicing.</strong> That is allowed — git history is the record — but
+  the tool warns when a criterion a test already cites is reworded. See
+  <a href="../design/status.html">Status is derived</a>.</li>
+</ul>
+
+<h2>Next</h2>
+
+<div class="cards">
+  <a class="card" href="building.html">
+    <p class="card-title">Build a slice</p>
+    <p>Open the first ready slice: work order, branch, draft PR, then the code.</p>
+  </a>
+  <a class="card" href="team.html">
+    <p class="card-title">Work as a team</p>
+    <p>Build slices side by side, each in its own worktree.</p>
+  </a>
+</div>
+
+</article>
+</main>
+</body>
+</html>
