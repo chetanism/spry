@@ -30,8 +30,10 @@ agent breaks by default**, or a **rule that cannot be checked by a tool**. Every
 
 ## Commands
 
-- Before close, and whenever tests are wanted: `python3 spry/tool/spry.py gate` — check, fast
-  checks, affected tests; skipped while only documents changed
+- Each change while building: `python3 spry/tool/spry.py gate --fast` — check and fast checks, no
+  tests
+- At close, and whenever tests are wanted: `python3 spry/tool/spry.py gate` — check, fast checks,
+  affected tests; skipped while only documents changed
 - Never run the full suite; CI does, and `/spry:test-all` when asked
 - Check the process: `python3 spry/tool/spry.py check`
 

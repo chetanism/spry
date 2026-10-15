@@ -561,3 +561,42 @@ Entry format:
   - A review fix re-runs falsify when code changed, then the gate.
 - **Adapt:** a project that copied *Close* into its own docs or skills changes the order there too.
 - **Migrate:** nothing
+
+## CH-32 · Close reviews before it proves
+
+- **Date:** 2026-10-15 · **Version:** 0.23.0
+- **Touches:** `process/slicing.md` (*While building*, *Close*), `process/reviewing.md` (§3a check 5,
+  §4 Ask 1, §5a), `tool/spry.py` (`gate --fast`), `skills/slice-close`, `templates/agents.md`
+- **Why:** the review came after the close, so every fix it asked for changed code that falsify and
+  the gate had already passed, and both ran again; a rebase onto a main branch that had moved did
+  the same, and *While building* ran the gate, tests included, on every change. One slice ran the
+  gate three times and falsify twice (issue #4).
+  - *Close* is now: rebase → *What changed* → proof → follow-ups → review on the draft PR, fixes
+    applied → falsify → gate → close commit, PR ready. Falsify and the gate run once, on the code
+    that merges.
+  - `spry.py gate --fast`: `check` and the fast checks, no tests, no stamp — for each change while
+    building and for review fixes at close. `spry.py gate` when a test's answer is needed.
+  - The review of a draft slice PR has no Falsify rows to read; `merge-check` and the merge's ask
+    cover them.
+  - The close's last step runs `/spry:merge` on the review's answer *a*; otherwise it says the PR is
+    ready for it. A review before the close, mid-build, fixes and stops.
+- **Adapt:** a project that copied *Close* or its gate rule into its own docs or skills changes the
+  order there too; `AGENTS.md` *Commands* gains the `gate --fast` line.
+- **Migrate:** nothing — a slice already past its review closes as before.
+
+## CH-33 · `/spry:merge` writes the progress tables CI did not
+
+- **Date:** 2026-10-15 · **Version:** 0.23.0
+- **Touches:** `process/merging.md` (step 8), `process/slicing.md` (*While building*),
+  `skills/merge`
+- **Why:** only CI's `index` job wrote the generated blocks on the main branch. While CI could not
+  run — a billing lock, used-up minutes — or in a project whose CI has no `index` job, the backlog
+  and the Done page went stale and nothing said so: one project had two merged slices under *Ready
+  to build* and 340 stale files after a week (issue #5).
+  - Merge step 8: `index --check` on the main branch after the merge; stale with no CI run left to
+    write them → `index`, commit only those files as `chore(spry): refresh progress after #<n>
+    [skip ci]`, push. A CI run still going on the main branch → wait for it. A protected branch
+    refuses the push → stop, and say so.
+- **Adapt:** a main branch that refuses direct pushes allows this one for the person merging, or
+  accepts stale tables until CI runs (`mint: main` needs the same).
+- **Migrate:** a main branch already stale: `spry.py index` there once, and commit.

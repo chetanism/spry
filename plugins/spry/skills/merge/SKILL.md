@@ -1,6 +1,6 @@
 ---
 name: merge
-description: Merge a slice's pull request safely — checks green, slice ready (merge-check), PR body current, approval, base not moved under it — then squash with the slice trailer, update the main branch, re-test only if it moved under the PR, and report what is unblocked. Asks before merging. Use when the user says to merge a PR.
+description: Merge a slice's pull request safely — checks green, slice ready (merge-check), PR body current, approval, base not moved under it — then squash with the slice trailer, update the main branch, re-test only if it moved under the PR, write the progress tables when CI did not, and report what is unblocked. Asks before merging. Use when the user says to merge a PR.
 argument-hint: "[PR number or slice ID]"
 ---
 
@@ -18,3 +18,5 @@ argument-hint: "[PR number or slice ID]"
 - After merging, check whether the main branch moved under the PR (`spry.py changed --base <PR head>`):
   `code=false` → run nothing; `code=true` → wait for CI on the main branch, or with no CI on push,
   run the full suite once.
+- **Progress tables:** after the merge, `spry.py index --check` on the main branch; stale with no CI
+  run left to write them → `index`, commit only those files, push (`merging.md` step 8).

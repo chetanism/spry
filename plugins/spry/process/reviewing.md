@@ -72,6 +72,8 @@ said not to do".
    - Each name cites `<story>/AC-<n>`.
    - Each asserts what the criterion's *Then* says, not something nearby.
 5. **Falsify.** Every row reads `caught`. A `survived` or `skipped` row needs a reason you accept.
+   A slice PR reviewed at close (`slicing.md` *Close* step 5) has no rows yet — falsify runs after the review, and
+   `merge-check` and the merge's ask cover its rows: skip this check, and say so.
 6. **Conventions.** The areas the diff touches (`spry/knowledge/conventions/INDEX.md`).
 7. **Demo.** Run it when it can run locally. If you did not run it, say so.
 
@@ -136,10 +138,12 @@ For a milestone, epic, feature, story, bug, task or `checks.md`.
   - one `[Found]` bullet per blocker and per `Should`;
   - the `Nit`s as a count, not a list.
 - **Name what the merge will ask about**, from *For the reviewer*: falsify rows not `caught`, with
-  their reasons, and criteria QA checks by hand. One answer can then cover them.
+  their reasons, and criteria QA checks by hand. One answer can then cover them. Reviewed at close,
+  there are no falsify rows yet: say the merge will ask about any that are not `caught`.
 - **Ask 1** is what happens next — one choice, so one answer carries the review through:
-  - a. Post, fix every Blocker and Should as found, then merge (§5a);
-  - b. Post, and fix — stop before the merge;
+  - a. Post, fix every Blocker and Should as found, then merge (§5a) — reviewed at close, the close
+    finishes first;
+  - b. Post, and fix — stop before the merge (reviewed at close, after the close finishes);
   - c. Post only;
   - d. Neither.
 
@@ -218,11 +222,17 @@ The session that ran the review does this, not the reviewing agent.
 2. **Fix exactly what was accepted:** each Blocker and Should, as its finding and suggestion say. A
    fix that turns out to need more than the finding said — another file, a design choice — is not
    made: stop and ask about that one.
-3. **Re-run only what the fixes could change**, as `slicing.md` *Close* does: falsify again when
-   code changed (`merge-check` blocks a control with no row), then `spry.py gate`; the slice's
-   *What changed* and the PR body when the diff did.
-4. **Commit** `fix(<SL-n>): review findings`, and push once.
-5. **On *a*,** run `/spry:merge` — every step. The answer was its step 6 yes, for the `!` items the
+3. **Re-run only what the fixes could change.**
+   - Reviewed at close: `spry.py gate --fast`, and the slice's *What changed*
+     when the diff moved from the plan. Falsify and the gate come next in the close, once, on the
+     fixed code.
+   - A PR already closed: falsify again when code changed (`merge-check` blocks a control with no
+     row), then `spry.py gate`; the slice's *What changed* and the PR body when the diff did.
+4. **Commit** `fix(<SL-n>): review findings`. Reviewed at close: the close pushes, at its end.
+   Otherwise push once.
+5. **Reviewed at close,** finish the close (`slicing.md` *Close*, from *Falsify*). A draft PR reviewed
+   before its close: stop there; the close runs from step 1 when the build is done. **On *a*,** then
+   run `/spry:merge` — every step. The answer was its step 6 yes, for the `!` items the
    report named; anything else it finds, it asks.
 
 ## 6. How comments read

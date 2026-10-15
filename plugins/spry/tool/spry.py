@@ -31,7 +31,7 @@
     python3 spry/tool/spry.py link <slice> [--branch B] [--pr N] [--issue N]   # set them in the slice's front-matter
     python3 spry/tool/spry.py issue-body <slice> [--close]   # the slice's issue (slices.issue): work order, or close summary
     python3 spry/tool/spry.py merge-message <slice> [--ci-local REASON]   # the squash commit: subject, summary, trailers
-    python3 spry/tool/spry.py gate [--force]     # check, fast checks, affected tests; skipped while no code changed
+    python3 spry/tool/spry.py gate [--force] [--fast]   # check, fast checks, affected tests (--fast: no tests, no stamp); skipped while no code changed
     python3 spry/tool/spry.py changed --base <ref>   # for CI: code=true when anything but docs changed
     python3 spry/tool/spry.py review-check <payload.json> --diff <file|-> [--own]   # would GitHub take this review?
     python3 <plugin>/tool/spry.py install --agent <generic|claude|cursor|gemini> [--root <project>]
@@ -70,7 +70,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.22.0"
+VERSION = "0.23.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -3104,8 +3104,8 @@ def block_drift(project: Project, base: str) -> list:
 
 def changed_blocks(project: Project, base: str):
     for path, name, line, _ in block_drift(project, base):
-        project.problem(path, line, f"`spry:{name}` block differs from {base} — only CI on the main branch "
-                                    f"writes it; `spry index --restore {base}` puts it back, "
+        project.problem(path, line, f"`spry:{name}` block differs from {base} — it is written only on the main "
+                                    f"branch; `spry index --restore {base}` puts it back, "
                                     f"`spry view` shows a fresh copy")
 
 
@@ -3399,14 +3399,15 @@ def code_fingerprint(project: Project, base: str | None = None):
     return digest.hexdigest()
 
 
-def gate_steps(project: Project) -> list:
-    """[(name, command)] — fast checks cheapest first, then the affected tests."""
+def gate_steps(project: Project, fast: bool = False) -> list:
+    """[(name, command)] — fast checks cheapest first, then the affected tests unless `fast`."""
     steps = []
     for n, entry in enumerate(project.config.get("checks", {}).get("fast") or [], 1):
         name, command = (entry.get("name"), entry.get("run")) if isinstance(entry, dict) else (None, entry)
         command = str(command or "")
         steps.append((name or (command.split()[0] if command.split() else f"check {n}"), command))
-    steps.append(("affected tests", str(project.config.get("tests", {}).get("affected") or "")))
+    if not fast:
+        steps.append(("affected tests", str(project.config.get("tests", {}).get("affected") or "")))
     for name, command in steps:
         if not command.strip() or re.search(r"<[a-z][a-z ,/-]*>", command):
             raise SystemExit(f"spry.config.json: `{name}` has no command yet — set "
@@ -3417,9 +3418,10 @@ def gate_steps(project: Project) -> list:
 DEFAULT_RETRY_WHEN = r"timed? ?out|timeout|ETIMEDOUT"
 
 
-def gate(project: Project, force: bool = False, say=print) -> int:
+def gate(project: Project, force: bool = False, say=print, fast: bool = False) -> int:
     """`spry check`, then the fast checks, then the affected tests — stopping at the first failure.
-    A pass is stamped with the code's fingerprint; while the code is unchanged, only `check` runs again."""
+    A pass is stamped with the code's fingerprint; while the code is unchanged, only `check` runs again.
+    `fast` leaves out the tests, for each change while building, and stamps nothing."""
     started = time.time()
     errors = [p for p in check(project) if p.level == "error"]
     say(f"{'✗' if errors else '✓'} spry check · {time.time() - started:.1f}s")
@@ -3427,7 +3429,7 @@ def gate(project: Project, force: bool = False, say=print) -> int:
         for p in errors[:10]:
             say(f"  {p}")
         return 1
-    steps = gate_steps(project)
+    steps = gate_steps(project, fast)
     stamp_path = os.path.join(project.root, ".spry", "green")
     fingerprint = code_fingerprint(project)
     try:
@@ -3459,6 +3461,9 @@ def gate(project: Project, force: bool = False, say=print) -> int:
             tail = (done.stdout + done.stderr).rstrip().split("\n")[-40:]
             say("\n".join("  " + line for line in tail))
             return 1
+    if fast:
+        say("fast checks green — tests not run; `spry.py gate` runs them")
+        return 0
     if fingerprint:
         os.makedirs(os.path.dirname(stamp_path), exist_ok=True)
         write(stamp_path, json.dumps({"code": fingerprint, "at": time.strftime("%Y-%m-%d %H:%M")}) + "\n")
@@ -3692,6 +3697,7 @@ def main(argv=None) -> int:
     p.add_argument("--ci-local", metavar="REASON", help="CI never ran, for this reason; the gate stood in for it")
     p = sub.add_parser("gate", help="spry check, fast checks, affected tests — skipped while no code changed since green")
     p.add_argument("--force", action="store_true", help="run everything even if the code is unchanged")
+    p.add_argument("--fast", action="store_true", help="spry check and the fast checks only, no tests; stamps nothing")
     p = sub.add_parser("changed", help="for CI: prints code=true when files outside checks.docs changed since --base")
     p.add_argument("--base", required=True, help="git ref to compare with")
     p = sub.add_parser("falsify", help="prove a slice's tests notice its safeguards")
@@ -3868,7 +3874,7 @@ def main(argv=None) -> int:
         print("ready to merge" if not blocks else f"{blocks} thing{'s block' if blocks != 1 else ' blocks'} the merge")
         return 1 if blocks else 0
     if args.command == "gate":
-        return gate(project, args.force)
+        return gate(project, args.force, fast=args.fast)
     if args.command == "changed":
         print(f"code={'true' if code_changed_since(project, args.base) else 'false'}")
         return 0

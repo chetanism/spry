@@ -623,7 +623,7 @@ class Done(Base):
 
 
 class Branch(Base):
-    """Generated blocks on a branch: only CI on the main branch writes them."""
+    """Generated blocks on a branch: only the main branch gets them."""
 
     def setUp(self):
         self.t = self.tree(**{"spry__BACKLOG.md": Backlog.PAGE})
@@ -1687,6 +1687,25 @@ class Falsify(unittest.TestCase):
         self.write({"src/loans.py": LOANS_AFTER + "# changed\n"})
         self.gate()
         self.assertEqual(self.ran(log), ["f", "t", "f", "t"], "a code change runs everything")
+
+    def test_gate_fast_runs_no_tests_and_stamps_nothing(self):
+        log = self.gate_config("echo f >> LOG")
+        said = []
+        self.assertEqual(spry.gate(spry.Project(self.root), say=said.append, fast=True), 0)
+        self.assertEqual(self.ran(log), ["f"], "fast checks only")
+        self.assertTrue(any("tests not run" in x for x in said), said)
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".spry", "green")), "never stamped green")
+        self.gate()
+        self.assertEqual(self.ran(log), ["f", "f", "t"], "the full gate still runs everything")
+        spry.gate(spry.Project(self.root), say=lambda *_: None, fast=True)
+        self.assertEqual(self.ran(log), ["f", "f", "t"], "green already covers the fast checks")
+
+    def test_gate_fast_from_the_command_line_and_its_failure(self):
+        log = self.gate_config("echo f >> LOG && exit 3", affected="<affected tests command>")
+        with contextlib.redirect_stdout(io.StringIO()):
+            code = spry.main(["--root", self.root, "gate", "--fast"])
+        self.assertEqual(code, 1, "a failing fast check fails, and an unset tests.affected is no matter")
+        self.assertEqual(self.ran(log), ["f"])
 
     def test_gate_skips_a_documents_only_branch_after_a_rebase(self):
         remote = os.path.join(tempfile.mkdtemp(), "remote.git")

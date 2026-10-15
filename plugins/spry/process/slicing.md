@@ -18,7 +18,7 @@ A person decides three things, and the agent works through everything else witho
 - **Anything hard to undo** — a database migration, a public API or event shape, a new
   dependency, deleting data or files, or breaking a `Must not` rule.
 
-Between them the checks stand in for a person watching: `spry.py gate` before close, every control
+Between them the checks stand in for a person watching: `spry.py gate` at close, every control
 the diff adds falsified, a test's name citing each criterion, and `merge-check` blocking what is
 missing. So open, build, test and close run as one piece of work.
 
@@ -84,19 +84,23 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
 
 ## While building
 
-- **Run `spry.py gate`**, not the test commands by hand. It runs `spry check`, then the fast checks
-  (`checks.fast`: format, lint, types — cheapest first), then the affected tests, and stops at the
-  first failure. A pass is stamped against the code; while only documents change it runs `check`
-  alone. So fix lint before tests run, and write documents after the gate, never the reverse.
-  With `tests.retry` set, affected tests that fail on a timeout run once more, quietly; a real
-  failure fails both runs, so never re-run the gate to get past a timeout.
+- **Check each change with `spry.py gate --fast`:** `spry check`, then the fast checks
+  (`checks.fast`: format, lint, types — cheapest first), no tests. `spry.py gate` adds the affected
+  tests — run it when a test's answer is what you need, not on every change: it costs minutes on a
+  big project, and it runs once more at close, after the review, on the code that merges.
+- **The tool is the proof**, not the test commands by hand. The gate stops at the first failure. A
+  full pass is stamped against the code; while only documents change it runs `check` alone. So fix
+  lint before tests run, and write documents after the gate, never the reverse. With `tests.retry`
+  set, affected tests that fail on a timeout run once more, quietly; a real failure fails both
+  runs, so never re-run the gate to get past a timeout.
 - **Never run the full suite** (`tests.all`). CI runs it on the main branch and nightly;
   `/spry:test-all` runs it when a person asks.
-- **Push once,** at close. Each push runs CI again.
-- **Never run `spry.py index` on a branch.** Generated blocks are written only by CI on the main
-  branch; `check --base` refuses a branch that changed one, and `index --restore origin/<main>`
-  puts them back. For fresh pages, `spry.py backlog`, `spry.py coverage`, or `spry.py view`
-  (writes both to `.spry/view/`, never committed).
+- **Push only at close:** once for the review, once when it ends. Each push runs CI again.
+- **Never run `spry.py index` on a branch.** Generated blocks are written only on the main branch —
+  by CI, or by `/spry:merge` when CI left them stale (`merging.md` step 8); `check --base` refuses a
+  branch that changed one, and `index --restore origin/<main>` puts them back. For fresh pages,
+  `spry.py backlog`, `spry.py coverage`, or `spry.py view` (writes both to `.spry/view/`, never
+  committed).
 - A test that proves a criterion has `<story>/AC-<n>` in its name — the title string, docstring or
   parametrize id. A citation in a comment or in code proves nothing.
 - A departure from the plan → note it for `What changed`; a new rule learned → `/spry:record` later.
@@ -104,7 +108,25 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
 
 ## Close — `/spry:slice-close [SL-n]`
 
-1. **Falsify** — prove the tests notice each safeguard the slice added:
+The review comes first and the slow proof last, so falsify and the gate each run once, on the code
+that merges.
+
+1. **Rebase:** working tree committed; `git fetch`, and when `origin/<main>` has moved, rebase onto
+   it — the gate stands for the code that merges, so a rebase after it means a second gate.
+   `spry.py gate --fast` passes.
+2. **What changed:** compare the diff (`git diff <main>...HEAD`) with `Plan`; write only the
+   differences and why. Delete the section if none.
+3. **Proof:** every criterion in `covers` has a citing test, or tell QA which need a manual check
+   (`[Test]` under `NEXT`).
+4. **Follow-ups:** bugs, tasks, decisions found — create them (`spry.py new …`, `/spry:record`) and
+   list their IDs. With `mint: main` each number is taken on the main branch and the main branch is
+   merged into this one, so the ID is final at once: cite it anywhere.
+5. **Review:** commit; push (`git push --force-with-lease` after step 1's rebase); replace the PR body with `spry.py pr-body SL-<n> --base origin/<main>`;
+   the PR stays a draft. `/spry:review SL-<n>`, and the fixes accepted applied (`reviewing.md` §5a)
+   — before falsify and the gate, so a fix costs neither a second time. The review reads no
+   Falsify rows yet; `merge-check` and the merge's ask cover them. The close waits for the review's
+   Ask 1; on *c* or *d* it goes on to *Falsify* with nothing fixed.
+6. **Falsify** — prove the tests notice each safeguard the slice added:
    - `python3 spry/tool/spry.py falsify suggest SL-<n>` drafts `.spry/falsify/SL-<n>.json` from the
      source lines the branch added: one candidate per guard, comparison or error line, each with a
      mutation that removes it (a guard made *never true*, a boundary flipped, a `throw` deleted) and
@@ -133,25 +155,21 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
      write the reason after `survived` in that row (`survived — logged only; no rule depends on it`):
      a person accepts it at the merge. A bare `survived` blocks the merge.
      `unreliable` → the baseline was red or timed out: fix that first.
-   - Falsify comes before the gate: it runs its own baseline, and a test added for a survivor
-     changes code, which would void a gate already passed.
-2. **Gate:** working tree committed, falsify's new tests included; `spry.py gate` passes. Otherwise
+   - Falsify comes after the review and before the gate: a review fix changes code falsify would
+     have proved, and a test added for a survivor changes code a gate already passed. It runs its
+     own baseline, so it needs no gate first.
+7. **Gate:** working tree committed, falsify's new tests included; `spry.py gate` passes. Otherwise
    fix what fails and run it again — it repeats only what the fix could change.
-3. **What changed:** compare the diff (`git diff <main>...HEAD`) with `Plan`; write only the
-   differences and why. Delete the section if none.
-4. **Proof:** every criterion in `covers` has a citing test, or tell QA which need a manual check
-   (`[Test]` under `NEXT`).
-5. **Follow-ups:** bugs, tasks, decisions found — create them (`spry.py new …`, `/spry:record`) and
-   list their IDs. With `mint: main` each number is taken on the main branch and the main branch is
-   merged into this one, so the ID is final at once: cite it anywhere.
-6. Set `state: closed` and `closed: <today, YYYY-MM-DD>` — the Done page dates the item by it, and
+8. Set `state: closed` and `closed: <today, YYYY-MM-DD>` — the Done page dates the item by it, and
    `merge-check` blocks without it; `spry.py gate` (only `check` runs — nothing but documents changed); commit
    `docs(slice): SL-<n> close summary` with the trailer `Slice: SL-<n>` in the body; push; replace
    the PR body with `spry.py pr-body SL-<n> --base origin/<main>`; mark the PR ready for review.
    With an `issue:`, post the close summary on it — `spry.py issue-body SL-<n> --close |
    gh issue comment <issue> --body-file -` — and leave its body alone. The merge commit's
    `Closes #<issue>` closes it.
-7. **Never merge here.** Tell the person the PR is ready for `/spry:review`, then `/spry:merge`.
+9. **Merge only through `/spry:merge`.** The review is done (step 5): on its answer *a*, run
+   `/spry:merge` now; otherwise tell the person the PR is ready for it. A teammate may still review
+   the ready PR.
 
 ## Slices side by side
 

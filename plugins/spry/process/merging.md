@@ -69,6 +69,16 @@ from the argument (`SL-n` or a PR number), or from the current branch's `open` /
        `gh run watch <id> --exit-status`. No CI on push, or CI that cannot run (step 1) → run
        the full suite once (`/spry:test-all`), and say why. Red → say so at once, and offer a bug or a revert — never
        leave it.
+   - **The progress tables:** `git pull --ff-only`, then `python3 spry/tool/spry.py index --check`.
+     Up to date → nothing to do. Stale while any CI run on `<main>` is still going
+     (`gh run list --branch <main> --status in_progress`) → wait for it (`gh run watch`), pull, and
+     look again. Stale with no run going — CI could not start (step 1), or has no `index` job → `python3 spry/tool/spry.py index`, commit only the files it
+     names as `chore(spry): refresh progress after #<n> [skip ci]`, and push to `<main>`. Push
+     refused as not a fast-forward — someone merged meanwhile → `git fetch`,
+     `git reset --keep origin/<main>`, and start this bullet again, up to three times. Refused for
+     any other reason — a protected branch → `git reset --keep origin/<main>`, stop, and say the
+     tables stay stale until CI runs. Never leave the tables stale: the backlog and the Done page on the main
+     branch are what people read.
    - Report: what merged; what is unblocked now (items whose `blocked_by` named this slice or its
      parent, and the next `planned` slice); each `!` from step 2 as a `[Test]` for QA.
 9. **Never:** force-push the main branch, merge with `--admin` to skip checks, or merge a PR the

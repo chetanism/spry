@@ -252,8 +252,8 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
   after a checkout or pull that changed `spry/` or a test. `check --base` refuses a generated block
   a branch changed — unless it matches the base now or where the branch forked — and
   `index --restore <base>` puts the base's copy back.
-- **Only CI on `main` regenerates and commits these** (`spry index`, `[skip ci]`). Branches never
-  touch them, so they never conflict. `spry check` ignores block contents.
+- **Only the main branch gets these**, written by CI (`spry index`, `[skip ci]`), or by
+  `/spry:merge` when CI left them stale (`merging.md` step 8). Branches never touch them, so they never conflict. `spry check` ignores block contents.
 - A local `spry serve` (stdlib HTTP + minimal Markdown) is deferred; GitHub rendering comes first.
 
 ## 14. Team
@@ -289,8 +289,10 @@ first so a slow one never runs only to be thrown away by a lint error.
   affected tests fail on a timeout (`tests.retry_when`) and `tests.retry` is set, the gate runs that
   once — the same tests with no parallelism — so load on a busy machine is not a red gate; a real
   failure fails both runs.
+- **`gate --fast`** runs `check` and `checks.fast` only, and stamps nothing — for each change while
+  building, and for review fixes at close. The full gate runs once per slice, at close.
 - **CI** follows the same order: `check` (which also prints `changed --base` → `code=true|false`),
-  then fast checks, then tests — and the last two only when `code` is true. Slice close pushes once.
+  then fast checks, then tests — and the last two only when `code` is true. Slice close pushes twice: once for the review, once at its end.
 - `spry tests --slowest` reads JUnit XML and names the slowest tests.
 - `test-all` runs the whole suite on demand, part by part (`tests.parts`), starting the local
   services (`stack`) only when they are down and stopping only what it started. Report only.
@@ -357,7 +359,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it — and cut its branch; give it back |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
-| `gate [--force]` | §15 |
+| `gate [--force] [--fast]` | §15 |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
@@ -381,9 +383,9 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `story` | 3 | Interview → stories with acceptance criteria; conflict check |
 | `slice` | 8 | Split a ready story / task / bug into `planned` slices: one slice is reviewable in one sitting and demos one visible change |
 | `slice-open` | 8 | Work order (opening with a brief summary of what will be done), conflict check, branch, draft PR with the work order as its body; then builds — asking first only for something hard to undo |
-| `slice-close` | 8 | Falsify, then the gate, then the close summary from the diff, AC proof, done list; PR body refreshed with both parts |
+| `slice-close` | 8 | Rebase, then the close summary from the diff, AC proof, done list; review and its fixes on the draft PR; then falsify and the gate, once; PR body refreshed with both parts |
 | `review` | 8 | Fresh eyes — a new agent, never the author's session — on a slice PR (against its work order), a plan PR or item (against its parent, the code and the glossary), or any other PR; verified findings as blocker / should / nit, posted only on a yes as one inline comment per line with a suggested change for wording; `COMMENT` only on your own PR; on your own PR one answer can be *post, fix, then merge*, done by this session, never the reviewing agent (`process/reviewing.md`) |
-| `merge` | 8 | Checks green — or, when CI never started, the gate on the PR's head, accepted at the ask and named in a `CI:` trailer —, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main if main moved under the PR → what is unblocked |
+| `merge` | 8 | Checks green — or, when CI never started, the gate on the PR's head, accepted at the ask and named in a `CI:` trailer —, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main if main moved under the PR → progress tables written when CI left them stale → what is unblocked |
 | `bug` / `task` | 4 / 7 | Record one, attached to its parent |
 | `status` | reader's | Roll-up explained at the asker's tone |
 | `tone` | — | Personal audience override |
@@ -529,3 +531,7 @@ in `spry/history/writ.md`, then retires `canon/`.
   project's git config untouched (CH-29); `falsify run --record` keeps the rows a run did not touch
   (CH-30); close falsifies before the gate, so tests added for survivors need one gate, not two
   (CH-31). 0.22.0. From connect.
+- 2026-10-15 — close reviews before it proves: rebase, *What changed*, proof, follow-ups, review on
+  the draft PR with its fixes, then falsify and the gate once; `gate --fast` while building
+  (CH-32). `/spry:merge` writes the progress tables when CI left them stale (CH-33). 0.23.0. From
+  issues #4 and #5.
