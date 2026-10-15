@@ -104,11 +104,7 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
 
 ## Close — `/spry:slice-close [SL-n]`
 
-1. **Gate:** working tree committed; `spry.py gate` passes. Otherwise fix what fails and run it
-   again — it repeats only what the fix could change.
-2. **What changed:** compare the diff (`git diff <main>...HEAD`) with `Plan`; write only the
-   differences and why. Delete the section if none.
-3. **Falsify** — prove the tests notice each safeguard the slice added:
+1. **Falsify** — prove the tests notice each safeguard the slice added:
    - `python3 spry/tool/spry.py falsify suggest SL-<n>` drafts `.spry/falsify/SL-<n>.json` from the
      source lines the branch added: one candidate per guard, comparison or error line, each with a
      mutation that removes it (a guard made *never true*, a boundary flipped, a `throw` deleted) and
@@ -131,10 +127,18 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
      `files` to cap it. With
      `falsify.parallel` set (or `--jobs N`) it spreads controls over git worktrees and never
      touches this tree; commit first, or it runs serially and says why.
-   - `survived` → a new test, then run again until `caught`. Only when no test should catch it,
+   - `survived` → a new test, then run again until `caught` — a plan of only the survivors will do:
+     `--record` replaces their rows and keeps the rest. A control whose line changed since has a new
+     key, so its old row stays: run the whole plan with `--record SL-<n> --replace` to drop it. Only when no test should catch it,
      write the reason after `survived` in that row (`survived — logged only; no rule depends on it`):
      a person accepts it at the merge. A bare `survived` blocks the merge.
      `unreliable` → the baseline was red or timed out: fix that first.
+   - Falsify comes before the gate: it runs its own baseline, and a test added for a survivor
+     changes code, which would void a gate already passed.
+2. **Gate:** working tree committed, falsify's new tests included; `spry.py gate` passes. Otherwise
+   fix what fails and run it again — it repeats only what the fix could change.
+3. **What changed:** compare the diff (`git diff <main>...HEAD`) with `Plan`; write only the
+   differences and why. Delete the section if none.
 4. **Proof:** every criterion in `covers` has a citing test, or tell QA which need a manual check
    (`[Test]` under `NEXT`).
 5. **Follow-ups:** bugs, tasks, decisions found — create them (`spry.py new …`, `/spry:record`) and

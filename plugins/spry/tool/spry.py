@@ -70,7 +70,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.21.0"
+VERSION = "0.22.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -1691,6 +1691,10 @@ def mid_operation(project: Project) -> str | None:
     return None
 
 
+NO_HOOKS = ("-c", f"core.hooksPath={os.devnull}")
+SPARSE = ("-c", "core.sparseCheckout=true", "-c", "core.sparseCheckoutCone=false")
+
+
 def on_main(project: Project, step, ready=None) -> tuple:
     """Run `step(project on the remote main branch)` in a temporary worktree, commit what it wrote with
     the message it returns, and push to the main branch — again from a fresh fetch when the remote moved
@@ -1716,20 +1720,28 @@ def on_main(project: Project, step, ready=None) -> tuple:
             ready(tip)
         tmp = tempfile.mkdtemp(prefix="spry-main-")
         try:
-            done = git(project.root, "worktree", "add", "-q", "--detach", tmp, tip)
+            # Only `spry/` is checked out: a whole large repository took minutes where a virus scanner
+            # reads every file written. Sparse by `-c`, so the project's own git config is never changed;
+            # hooks off, so the project's checkout and commit hooks never run here.
+            done = git(project.root, *NO_HOOKS, "worktree", "add", "-q", "--no-checkout", "--detach", tmp, tip)
+            if done.returncode == 0:
+                patterns = os.path.join(tmp, git(tmp, "rev-parse", "--git-path", "info/sparse-checkout").stdout.strip())
+                os.makedirs(os.path.dirname(patterns), exist_ok=True)
+                write(patterns, "/" + re.sub(r"([\\*?\[\]!#])", r"\\\1", prefix) + "spry/\n")
+                done = git(tmp, *NO_HOOKS, *SPARSE, "checkout", "-q", "--detach", tip)
             if done.returncode != 0:
                 raise SystemExit(f"cannot make a worktree of {REMOTE}/{main}: {last_line(done)} — nothing written")
             if not os.path.isfile(os.path.join(tmp, prefix, "spry", "spry.config.json")):
                 raise SystemExit(f"spry is not on {REMOTE}/{main} yet — nothing written. Keep `mint` local "
                                  f"until the setup is merged; IDs are taken on {main} after that")
             result, message = step(Project(os.path.join(tmp, prefix)))
-            git(tmp, "add", "-A", "--", os.path.join(prefix, "spry") if prefix else "spry")
+            git(tmp, *SPARSE, "add", "-A", "--", os.path.join(prefix, "spry") if prefix else "spry")
             # Hooks are skipped: this commit holds one checked document, and a worktree has no installed tools.
-            done = git(tmp, "commit", "-q", "--no-verify", "-m", message)
+            done = git(tmp, *NO_HOOKS, *SPARSE, "commit", "-q", "--no-verify", "-m", message)
             if done.returncode != 0:
                 raise SystemExit(f"cannot commit on {main}: {last_line(done)} — nothing written")
             commit = git(tmp, "rev-parse", "HEAD").stdout.strip()
-            done = git(tmp, "push", "-q", "--no-verify", url, f"{commit}:refs/heads/{main}")
+            done = git(tmp, *NO_HOOKS, "push", "-q", "--no-verify", url, f"{commit}:refs/heads/{main}")
             # Judge by where the remote stands, not by the message: a race reads "fetch first",
             # "non-fast-forward" or "cannot lock ref" depending on timing and host.
             now = remote_tip(project, main)
@@ -2551,8 +2563,11 @@ def falsify_rows(results) -> list:
     return rows
 
 
-def record_falsify(project: Project, slice_id: str, rows: list) -> str:
-    """Write rows into the slice's Falsify table, replacing what was there."""
+def record_falsify(project: Project, slice_id: str, rows: list, replace: bool = False) -> tuple:
+    """Write rows into the slice's Falsify table: a row for a control already there replaces it in place —
+    matched by its `<!-- f:… -->` key, or by its control cell when the old row has none (written by hand) —
+    and a new control is added at the end. Rows this run did not touch stay, so a run of only the survivors
+    keeps the rest; `replace` drops them. Returns (the slice's file, how many rows were kept untouched)."""
     item = project.items.get(slice_id)
     if item is None or item.type != "slice":
         raise PlanError(f"no slice {slice_id}")
@@ -2567,9 +2582,34 @@ def record_falsify(project: Project, slice_id: str, rows: list) -> str:
     end = head + 2
     while end < len(lines) and lines[end].startswith("|"):
         end += 1
-    lines[head + 2:end] = rows
+
+    def control(row: str) -> str:
+        return ROW_KEY.sub("", re.split(r"(?<!\\)\|", row.strip().strip("|"))[0]).strip()
+
+    kept = [] if replace else lines[head + 2:end]
+    by_key, by_control = {}, {}
+    for i, row in enumerate(kept):
+        found = ROW_KEY.search(row)
+        if found:
+            by_key.setdefault(found.group(1), i)
+        else:
+            by_control.setdefault(control(row), i)
+    touched = set()
+    for row in rows:
+        found = ROW_KEY.search(row)
+        at = by_key.get(found.group(1)) if found else None
+        if at is None:
+            at = by_control.pop(control(row), None)
+        if at is None or at in touched:  # two mutations of one line in one run: both rows stay
+            kept.append(row)
+            at = len(kept) - 1
+        kept[at] = row
+        touched.add(at)
+        if found:
+            by_key.setdefault(found.group(1), at)
+    lines[head + 2:end] = kept
     write(item.doc, "\n".join(lines))
-    return item.doc
+    return item.doc, len(kept) - len(touched)
 
 
 CONTROL_LINE = re.compile(r"^\s*(if\b|elif\b|else if\b|unless\b|guard\b|throw\b|raise\b|return\s+(err|Err|error|None|null|false|False)\b|assert\b|require\b)|(\|\||&&|>=|<=|===|!==|==|!=)")
@@ -3663,7 +3703,9 @@ def main(argv=None) -> int:
     q = fsub.add_parser("run", help="remove each control, run the tests that should notice, restore")
     q.add_argument("plan")
     q.add_argument("--dry-run", action="store_true", help="validate and list what would run")
-    q.add_argument("--record", metavar="SLICE", help="write the results into this slice's Falsify table")
+    q.add_argument("--record", metavar="SLICE", help="write the results into this slice's Falsify table; "
+                   "rows of controls not run stay")
+    q.add_argument("--replace", action="store_true", help="with --record: drop the rows this run did not write")
     q.add_argument("--jobs", type=int, help="worktrees to run in parallel (default: falsify.parallel; 1 = serial)")
     p = sub.add_parser("review-check", help="would GitHub take this review as it stands? exit 1 if not")
     p.add_argument("payload", help="the review's JSON: commit_id, event, body, comments")
@@ -3861,7 +3903,11 @@ def main(argv=None) -> int:
             print("\n| Control | Mutation | Expect | Result |\n|---|---|---|---|\n" + "\n".join(rows))
             if args.record:
                 try:
-                    print("recorded in " + project.rel(record_falsify(Project(project.root), args.record, rows)))
+                    doc, kept = record_falsify(Project(project.root), args.record, rows, replace=args.replace)
+                    print("recorded in " + project.rel(doc))
+                    if kept:
+                        print(f"kept {kept} row{'s' if kept != 1 else ''} this run did not touch — "
+                              "a control whose line has changed since keeps its old row: `--replace` with the whole plan drops it")
                 except PlanError as e:
                     print(str(e), file=sys.stderr)
                     return 1

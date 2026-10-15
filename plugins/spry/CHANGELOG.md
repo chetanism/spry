@@ -517,3 +517,47 @@ Entry format:
     print `code=false` for it too.
 - **Adapt:** nothing
 - **Migrate:** nothing — drop any local patch that did the same.
+
+## CH-29 · `mint: main` checks out only `spry/`
+
+- **Date:** 2026-10-15 · **Version:** 0.22.0
+- **Touches:** `tool/spry.py` (`on_main` — `new`, `claim`, `release`)
+- **Why:** with `mint: main`, each `new`, `claim` and `release` checked out the whole repository into
+  a temporary worktree. On connect (3,733 files, macOS with a virus scanner reading every file
+  written) that took over 6 minutes, and the project's `post-checkout` hook ran there too.
+  - The worktree now checks out only `spry/` — all the step reads or writes. The commit still holds
+    every other file unchanged. Measured on connect: 11 s.
+  - The sparse setting is passed per command, so the project's git config is never changed; the
+    project's hooks (checkout, commit, push) do not run in the temporary worktree. A folder name
+    with `[`, `*` or `?` in it is escaped in the sparse pattern.
+- **Adapt:** nothing
+- **Migrate:** nothing
+
+## CH-30 · `falsify run --record` keeps the rows it did not run
+
+- **Date:** 2026-10-15 · **Version:** 0.22.0
+- **Touches:** `tool/spry.py` (`record_falsify`, `falsify run --replace`), `process/slicing.md`
+- **Why:** `--record` replaced the whole Falsify table, so running only the survivors after adding
+  their tests wiped every other row, and `merge-check` then reported those controls as not run.
+  - A row is matched by its `<!-- f:… -->` key and replaced in place; a row written by hand, with
+    no key, is matched by its control cell. A new control is added at the end; every other row
+    stays, and the run says how many it kept.
+  - A control whose line changed has a new key, so its old row stays too: `--replace` with the
+    whole plan writes the table afresh, as `--record` did before.
+  - Two mutations of one line in one run keep both rows.
+- **Adapt:** nothing
+- **Migrate:** nothing — a table a subset run already emptied: run the whole plan with `--replace`.
+
+## CH-31 · Close falsifies before the gate
+
+- **Date:** 2026-10-15 · **Version:** 0.22.0
+- **Touches:** `process/slicing.md` (*Close*), `process/reviewing.md` (§5a step 3),
+  `skills/slice-close`
+- **Why:** *Close* ran the gate, then falsify. A survivor needs a new test, which changes code and
+  voids the gate's stamp, so the gate ran again — on connect's SL-195, three gates and ~22 minutes,
+  the third only for falsify's tests. Falsify runs its own baseline and calls a red one
+  `unreliable`, so it does not need the gate first.
+  - *Close* is now: falsify (with tests for survivors) → gate → *What changed* → proof → follow-ups.
+  - A review fix re-runs falsify when code changed, then the gate.
+- **Adapt:** a project that copied *Close* into its own docs or skills changes the order there too.
+- **Migrate:** nothing

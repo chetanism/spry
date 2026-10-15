@@ -940,7 +940,7 @@ class Shared(unittest.TestCase):
         real, raced, made = spry.git, [], {}
 
         def git(root, *args):
-            if args[:1] == ("push",) and not raced:
+            if "push" in args and not raced:
                 raced.append(True)  # b takes a number between a's commit and a's push
                 made["b"] = spry.mint(spry.Project(self.b), "task", "M-1", "Second")
             return real(root, *args)
@@ -1050,6 +1050,47 @@ class Shared(unittest.TestCase):
             handle.write("y")
         self.assertIn("uncommitted changes", self.refused(lambda: spry.claim(spry.Project(self.a), "SL-1")))
         self.assertEqual(self.remote_head(), head)
+
+    def test_only_spry_is_checked_out_no_hook_runs_and_the_git_config_is_unchanged(self):
+        with open(os.path.join(self.a, "big.txt"), "w") as handle:
+            handle.write("not needed to take a number")
+        self.git(self.a, "add", "big.txt")
+        self.git(self.a, "commit", "-qm", "outside spry")
+        self.git(self.a, "push", "-q", "origin", "main")
+        fired = os.path.join(self.tmp, "fired")
+        for name in ("post-checkout", "pre-commit", "post-commit", "pre-push"):
+            hook = os.path.join(self.a, ".git", "hooks", name)
+            with open(hook, "w") as handle:
+                handle.write(f"#!/bin/sh\necho {name} >> {fired}\n")
+            os.chmod(hook, 0o755)
+        config = self.git(self.a, "config", "--list", "--local")
+        seen = []
+
+        def step(there):
+            seen.extend(sorted(os.path.relpath(os.path.join(d, f), there.root) for d, _, fs in os.walk(there.root)
+                               if ".git" not in d.split(os.sep) for f in fs if f != ".git"))
+            spry.new_item(there, "task", "M-1", "Sparse")
+            return None, "docs(plan): new T-1 Sparse"
+
+        _, commit, _ = spry.on_main(spry.Project(self.a), step)
+        self.assertTrue(seen and all(p.startswith("spry" + os.sep) for p in seen), seen)
+        self.assertFalse(os.path.exists(fired), "a project hook ran in the temporary worktree")
+        self.assertEqual(self.git(self.a, "config", "--list", "--local"), config)
+        self.assertEqual(self.remote_head(), commit)
+        listed = self.git(self.a, "ls-tree", "-r", "--name-only", commit).splitlines()
+        self.assertIn("big.txt", listed, "files outside spry/ stay in the commit")
+        self.assertTrue(any(p.endswith("T-1-sparse/README.md") for p in listed))
+        self.assertEqual(self.worktrees(self.a), 1)
+
+    def test_a_subfolder_with_glob_characters_is_checked_out(self):
+        folder = "docs [v2]*"
+        os.makedirs(os.path.join(self.a, folder))
+        self.git(self.a, "mv", "spry", os.path.join(folder, "spry"))
+        self.git(self.a, "commit", "-qm", "move spry")
+        self.git(self.a, "push", "-q", "origin", "main")
+        path = spry.mint(spry.Project(os.path.join(self.a, folder)), "task", "M-1", "Moved")
+        self.assertTrue(path.endswith("T-1-moved/README.md"))
+        self.assertEqual(self.git(self.a, "rev-parse", "HEAD"), self.remote_head())
 
     def test_local_mint_behaves_as_before(self):
         with open(os.path.join(self.a, "spry", "spry.config.json"), "w") as handle:
@@ -1535,7 +1576,28 @@ class Falsify(unittest.TestCase):
         rows = spry.falsify_table(spry.Project(self.root).items["SL-1"])
         self.assertEqual(rows, [["if overdue:", "`if overdue:` → `if False and (overdue):`", "S-1/AC-2", "survived"]])
 
-    def test_a_row_renamed_in_plain_words_still_counts(self):
+    def test_recording_a_subset_keeps_the_other_rows(self):
+        first = spry.falsify_rows(self.run_plan(self.both_guards()))
+        spry.record_falsify(spry.Project(self.root), "SL-1", first + ["| No key | — | S-1/AC-1 | skipped — clock |"])
+        # The survivor got a test and is run again alone, renamed in plain words; its key still matches.
+        again = first[1].replace("survived", "caught").replace("| if overdue: <!--", "| An overdue member <!--")
+        spry.record_falsify(spry.Project(self.root), "SL-1",
+                            [again, "| No key | — | S-1/AC-1 | skipped — no clock here |", "| New | — | S-1/AC-2 | caught |"])
+        rows = spry.falsify_table(spry.Project(self.root).items["SL-1"])
+        self.assertEqual([(r[0], r[3]) for r in rows],
+                         [("if count >= 3:", "caught"), ("An overdue member", "caught"),
+                          ("No key", "skipped — no clock here"), ("New", "caught")])
+        # A row written by hand, then run from the plan, is replaced — not added a second time.
+        keyed = "| New <!-- f:0000abcd --> | m | S-1/AC-2 | caught |"
+        _, kept = spry.record_falsify(spry.Project(self.root), "SL-1", [keyed, keyed.replace("caught", "survived")])
+        rows = spry.falsify_table(spry.Project(self.root).items["SL-1"])
+        self.assertEqual([r[0] for r in rows], ["if count >= 3:", "An overdue member", "No key", "New", "New"],
+                         "two mutations of one line in one run keep both rows")
+        self.assertEqual(kept, 3)
+        _, kept = spry.record_falsify(spry.Project(self.root), "SL-1", first, replace=True)
+        self.assertEqual(len(spry.falsify_table(spry.Project(self.root).items["SL-1"])), 2)
+        self.assertEqual(kept, 0)
+
         results = self.run_plan(self.both_guards())
         rows = [r.replace("| if count >= 3: <!--", "| A fourth book is refused <!--")
                  .replace("| if overdue: <!--", "| An overdue member is refused <!--") for r in spry.falsify_rows(results)]

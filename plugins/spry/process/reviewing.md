@@ -218,9 +218,9 @@ The session that ran the review does this, not the reviewing agent.
 2. **Fix exactly what was accepted:** each Blocker and Should, as its finding and suggestion say. A
    fix that turns out to need more than the finding said — another file, a design choice — is not
    made: stop and ask about that one.
-3. **Re-run only what the fixes could change**, as `slicing.md` *Close* does: `spry.py gate`; falsify
-   again when code changed (`merge-check` blocks a control with no row); the slice's *What changed*
-   and the PR body when the diff did.
+3. **Re-run only what the fixes could change**, as `slicing.md` *Close* does: falsify again when
+   code changed (`merge-check` blocks a control with no row), then `spry.py gate`; the slice's
+   *What changed* and the PR body when the diff did.
 4. **Commit** `fix(<SL-n>): review findings`, and push once.
 5. **On *a*,** run `/spry:merge` — every step. The answer was its step 6 yes, for the `!` items the
    report named; anything else it finds, it asks.

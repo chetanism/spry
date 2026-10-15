@@ -381,7 +381,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `story` | 3 | Interview → stories with acceptance criteria; conflict check |
 | `slice` | 8 | Split a ready story / task / bug into `planned` slices: one slice is reviewable in one sitting and demos one visible change |
 | `slice-open` | 8 | Work order (opening with a brief summary of what will be done), conflict check, branch, draft PR with the work order as its body; then builds — asking first only for something hard to undo |
-| `slice-close` | 8 | Close summary from the diff, falsify, AC proof, done list; PR body refreshed with both parts |
+| `slice-close` | 8 | Falsify, then the gate, then the close summary from the diff, AC proof, done list; PR body refreshed with both parts |
 | `review` | 8 | Fresh eyes — a new agent, never the author's session — on a slice PR (against its work order), a plan PR or item (against its parent, the code and the glossary), or any other PR; verified findings as blocker / should / nit, posted only on a yes as one inline comment per line with a suggested change for wording; `COMMENT` only on your own PR; on your own PR one answer can be *post, fix, then merge*, done by this session, never the reviewing agent (`process/reviewing.md`) |
 | `merge` | 8 | Checks green — or, when CI never started, the gate on the PR's head, accepted at the ask and named in a `CI:` trailer —, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main if main moved under the PR → what is unblocked |
 | `bug` / `task` | 4 / 7 | Record one, attached to its parent |
@@ -525,3 +525,7 @@ in `spry/history/writ.md`, then retires `canon/`.
   without its Given / Expect.
 - 2026-10-15 — the gate runs `check` alone when the branch changed only documents since its merge
   base with `origin/<main>`, stamp or no stamp (CH-28, 0.21.0). From issue #3.
+- 2026-10-15 — `mint: main` checks out only `spry/` in its temporary worktree, with hooks off and the
+  project's git config untouched (CH-29); `falsify run --record` keeps the rows a run did not touch
+  (CH-30); close falsifies before the gate, so tests added for survivors need one gate, not two
+  (CH-31). 0.22.0. From connect.
