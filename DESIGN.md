@@ -282,7 +282,10 @@ first so a slow one never runs only to be thrown away by a lint error.
 - **`gate`** runs `spry check` → `checks.fast` (format, lint, types, cheapest first) → affected
   tests, stopping at the first failure. A pass is stamped in `.spry/green` with a fingerprint of the
   code (every file outside `checks.docs`, default `spry/**` and `**/*.md`); while it matches, the
-  gate runs `check` alone. So a document fixed after the tests never re-runs them. When the
+  gate runs `check` alone. So a document fixed after the tests never re-runs them. The gate also
+  runs `check` alone when the branch — working tree included — changed only `checks.docs` since
+  its merge base with `origin/<main>`, so a rebase onto others' code, or a fresh worktree, does not
+  re-run steps on code the branch never touched; unsure means it runs them. When the
   affected tests fail on a timeout (`tests.retry_when`) and `tests.retry` is set, the gate runs that
   once — the same tests with no parallelism — so load on a busy machine is not a red gate; a real
   failure fails both runs.
@@ -520,3 +523,5 @@ in `spry/history/writ.md`, then retires `canon/`.
   *Before you start* says who provides each thing, and what cannot be set up through the screen;
   steps say what to achieve, not what to press (CH-27, 0.20.0). From pulse-v2's writ template,
   without its Given / Expect.
+- 2026-10-15 — the gate runs `check` alone when the branch changed only documents since its merge
+  base with `origin/<main>`, stamp or no stamp (CH-28, 0.21.0). From issue #3.

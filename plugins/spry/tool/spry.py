@@ -70,7 +70,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.20.0"
+VERSION = "0.21.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -3397,6 +3397,10 @@ def gate(project: Project, force: bool = False, say=print) -> int:
     if fingerprint and stamp.get("code") == fingerprint and not force:
         say(f"– {', '.join(n for n, _ in steps)} skipped: no code changed since they passed at {stamp.get('at', '?')}")
         return 0
+    main = documents_only_since_main(project)
+    if main and not force:
+        say(f"– {', '.join(n for n, _ in steps)} skipped: only documents changed since {main}")
+        return 0
     tests = project.config.get("tests", {})
     retry = str(tests.get("retry") or "").strip()
     retry_when = re.compile(tests.get("retry_when") or DEFAULT_RETRY_WHEN, re.I)
@@ -3426,11 +3430,29 @@ def code_changed_since(project: Project, base: str) -> bool:
     """Did anything outside `checks.docs` change between `base` and the working tree? True when unsure."""
     if git(project.root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
         return True
-    done = git(project.root, "diff", "--relative", "--name-only", base, "--", ".")
+    done = git(project.root, "diff", "--relative", "--name-only", "--no-renames", base, "--", ".")
     if done.returncode != 0:
         return True
     docs = [glob_regex(g) for g in project.config.get("checks", {}).get("docs") or DEFAULT_DOCS]
     return any(not any(g.match(path) for g in docs) for path in done.stdout.split("\n") if path)
+
+
+def documents_only_since_main(project: Project) -> str | None:
+    """`origin/<main>` when the branch, working tree and untracked files included, changed only `checks.docs`
+    since it left it; None when code changed or when unsure. From the fork point, so what a rebase
+    brought in, or what the main branch did since, is not the branch's."""
+    main = f"{REMOTE}/{main_branch(project)}"
+    fork = git(project.root, "merge-base", main, "HEAD")
+    if fork.returncode != 0 or not fork.stdout.strip() or code_changed_since(project, fork.stdout.strip()):
+        return None
+    new = git(project.root, "ls-files", "-o", "--exclude-standard", "--", ".")
+    if new.returncode != 0:
+        return None
+    docs = [glob_regex(g) for g in project.config.get("checks", {}).get("docs") or DEFAULT_DOCS]
+    for path in filter(None, new.stdout.split("\n")):
+        if not SKIP_DIRS.intersection(path.split("/")[:-1]) and not any(g.match(path) for g in docs):
+            return None
+    return main
 
 
 # ---------------------------------------------------------------- review-check

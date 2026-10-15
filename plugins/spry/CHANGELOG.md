@@ -498,3 +498,22 @@ Entry format:
   with no screens (a CLI, an API) is not a browser.
 - **Migrate:** nothing — scenarios already written stay valid; new ones take the new form, and an
   old one takes it when it is next edited.
+
+## CH-28 · The gate skips a branch that changed only documents
+
+- **Date:** 2026-10-15 · **Version:** 0.21.0
+- **Touches:** `tool/spry.py` (`gate`, `changed --base`)
+- **Why:** the gate skipped its steps only while `.spry/green` matched the code. A fresh worktree
+  has no stamp, and a rebase brings in other merges' code, so a branch that touched only
+  `checks.docs` ran format, lint, types and affected tests on code it never changed — 58s and more
+  on pulse-v2 (#495, #496, #574).
+  - After `spry check`, when nothing outside `checks.docs` changed since the branch left
+    `origin/<main>` — from the merge base, so what a rebase brought in is not the branch's; working
+    tree and untracked files included — the gate says `– … skipped: only documents changed since
+    origin/<main>` and stops. Nothing is stamped.
+  - Unsure — no `origin/<main>`, git fails — runs every step, as before. `--force` still runs them.
+  - A code file renamed to a document path (`tool.py` → `tool.md`, or a script moved under
+    `spry/`) counts as code removed. `changed --base` listed only the new name, so CI could
+    print `code=false` for it too.
+- **Adapt:** nothing
+- **Migrate:** nothing — drop any local patch that did the same.
