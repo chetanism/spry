@@ -54,10 +54,10 @@ Every bullet starts with one tag in brackets.
 
 ```
 DONE
-- [Added] Story S-2 Loan limit, with 3 acceptance criteria
+- [Added] Story S-2 Loan limit, with 2 acceptance criteria
 - [Found] S-2 overlaps S-1 Lend a book: S-1 now covers only the allowed case
 NEXT
-- [Review] S-2 Loan limit — the three "Done when" lines are what QA will test
+- [Review] S-2 Loan limit — its two acceptance criteria are what QA will test
 ASK
 1. Should a member with an overdue book be allowed to borrow another?
    a. No — they return the overdue book first (recommended): matches the desk's paper rule today
@@ -69,7 +69,7 @@ ASK
 ```
 DONE
 - [Opened] SL-2 on `sl-2-refuse-over-limit`, draft PR #14
-- [Found] Collision: SL-3 also edits `src/loans/service.ts` — SL-2 goes first, SL-3 rebases
+- [Found] Overlap: SL-1's `lend.ts` already returns `LendError` — `AtLimit` and `Overdue` join it
 NEXT
 - [Review] SL-2 plan — `spry/plan/…/SL-2-refuse-over-limit.md`
 - [Approve] start of coding

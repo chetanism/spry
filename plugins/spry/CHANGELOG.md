@@ -600,3 +600,16 @@ Entry format:
 - **Adapt:** a main branch that refuses direct pushes allows this one for the person merging, or
   accepts stale tables until CI runs (`mint: main` needs the same).
 - **Migrate:** a main branch already stale: `spry.py index` there once, and commit.
+
+## CH-34 · `/spry:test-all` is not a step before closing
+
+- **Date:** 2026-10-16 · **Version:** 0.23.1
+- **Touches:** `skills/test-all` (description), `process/chat.md` (examples)
+- **Why:**
+  - The skill's description said to run it "before closing a slice that touched shared code",
+    while `slicing.md` and `testing.md` say a slice never runs the full suite. An agent choosing
+    skills by their descriptions ran the whole suite at close.
+  - `chat.md`'s examples did not match the worked example: S-2 had three "Done when" lines (it has
+    two acceptance criteria), and SL-2 collided with an SL-3 that is the CI task.
+- **Adapt:** nothing
+- **Migrate:** nothing

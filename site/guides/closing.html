@@ -105,14 +105,15 @@ false catch.</p>
 <span class="p">$ </span>python3 spry/tool/spry.py falsify run .spry/falsify/SL-1.json --record SL-1</code></pre>
 
 <p>The run restores every file, even on Ctrl-C, and writes the results into the slice. SL-1 from the
-worked example — its third control first survived; a test was added and falsify run again:</p>
+worked example — its third control first survived; a test was added and falsify run again, which
+replaced that row with <em>caught</em>. <em>What changed</em> in the close summary keeps the story:</p>
 
 <div class="table-wrap"><table>
   <thead><tr><th>Control</th><th>Mutation</th><th>Expect</th><th>Result</th></tr></thead>
   <tbody>
     <tr><td>book already on loan → <code>AlreadyOnLoan</code></td><td>delete the check</td><td>S-1/AC-3</td><td>caught</td></tr>
     <tr><td><code>due_on = today + 14</code></td><td><code>+ 13</code></td><td>S-1/AC-2</td><td>caught</td></tr>
-    <tr><td>unknown library card → <code>NoSuchMember</code></td><td>delete the check</td><td>S-1/AC-1</td><td>survived → added "S-1/AC-1 refuses an unknown library card"; caught</td></tr>
+    <tr><td>unknown library card → <code>NoSuchMember</code></td><td>delete the check</td><td>S-1/AC-1</td><td>caught</td></tr>
   </tbody>
 </table></div>
 
@@ -131,14 +132,6 @@ worked example — its third control first survived; a test was added and falsif
   <p>The agent can add controls, never drop one. At merge time the tool drafts the list again from the
   diff and blocks if any control has no row. A slice that adds no source line at all — only tests or
   documents — has nothing to falsify.</p>
-</div>
-
-<div class="callout note">
-  <span class="callout-title">How the tool reads that third row</span>
-  <p>The worked example keeps the history in the row (<em>survived → added …; caught</em>). <code>merge-check</code>
-  reads any row that starts <em>survived</em> with text after it as a survivor with a reason — a <code>!</code>
-  a person accepts at the merge. A re-run with <code>--record</code> replaces the row with plain <em>caught</em>,
-  which needs no ask.</p>
 </div>
 
 <p>The full design is in <a href="../design/falsify.html">Falsify</a>.</p>

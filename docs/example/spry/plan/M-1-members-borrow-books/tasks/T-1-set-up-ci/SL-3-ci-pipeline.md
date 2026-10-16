@@ -7,7 +7,7 @@ audience: 8
 covers: []
 branch: sl-3-ci-pipeline
 pr: 7
-closed: 2026-09-18
+closed: 2026-10-01
 blocked_by: []
 related: []
 ---

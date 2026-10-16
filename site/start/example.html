@@ -160,14 +160,15 @@ code, and the <strong>mutation</strong> is how the tool broke it:</p>
   <tbody>
     <tr><td>book already on loan → refused</td><td>delete the check</td><td>S-1/AC-3</td><td><span class="badge green">caught</span></td></tr>
     <tr><td>due date = today + 14</td><td><code>+ 13</code></td><td>S-1/AC-2</td><td><span class="badge green">caught</span></td></tr>
-    <tr><td>unknown library card → refused</td><td>delete the check</td><td>S-1/AC-1</td><td><span class="badge amber">survived</span> → test added "S-1/AC-1 refuses an unknown library card"; <span class="badge green">caught</span></td></tr>
+    <tr><td>unknown library card → refused</td><td>delete the check</td><td>S-1/AC-1</td><td><span class="badge green">caught</span></td></tr>
   </tbody>
 </table>
 </div>
 
-<p>The third row is the point. The unknown-card check could be deleted and every test still passed —
-the tests looked fine but would not have noticed. Falsify found it, a test was added, and the run
-showed it caught. <a href="../design/falsify.html">How falsify works →</a></p>
+<p>The third row is the point. On the first run the unknown-card check could be deleted and every
+test still passed — the tests looked fine but would not have noticed. Falsify found it, the slice
+added "S-1/AC-1 refuses an unknown library card", and the re-run caught it. The re-run replaced the
+row; the close summary keeps the story. <a href="../design/falsify.html">How falsify works →</a></p>
 
 <h2>QA's check log</h2>
 

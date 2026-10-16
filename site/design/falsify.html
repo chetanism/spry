@@ -33,7 +33,8 @@ for the lines that matter — the safeguards the slice added — so it takes min
   <span class="callout-title">From the worked example</span>
   <p>SL-1 <em>Record a loan</em> added three safeguards. Falsify deleted the "unknown library card"
   check, and every test still passed — no test noticed. The slice added "S-1/AC-1 refuses an unknown
-  library card", ran falsify again, and the check was caught.</p>
+  library card", ran falsify again, and the check was caught. The re-run replaced that row, so the
+  table keeps only the result; the close summary says what happened.</p>
 </div>
 
 <div class="table-wrap"><table>
@@ -41,7 +42,7 @@ for the lines that matter — the safeguards the slice added — so it takes min
 <tbody>
 <tr><td>book already on loan → <code>AlreadyOnLoan</code></td><td>delete the check</td><td>S-1/AC-3</td><td>caught</td></tr>
 <tr><td><code>due_on = today + 14</code></td><td><code>+ 13</code></td><td>S-1/AC-2</td><td>caught</td></tr>
-<tr><td>unknown library card → <code>NoSuchMember</code></td><td>delete the check</td><td>S-1/AC-1</td><td>survived → added a test; caught</td></tr>
+<tr><td>unknown library card → <code>NoSuchMember</code></td><td>delete the check</td><td>S-1/AC-1</td><td>caught</td></tr>
 </tbody></table></div>
 
 <h2>How it runs</h2>

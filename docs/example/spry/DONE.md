@@ -13,5 +13,5 @@ branch, `python3 spry/tool/spry.py done` prints it. What is still to do is on [B
 <!-- spry:done -->
 | # | Item | Type | Part of | Closed |
 |--:|---|---|---|---|
-| 1 | [T-1 Set up CI](plan/M-1-members-borrow-books/tasks/T-1-set-up-ci/README.md) | task | [M-1 Members can borrow books](plan/M-1-members-borrow-books/README.md) | 2026-09-18 |
+| 1 | [T-1 Set up CI](plan/M-1-members-borrow-books/tasks/T-1-set-up-ci/README.md) | task | [M-1 Members can borrow books](plan/M-1-members-borrow-books/README.md) | 2026-10-01 |
 <!-- /spry:done -->

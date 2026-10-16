@@ -246,7 +246,7 @@ back and cut with QA before any steps are written.</p>
 timed, with local services started only when they are down and stopped only if this run started
 them. Names failures, slow tests and flaky ones.</p>
 <ul>
-  <li><strong>When:</strong> before closing a slice that touched shared code, after a dependency or configuration change, or when asked. Never as a routine step — CI runs the full suite on the main branch.</li>
+  <li><strong>When:</strong> when a person asks — for example after a dependency or configuration change. Never as a routine step of a slice — CI runs the full suite on the main branch.</li>
   <li><strong>Arguments:</strong> a part name, optional.</li>
   <li><strong>Audience:</strong> 8.</li>
   <li><strong>Writes:</strong> nothing. Report only — it never fixes, skips, retries or quarantines a test.</li>

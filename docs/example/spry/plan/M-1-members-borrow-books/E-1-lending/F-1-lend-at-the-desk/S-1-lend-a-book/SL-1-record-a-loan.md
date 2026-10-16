@@ -7,7 +7,7 @@ audience: 8
 covers: [AC-1, AC-2, AC-3]
 branch: sl-1-record-a-loan
 pr: 9
-closed: 2026-09-25
+closed: 2026-10-03
 blocked_by: [T-1]
 related: []
 ---
@@ -60,6 +60,8 @@ open http://localhost:3000/desk   # card 1001, book 9780141439518, press Lend
 ### What changed
 
 - `src/desk/receipt.ts` formats the date with the server's timezone; receipt printing tested by hand only (AC-2 manual).
+- Falsify: deleting the unknown-card check first survived — no test sent an unknown card. Added
+  "S-1/AC-1 refuses an unknown library card"; the re-run caught it.
 
 ### Falsify
 
@@ -67,7 +69,7 @@ open http://localhost:3000/desk   # card 1001, book 9780141439518, press Lend
 |---|---|---|---|
 | book already on loan → `AlreadyOnLoan` | delete the check | S-1/AC-3 | caught |
 | `due_on = today + 14` | `+ 13` | S-1/AC-2 | caught |
-| unknown library card → `NoSuchMember` | delete the check | S-1/AC-1 | survived → added "S-1/AC-1 refuses an unknown library card"; caught |
+| unknown library card → `NoSuchMember` | delete the check | S-1/AC-1 | caught |
 
 ### Follow-ups
 

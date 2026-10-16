@@ -535,3 +535,5 @@ in `spry/history/writ.md`, then retires `canon/`.
   the draft PR with its fixes, then falsify and the gate once; `gate --fast` while building
   (CH-32). `/spry:merge` writes the progress tables when CI left them stale (CH-33). 0.23.0. From
   issues #4 and #5.
+- 2026-10-16 — `/spry:test-all`'s description no longer says to run it before closing a slice, and
+  `chat.md`'s examples match the worked example (CH-34). 0.23.1.
