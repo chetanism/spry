@@ -119,6 +119,17 @@ you are on, each person can run this once per clone:</p>
 <p>After a checkout or pull that changed the plan or a test, it refreshes the backlog, coverage and
 done pages into <code>.spry/view/</code>, which is never committed.</p>
 
+<h2>Optional: browse the plan in a browser</h2>
+
+<p>GitHub shows every page with nothing to install. On a big plan, a local view is quicker to move
+around in:</p>
+
+<pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py serve</code></pre>
+
+<p>It opens the plan tree, every document and the progress pages for your working tree in your
+browser, with search. It is read-only and only this machine can reach it; Ctrl-C stops it.
+<a href="../design/pages.html#browse-in-a-browser">More</a>.</p>
+
 <h2>Keeping spry current</h2>
 
 <p>spry changes often. To take what it gained since you set up, run:</p>

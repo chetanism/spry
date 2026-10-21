@@ -130,7 +130,7 @@ under milestones. ID prefixes are chosen in the setup interview too.</p>
 <p>Answer interviews. <code>/spry:milestone</code>, <code>epic</code>, <code>feature</code> and
 <code>story</code> ask a few questions at a time, offer a drafted answer to confirm, and write it down in
 plain words — audience 2–3, no code or file paths. Then read the plan, backlog and progress on GitHub by
-clicking folders, with nothing to install. The one decision only product can make: saying yes to a
+clicking folders, with nothing to install — or locally in a browser with <code>spry serve</code>. The one decision only product can make: saying yes to a
 story's criteria. <a href="../guides/planning.html">Plan the work</a>.</p>
 
 <h3>And QA?</h3>
@@ -153,10 +153,18 @@ pnpm workspaces.</p>
 
 <h3>Where does my data live?</h3>
 <p>In your repository, as Markdown files under <code>spry/</code>, plus <code>AGENTS.md</code>,
-<code>CLAUDE.md</code> and a CI workflow. There is no server, database or account. A local
+<code>CLAUDE.md</code> and a CI workflow. There is no hosted service, database or account; the optional
+<code>spry serve</code> runs on your machine and only reads those files. A local
 <code>.spry/</code> folder — gitignored — holds a search index, your personal tone, the gate's stamp and
 caches. Nothing leaves your machine except what you push, and <code>/spry:contribute</code>, which files
 an issue on spry only after you have read it and said yes.</p>
+
+<h3>Is there a user interface?</h3>
+<p>GitHub's own rendering of the files is the main one. For a quicker way around a big plan,
+<code>python3 spry/tool/spry.py serve</code> opens it in your browser: the plan tree with progress,
+every document, the backlog and coverage for your working tree, and search. It only reads — plans
+are changed through the skills, which check them for conflicts.
+<a href="../design/pages.html#browse-in-a-browser">Generated pages</a>.</p>
 
 <h3>Will spry end up in my production build?</h3>
 <p>No. Setup excludes <code>spry/</code> from deploy builds (<code>.dockerignore</code> or the stack's
