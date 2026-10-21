@@ -254,7 +254,21 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
   `index --restore <base>` puts the base's copy back.
 - **Only the main branch gets these**, written by CI (`spry index`, `[skip ci]`), or by
   `/spry:merge` when CI left them stale (`merging.md` step 8). Branches never touch them, so they never conflict. `spry check` ignores block contents.
-- A local `spry serve` (stdlib HTTP + minimal Markdown) is deferred; GitHub rendering comes first.
+- **`spry serve` browses the plan in a browser** — optional, read-only, on `127.0.0.1` only (any
+  other `Host` header gets 403, so a page elsewhere cannot rebind a name to it and read the plan).
+  Standard library only: `http.server` and a small Markdown renderer covering what spry's documents
+  use, escaping all HTML but the tags GitHub allows. A page is a document under the project root at
+  its own path, so relative links work as on GitHub; its generated blocks are built for the working
+  tree as it is shown (the same makers `index` uses); a sidebar holds the plan tree with done/total;
+  an item gets its breadcrumbs and front-matter as badges (PR, issue, `covers`, `blocked_by`,
+  `related` as links); search is `find`. Dot-folders and `SKIP_DIRS` are never served.
+  **Never a second way to write:** edits go through the skills, which run the conflict check and
+  `check`. **The files stay the only source** — no database holds a document; SQLite is the
+  `find` cache only, deletable at any time. Reading a big plan takes seconds on a slow disk (5 s for
+  1,300 items on one pilot), so pages answer from the last read and a request more than a second
+  after it reads again in the background: a change to the tree or a generated block shows once that
+  read ends — at once on a small plan, seconds later on a big one; the page's own document is always
+  read fresh. Raw files are served only as images, sandboxed; anything else is shown as text.
 
 ## 14. Team
 
@@ -352,6 +366,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `backlog` | the backlog page (§13): in progress, ready to build, needs slicing, blocked, needs planning |
 | `done` | the done page (§13): finished stories, tasks and bugs, newest first |
 | `view [--since]` · `hooks [--remove]` | the generated pages for the working tree in `.spry/view/`; git hooks that refresh them (§13) |
+| `serve [--port] [--no-open]` | browse the plan and knowledge in a browser, read-only, local only (§13) |
 | `index --restore <base>` | on a branch: put back the base's copy of each generated block it changed |
 | `related <file>` | conflict-check candidates (§10) |
 | `next <type>` | next free ID |
@@ -537,3 +552,6 @@ in `spry/history/writ.md`, then retires `canon/`.
   issues #4 and #5.
 - 2026-10-16 — `/spry:test-all`'s description no longer says to run it before closing a slice, and
   `chat.md`'s examples match the worked example (CH-34). 0.23.1.
+- 2026-10-21 — `spry serve`: the plan, knowledge and generated pages in a browser, read-only, local
+  only; `index` and `serve` share one list of generated blocks (CH-35, 0.24.0). From connect and
+  pulse, where browsing hundreds of folders on GitHub got slow.

@@ -613,3 +613,18 @@ Entry format:
     two acceptance criteria), and SL-2 collided with an SL-3 that is the CI task.
 - **Adapt:** nothing
 - **Migrate:** nothing
+
+## CH-35 · `spry serve` — browse the plan in a browser
+
+- **Date:** 2026-10-21 · **Version:** 0.24.0
+- **Touches:** `tool/spry.py` (`serve`; `index` builds its blocks from the same list),
+  `process/slicing.md` (*While building*)
+- **Why:** on a plan of a thousand items, clicking through folders on GitHub or in an editor to
+  follow a story to its slices, blockers and proof got slow, and the committed progress pages show
+  the main branch, not the working tree.
+  - `python3 spry/tool/spry.py serve` opens the plan in a browser on `127.0.0.1`: the plan tree
+    with done/total beside every page, each document rendered with its generated blocks built for
+    the working tree, an item's front-matter as badges and links, and search (`find`).
+  - Read-only, standard library only, nothing to install; documents stay the only source.
+- **Adapt:** nothing — use it or not, per person.
+- **Migrate:** nothing

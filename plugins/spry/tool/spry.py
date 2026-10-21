@@ -9,6 +9,7 @@
     python3 spry/tool/spry.py backlog            # in progress, ready to build, needs slicing, blocked, needs planning
     python3 spry/tool/spry.py done               # finished stories, tasks and bugs, newest first
     python3 spry/tool/spry.py view [--since <commit>]   # the generated pages for this working tree → .spry/view/
+    python3 spry/tool/spry.py serve [--port N] [--no-open]   # browse the plan in a browser, read-only, local only
     python3 spry/tool/spry.py hooks [--remove]   # refresh .spry/view/ after each checkout and pull
     python3 spry/tool/spry.py related <file>     # candidates for a conflict check
     python3 spry/tool/spry.py next <type>        # next free ID: milestone, story, slice, decision …
@@ -70,7 +71,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.23.1"
+VERSION = "0.24.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -1304,44 +1305,54 @@ def index_block(project: Project, index_path: str) -> str:
     return "\n".join(lines) or "_Nothing here yet._"
 
 
-def index(project: Project, dry: bool):
-    """Regenerate every marker block. Returns the files that changed (or would)."""
-    changed = []
+def block_makers(project: Project) -> dict:
+    """{absolute path: [(block, make, required)]} — every generated block and what fills it.
+    `make()` builds the content, so `serve` builds only the blocks of the page it shows."""
+    out = {}
 
-    def apply(path: str, name: str, content: str, required: bool):
-        if not os.path.isfile(path):
-            return
-        text = read(path)
-        new = replace_block(text, name, content)
-        if new is None:
-            if required:
-                project.problem(path, 1, f"no `<!-- spry:{name} -->` block to fill", "warning")
-            return
-        if new != text:
-            changed.append(project.rel(path))
-            if not dry:
-                write(path, new)
+    def add(path: str, name: str, make, required: bool):
+        out.setdefault(path, []).append((name, make, required))
 
     for item in project.items.values():
         if item.folder:
-            apply(item.doc, "children", children_block(project, item), True)
+            add(item.doc, "children", lambda i=item: children_block(project, i), True)
         if item.type == "story":
-            apply(item.doc, "proof", proof_block(project, item), True)
+            add(item.doc, "proof", lambda i=item: proof_block(project, i), True)
     roadmap = os.path.join(project.plan_dir, "README.md")
-    apply(roadmap, "children", top_block(project, roadmap, False), True)
+    add(roadmap, "children", lambda: top_block(project, roadmap, False), True)
     front = os.path.join(project.spry, "README.md")
-    apply(front, "children", top_block(project, front, True), False)
+    add(front, "children", lambda: top_block(project, front, True), False)
     cover = os.path.join(project.spry, "COVERAGE.md")
-    apply(cover, "coverage", coverage_block(project, cover), True)
+    add(cover, "coverage", lambda: coverage_block(project, cover), True)
     queue = os.path.join(project.spry, "BACKLOG.md")
-    apply(queue, "backlog", backlog_block(project, queue), True)
+    add(queue, "backlog", lambda: backlog_block(project, queue), True)
     finish = os.path.join(project.spry, "DONE.md")
-    apply(finish, "done", done_block(project, finish), True)
+    add(finish, "done", lambda: done_block(project, finish), True)
     for dirpath, dirnames, filenames in os.walk(os.path.join(project.spry, "knowledge")):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         if "INDEX.md" in filenames:
             path = os.path.join(dirpath, "INDEX.md")
-            apply(path, "index", index_block(project, path), True)
+            add(path, "index", lambda p=path: index_block(project, p), True)
+    return out
+
+
+def index(project: Project, dry: bool):
+    """Regenerate every marker block. Returns the files that changed (or would)."""
+    changed = []
+    for path, blocks in block_makers(project).items():
+        for name, make, required in blocks:
+            if not os.path.isfile(path):
+                continue
+            text = read(path)
+            new = replace_block(text, name, make())
+            if new is None:
+                if required:
+                    project.problem(path, 1, f"no `<!-- spry:{name} -->` block to fill", "warning")
+                continue
+            if new != text:
+                changed.append(project.rel(path))
+                if not dry:
+                    write(path, new)
     return sorted(changed)
 
 
@@ -2746,8 +2757,9 @@ def search_terms(query: str) -> list:
     return [w for w in re.findall(r"[\w-]+", query.lower()) if w]
 
 
-def find(project: Project, query: str, limit: int = 10, rebuild: bool = False) -> list:
-    """[(rel path, line, heading, snippet)] best first. SQLite FTS5 when the stdlib has it."""
+def find(project: Project, query: str, limit: int = 10, rebuild: bool = False, marks=("[", "]")) -> list:
+    """[(rel path, line, heading, snippet)] best first, matches in the snippet between `marks`.
+    SQLite FTS5 when the stdlib has it."""
     import sqlite3
     terms = search_terms(query)
     if not terms:
@@ -2790,9 +2802,9 @@ def find(project: Project, query: str, limit: int = 10, rebuild: bool = False) -
     rows = []
     for joiner in (" ", " OR "):
         match = joiner.join('"' + t.replace('"', "") + '"*' for t in terms)
-        rows = con.execute("SELECT path, line, title || ' › ' || heading, snippet(sections, 4, '[', ']', '…', 12) "
+        rows = con.execute("SELECT path, line, title || ' › ' || heading, snippet(sections, 4, ?, ?, '…', 12) "
                            "FROM sections WHERE sections MATCH ? ORDER BY bm25(sections, 0, 0, 1.5, 2.0, 1.0) LIMIT ?",
-                           (match, limit * 3)).fetchall()
+                           (*marks, match, limit * 3)).fetchall()
         if rows:
             break
     con.close()
@@ -3231,6 +3243,581 @@ def hooks(project: Project, remove: bool = False) -> list:
     return out
 
 
+# ---------------------------------------------------------------- serve
+
+SERVE_PORT = 8765
+SERVE_STALE = 1.0  # seconds a read of the plan answers pages before the next request reads it again
+SERVE_RAW = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"}
+SAFE_ATTRS = {"href", "src", "alt", "title", "open", "colspan", "rowspan", "align", "width", "height"}
+LIST_ITEM = re.compile(r"^( *)([-*+]|\d{1,9}[.)])( +|$)(.*)$")
+TABLE_SEP = re.compile(r"^\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*$")
+RULE = re.compile(r"^ {0,3}([-*_])( *\1){2,} *$")
+
+
+def safe_url(url: str) -> str:
+    """A link target, or `#` for a scheme a page should never follow (`javascript:` …)."""
+    url = url.strip()
+    probe = re.sub(r"[\x00-\x20\x7f]", "", url)  # browsers drop these inside a URL: `java\tscript:` runs
+    if re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*:", probe) and not re.match(r"^(https?|mailto):", probe, re.I):
+        return "#"
+    return url if probe == url else re.sub(r"[\x00-\x1f\x7f]", "", url)
+
+
+def serve_href(project: Project, path: str) -> str:
+    """The URL of a file under the project, quoted: a `#`, `?` or `%` in a name stays part of it."""
+    import html
+    from urllib.parse import quote
+    return html.escape("/" + quote(project.rel(path)))
+
+
+def heading_slug(text: str) -> str:
+    """GitHub's anchor for a heading: lower case, punctuation dropped, spaces to `-`."""
+    text = re.sub(r"<[^>]*>|[`*_~]|\[([^\]]*)\]\([^)]*\)", r"\1", text).strip().lower()
+    return re.sub(r"\s", "-", re.sub(r"[^\w\s-]", "", text))
+
+
+def md_inline(text: str, keep: list | None = None) -> str:
+    """One paragraph's Markdown to HTML: code, links, images, emphasis, and the raw tags GitHub
+    allows (HTML_TAGS, safe attributes only). Everything else is escaped — `<n>` stays text."""
+    import html
+    nested = keep is not None
+    keep = [] if keep is None else keep  # shared with the call for a link's text, which holds its placeholders
+    if not nested:
+        text = text.replace("\x00", "\ufffd")  # \x00 marks a placeholder below
+
+    def stash(s: str) -> str:
+        keep.append(s)
+        return f"\x00{len(keep) - 1}\x00"
+
+    def tag(m):
+        name = m.group(2).lower()
+        if name not in HTML_TAGS:
+            return m.group(0)
+        if m.group(1):
+            return stash(f"</{name}>")
+        attrs = ""
+        for key, value in re.findall(r"([a-zA-Z-]+)\s*=\s*(\"[^\"]*\"|'[^']*'|[^\s>]+)", m.group(3)):
+            key, value = key.lower(), value.strip("\"'")
+            if key in SAFE_ATTRS:
+                value = safe_url(value) if key in ("href", "src") else value
+                attrs += f' {key}="{html.escape(value)}"'
+        if re.search(r"\bopen\b(?!\s*=)", m.group(3)) and name == "details":
+            attrs += " open"
+        return stash(f"<{name}{attrs}>")
+
+    def link(m):
+        return stash(f'<a href="{html.escape(safe_url(m.group(2)))}">{md_inline(m.group(1), keep)}</a>')
+
+    def image(m):
+        return stash(f'<img src="{html.escape(safe_url(m.group(2)))}" alt="{html.escape(m.group(1))}">')
+
+    def bare(m):
+        return stash(f'<a href="{html.escape(m.group(1))}">{html.escape(m.group(1))}</a>')
+
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)
+    text = re.sub(r"(`+)(.+?)\1", lambda m: stash("<code>" + html.escape(m.group(2).strip()) + "</code>"), text)
+    text = re.sub(r"\\([\\`*_{}\[\]()#+\-.!|~<>])", lambda m: stash(html.escape(m.group(1))), text)
+    text = re.sub(r"<(https?://[^\s>]+)>", lambda m: bare(m), text)
+    text = re.sub(r"<(/?)([a-zA-Z][a-zA-Z0-9]*)((?:\s[^<>]*)?)/?>", tag, text)
+    text = re.sub(r"!\[([^\]]*)\]\(<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\)", image, text)
+    text = re.sub(r"\[([^\]]+)\]\(<?([^)\s>]*)>?(?:\s+\"[^\"]*\")?\)", link, text)
+    text = re.sub(r"(?<![\w/\"'=])(https?://[^\s<>\x00]*[^\s<>\x00.,;:!?)\]'\"])", bare, text)
+    text = html.escape(text, quote=False)
+    if len(text) < 20_000:  # the emphasis patterns are quadratic: a pathological paragraph stays plain
+        text = re.sub(r"\*\*(?!\s)(.+?)(?<!\s)\*\*|(?<!\w)__(?!\s)(.+?)(?<!\s)__(?!\w)",
+                      lambda m: f"<strong>{m.group(1) or m.group(2)}</strong>", text)
+        text = re.sub(r"(?<![\w*])\*(?![\s*])(.+?)(?<![\s*])\*(?![\w*])|(?<!\w)_(?![\s_])(.+?)(?<![\s_])_(?!\w)",
+                      lambda m: f"<em>{m.group(1) or m.group(2)}</em>", text)
+        text = re.sub(r"~~(?!\s)(.+?)(?<!\s)~~", r"<del>\1</del>", text)
+    text = re.sub(r"(?: {2,}|\\)\n", "<br>\n", text)
+    if nested:
+        return text
+    restore = re.compile(r"\x00(\d+)\x00")
+    for _ in range(3):  # a link's text holds placeholders of its own: two rounds, and one to spare
+        text = restore.sub(lambda m: keep[int(m.group(1))], text)
+    return text
+
+
+def table_cells(line: str) -> list:
+    """A table row's cells: split on `|`, but not on `\\|` or inside `code`."""
+    cells, cell, code = [], "", False
+    s = line.strip()
+    s = s[1:] if s.startswith("|") else s
+    s = s[:-1] if s.endswith("|") and not s.endswith("\\|") else s
+    i = 0
+    while i < len(s):
+        c = s[i]
+        if c == "\\" and s[i + 1:i + 2] == "|":
+            cell, i = cell + "|", i + 2
+            continue
+        if c == "`":
+            code = not code
+        if c == "|" and not code:
+            cells.append(cell.strip())
+            cell = ""
+        else:
+            cell += c
+        i += 1
+    return cells + [cell.strip()]
+
+
+def starts_block(lines: list, i: int) -> bool:
+    """Does line `i` begin a block other than a paragraph or a list?"""
+    s = lines[i].strip()
+    return bool(FENCE.match(lines[i]) or HEADING.match(s) or RULE.match(lines[i]) or s.startswith((">", "<!--"))
+                or ("|" in s and i + 1 < len(lines) and "-" in lines[i + 1] and TABLE_SEP.match(lines[i + 1])))
+
+
+def md_html(text: str, slugs: dict | None = None, tight: bool = False) -> str:
+    """Markdown to HTML, standard library only: what spry's documents use — headings, paragraphs,
+    lists (nested, tasks), tables, quotes, code fences, rules, and the raw tags GitHub allows.
+    HTML comments, spry's markers among them, are dropped."""
+    import html
+    slugs = {} if slugs is None else slugs
+    lines = [re.sub(r"^\s+", lambda m: m.group(0).expandtabs(4), line) for line in text.split("\n")]
+    out, i, n = [], 0, len(lines)
+    while i < n:
+        line, s = lines[i], lines[i].strip()
+        if not s:
+            i += 1
+            continue
+        fence = re.match(r"^\s*(`{3,}|~{3,})", line)
+        if fence:
+            mark, indent = fence.group(1), len(line) - len(line.lstrip())
+            lang = s[len(mark):].strip().split()[0] if s[len(mark):].strip() else ""
+            close = re.compile(r"^\s*" + re.escape(mark[0]) + "{" + str(len(mark)) + r",}\s*$")
+            body, i = [], i + 1
+            while i < n and not close.match(lines[i]):
+                body.append(lines[i][indent:] if not lines[i][:indent].strip() else lines[i])
+                i += 1
+            i += 1
+            cls = f' class="language-{html.escape(lang)}"' if lang else ""
+            out.append(f"<pre><code{cls}>{html.escape(chr(10).join(body))}</code></pre>")
+            continue
+        if s.startswith("<!--"):
+            while i < n and "-->" not in lines[i]:
+                i += 1
+            rest = lines[i].split("-->", 1)[1].strip() if i < n else ""
+            if rest:
+                out.append(md_inline(rest))
+            i += 1
+            continue
+        heading = HEADING.match(s)
+        if heading:
+            level, title = len(heading.group(1)), heading.group(2)
+            slug = base = heading_slug(title)
+            if base in slugs:
+                slugs[base] += 1
+                slug = f"{base}-{slugs[base]}"
+            else:
+                slugs[base] = 0
+            out.append(f'<h{level} id="{html.escape(slug)}">{md_inline(title)}</h{level}>')
+            i += 1
+            continue
+        if RULE.match(line):
+            out.append("<hr>")
+            i += 1
+            continue
+        if "|" in s and i + 1 < n and "-" in lines[i + 1] and TABLE_SEP.match(lines[i + 1]):
+            aligns = []
+            for cell in table_cells(lines[i + 1]):
+                left, right = cell.startswith(":"), cell.endswith(":")
+                aligns.append("center" if left and right else "right" if right else "left" if left else "")
+            head = table_cells(line)
+            rows, i = [], i + 2
+            while i < n and lines[i].strip() and "|" in lines[i]:
+                rows.append(table_cells(lines[i]))
+                i += 1
+
+            def cells(row, tag):
+                row = (row + [""] * len(head))[:len(head)]
+                return "".join(f"<{tag}" + (f' style="text-align:{aligns[k]}"' if k < len(aligns) and aligns[k] else "")
+                               + f">{md_inline(c)}</{tag}>" for k, c in enumerate(row))
+            body = "".join(f"<tr>{cells(r, 'td')}</tr>" for r in rows)
+            out.append(f"<div class=\"table\"><table><thead><tr>{cells(head, 'th')}</tr></thead><tbody>{body}</tbody></table></div>")
+            continue
+        if s.startswith(">"):
+            quote = []
+            while i < n and lines[i].strip().startswith(">"):
+                quote.append(re.sub(r"^\s*> ?", "", lines[i]))
+                i += 1
+            out.append(f"<blockquote>{md_html(chr(10).join(quote), slugs)}</blockquote>")
+            continue
+        item = LIST_ITEM.match(line)
+        if item:
+            depth, ordered = len(item.group(1)), item.group(2)[0].isdigit()
+            start = int(item.group(2)[:-1]) if ordered else 1
+            entries, loose = [], False
+            while i < n:
+                item = LIST_ITEM.match(lines[i])
+                if not item or len(item.group(1)) != depth or item.group(2)[0].isdigit() != ordered or RULE.match(lines[i]):
+                    break
+                inner = depth + len(item.group(2)) + (len(item.group(3)) if item.group(4) else 1)
+                body, i = [item.group(4)], i + 1
+                while i < n:
+                    if not lines[i].strip():
+                        j = i
+                        while j < n and not lines[j].strip():
+                            j += 1
+                        if j < n and len(lines[j]) - len(lines[j].lstrip()) > depth:
+                            if not LIST_ITEM.match(lines[j]):
+                                loose = True
+                            body += [""] * (j - i)
+                            i = j
+                            continue
+                        break
+                    indent = len(lines[i]) - len(lines[i].lstrip())
+                    if indent > depth:
+                        body.append(lines[i][min(indent, inner):])
+                    elif LIST_ITEM.match(lines[i]) or starts_block(lines, i):
+                        break
+                    else:
+                        body.append(lines[i].strip())
+                    i += 1
+                entries.append(body)
+                j = i
+                while j < n and not lines[j].strip():
+                    j += 1
+                after = LIST_ITEM.match(lines[j]) if j < n else None
+                if j > i and after and len(after.group(1)) == depth and after.group(2)[0].isdigit() == ordered:
+                    loose, i = True, j
+            parts = []
+            for body in entries:
+                box = re.match(r"^\[([ xX])\] ", body[0])
+                if box:
+                    body = [body[0][4:]] + body[1:]
+                content = md_html("\n".join(body), slugs, tight=not loose)
+                if box:
+                    checked = " checked" if box.group(1) != " " else ""
+                    parts.append(f'<li class="task"><input type="checkbox" disabled{checked}> {content}</li>')
+                else:
+                    parts.append(f"<li>{content}</li>")
+            tag = "ol" if ordered else "ul"
+            first = f' start="{start}"' if ordered and start != 1 else ""
+            out.append(f"<{tag}{first}>{''.join(parts)}</{tag}>")
+            continue
+        if re.match(r"^</?([a-zA-Z][a-zA-Z0-9]*)", s) and re.match(r"^</?([a-zA-Z][a-zA-Z0-9]*)", s).group(1).lower() in HTML_TAGS:
+            out.append(md_inline(s))
+            i += 1
+            continue
+        para = []
+        while i < n and lines[i].strip() and not starts_block(lines, i) and not (para and LIST_ITEM.match(lines[i])):
+            para.append(lines[i].strip() if not lines[i].endswith("  ") else lines[i].lstrip())
+            i += 1
+        text_html = md_inline("\n".join(para))
+        out.append(text_html if tight else f"<p>{text_html}</p>")
+    return "\n".join(out)
+
+
+def github_url(root: str) -> str | None:
+    """https://github.com/<owner>/<repo> from the `origin` remote, for PR, issue and branch links."""
+    done = git(root, "remote", "get-url", REMOTE)
+    m = re.search(r"github\.com[:/]([^/\s]+)/([^/\s]+?)(?:\.git)?/?$", done.stdout.strip()) if done.returncode == 0 else None
+    return f"https://github.com/{m.group(1)}/{m.group(2)}" if m else None
+
+
+def serve_short(project: Project, item: Item) -> str:
+    """A tree row's count: a slice's state, or done/total of what the item counts."""
+    if item.type == "slice":
+        return "done" if project.done(item) else item.state
+    kind = project.child_level(item.type)
+    kids = project.counted(item, kind) if kind else []
+    return f"{sum(map(project.done, kids))}/{len(kids)}" if kids else ""
+
+
+def serve_mark(project: Project, item: Item) -> str:
+    if project.done(item):
+        return "done"
+    if item.state in ("dropped", "draft", "open", "closed"):
+        return item.state
+    if item.type == "slice" and claimed(item):
+        return "open"
+    return "todo"
+
+
+def serve_tree(project: Project, current: Item | None) -> str:
+    import html
+    chain = {current.id} | {a.id for a in current.ancestors()} if current else set()
+    order = {"task": 1, "bug": 2, "slice": 3}
+
+    def node(item: Item) -> str:
+        here = ' aria-current="page"' if current is item else ""
+        row = (f'<a href="{serve_href(project, item.doc)}"{here} title="{html.escape(project.progress(item))}">'
+               f'<i class="mark {serve_mark(project, item)}"></i><b>{html.escape(item.id)}</b> '
+               f'<span>{html.escape(item.title)}</span><small>{html.escape(serve_short(project, item))}</small></a>')
+        kids = sorted(item.children, key=lambda c: order.get(c.type, 0))
+        if not kids:
+            return f"<li>{row}</li>"
+        open_ = " open" if item.id in chain or (not current and item in project.top) else ""
+        return f"<li><details{open_}><summary>{row}</summary><ul>{''.join(map(node, kids))}</ul></details></li>"
+
+    return f"<ul>{''.join(map(node, project.top))}</ul>" if project.top else "<p>No plan yet.</p>"
+
+
+def serve_meta(project: Project, item: Item, repo: str | None) -> str:
+    """Breadcrumbs and front-matter as badges; IDs link to their items."""
+    import html
+
+    def ref(ident: str) -> str:
+        target = project.items.get(ident.split("/")[0])
+        if not target:
+            return html.escape(ident)
+        return f'<a href="{serve_href(project, target.doc)}" title="{html.escape(target.title)}">{html.escape(ident)}</a>'
+
+    crumbs = " › ".join(f'<a href="{serve_href(project, a.doc)}">{html.escape(a.label)}</a>'
+                        for a in reversed(item.ancestors()))
+    badges = [f'<span class="badge type">{html.escape(item.type)}</span>',
+              f'<span class="badge {serve_mark(project, item)}">{html.escape(project.progress(item))}</span>']
+    fm = item.fm
+    for key in ("owner", "audience", "severity", "closed"):
+        if fm.get(key):
+            badges.append(f'<span class="badge">{key} {html.escape(str(fm[key]))}</span>')
+    pr, issue, branch = fm.get("pr", ""), fm.get("issue", ""), fm.get("branch", "")
+    for key, value, path in (("PR", pr, "pull"), ("issue", issue, "issues")):
+        if isinstance(value, str) and value.isdigit():
+            label = f"{key} #{value}"
+            badges.append(f'<a class="badge" href="{repo}/{path}/{value}">{label}</a>' if repo
+                          else f'<span class="badge">{label}</span>')
+    if branch:
+        badges.append(f'<span class="badge"><code>{html.escape(branch)}</code></span>')
+    rows = []
+    for key, label in (("covers", "Covers"), ("blocked_by", "Blocked by"), ("breaks", "Breaks"), ("related", "Related")):
+        values = fm.get(key) or []
+        if isinstance(values, list) and values:
+            if key == "covers" and item.parent:
+                values = [f"{item.parent.id}/{v}" if "/" not in v else v for v in values]
+            rows.append(f"<dt>{label}</dt><dd>{', '.join(ref(v) for v in values)}</dd>")
+    links = f"<dl>{''.join(rows)}</dl>" if rows else ""
+    return (f'<nav class="crumbs">{crumbs}</nav>' if crumbs else "") + f'<div class="badges">{"".join(badges)}</div>{links}'
+
+
+SERVE_CSS = """
+:root{--bg:#fff;--soft:#f7f8f5;--muted:#eef1ea;--code:#f4f6f1;--text:#171a16;--dim:#5c6458;--line:#e2e6dd;
+--accent:#2f7d32;--accent-soft:#e9f4e6;--warn:#9a5b00;--warn-soft:#fdf3e2;--note:#2563a8;--note-soft:#eaf2fb;
+--mono:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;color-scheme:light}
+@media (prefers-color-scheme:dark){:root{--bg:#0e110e;--soft:#141814;--muted:#1b201b;--code:#161b16;--text:#e6ebe3;
+--dim:#9aa496;--line:#252b24;--accent:#7cd67f;--accent-soft:rgb(124 214 127/10%);--warn:#f0b962;
+--warn-soft:rgb(240 185 98/10%);--note:#7db3f0;--note-soft:rgb(125 179 240/10%);color-scheme:dark}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);
+font:15px/1.6 ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--accent)}header{position:sticky;top:0;z-index:2;display:flex;gap:16px;align-items:center;
+padding:10px 20px;background:var(--bg);border-bottom:1px solid var(--line);flex-wrap:wrap}
+header .brand{font-weight:700;color:var(--text);text-decoration:none}header nav{display:flex;gap:14px;flex-wrap:wrap}
+header nav a{color:var(--dim);text-decoration:none}header nav a:hover{color:var(--accent)}
+header form{margin-left:auto}header input{font:inherit;padding:5px 10px;border:1px solid var(--line);
+border-radius:8px;background:var(--soft);color:var(--text);width:220px}
+.wrap{display:grid;grid-template-columns:320px minmax(0,1fr)}
+aside{position:sticky;top:53px;height:calc(100vh - 53px);overflow:auto;padding:12px 8px 40px;
+border-right:1px solid var(--line);background:var(--soft);font-size:13.5px}
+aside ul{list-style:none;margin:0;padding-left:12px}aside>ul{padding-left:0}
+aside a{display:flex;gap:6px;align-items:baseline;padding:2px 6px;border-radius:6px;color:var(--text);text-decoration:none}
+aside a:hover{background:var(--muted)}aside a[aria-current]{background:var(--accent-soft);color:var(--accent)}
+aside a span{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+aside small{color:var(--dim);font-family:var(--mono);font-size:11px}aside summary{list-style:none;cursor:pointer}
+aside summary::-webkit-details-marker{display:none}aside summary>a::before{content:"▸";color:var(--dim);width:8px}
+aside details[open]>summary>a::before{content:"▾"}aside li>a{padding-left:20px}
+.mark{flex:none;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--dim);align-self:center}
+.mark.done{background:var(--accent);border-color:var(--accent)}.mark.open,.mark.closed{background:var(--warn);border-color:var(--warn)}
+.mark.draft{border-style:dashed}.mark.dropped{opacity:.35}
+main{padding:24px 40px 80px;max-width:1200px}.path{font-family:var(--mono);font-size:12px;color:var(--dim)}
+.crumbs{font-size:13px;color:var(--dim)}.crumbs a{color:var(--dim)}.badges{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
+.badge{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--muted);color:var(--text);text-decoration:none}
+.badge.type{text-transform:uppercase;letter-spacing:.04em;font-weight:600}.badge.done{background:var(--accent-soft);color:var(--accent)}
+.badge.open,.badge.closed{background:var(--warn-soft);color:var(--warn)}dl{display:grid;grid-template-columns:auto 1fr;gap:2px 12px;font-size:13px;margin:6px 0}
+dt{color:var(--dim)}dd{margin:0}h1,h2,h3{line-height:1.25}h1{font-size:28px;margin:12px 0 8px}h2{margin-top:32px;
+padding-bottom:4px;border-bottom:1px solid var(--line)}code{font-family:var(--mono);font-size:.9em;background:var(--code);
+padding:1px 4px;border-radius:4px}pre{background:var(--code);padding:12px 14px;border-radius:8px;overflow:auto}
+pre code{padding:0;background:none}.table{overflow:auto;margin:12px 0}table{border-collapse:collapse;width:100%}
+th,td{border:1px solid var(--line);padding:5px 10px;text-align:left;vertical-align:top}th{background:var(--soft)}td:first-child{white-space:nowrap}
+blockquote{margin:12px 0;padding:4px 14px;border-left:3px solid var(--note);background:var(--note-soft)}
+li.task{list-style:none}li.task input{margin-left:-20px}mark{background:var(--warn-soft);color:inherit}
+.hits li{margin:10px 0}.hits small{display:block;color:var(--dim)}
+@media (max-width:800px){.wrap{display:block}aside{position:static;height:auto;max-height:40vh;border-right:0;
+border-bottom:1px solid var(--line)}main{padding:16px}header input{width:100%}header form{margin-left:0;width:100%}}
+"""
+
+
+def serve_page(project: Project, title: str, main: str, current: Item | None = None) -> bytes:
+    import html
+    s = project.spry
+    nav = [("Home", os.path.join(s, "README.md")), ("Roadmap", os.path.join(project.plan_dir, "README.md")),
+           ("Backlog", os.path.join(s, "BACKLOG.md")), ("Coverage", os.path.join(s, "COVERAGE.md")),
+           ("Done", os.path.join(s, "DONE.md")), ("Knowledge", os.path.join(s, "knowledge")),
+           ("Glossary", os.path.join(project.root, project.config.get("glossary", "spry/knowledge/glossary.md"))),
+           ("AGENTS.md", os.path.join(project.root, "AGENTS.md"))]
+    links = "".join(f'<a href="{serve_href(project, p)}{"/" if os.path.isdir(p) else ""}">{label}</a>'
+                    for label, p in nav if os.path.exists(p))
+    product = html.escape(project.config.get("product") or "spry")
+    page = (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
+            f'<meta name="viewport" content="width=device-width,initial-scale=1">'
+            f"<title>{html.escape(title)} · {product}</title><style>{SERVE_CSS}</style></head><body>"
+            f'<header><a class="brand" href="/">{product}</a><nav>{links}</nav>'
+            f'<form action="/-/search"><input name="q" type="search" placeholder="Search the plan and knowledge"></form></header>'
+            f'<div class="wrap"><aside>{serve_tree(project, current)}</aside><main>{main}</main></div></body></html>')
+    return page.encode("utf-8")
+
+
+class Snapshot:
+    """The plan as last read, for `serve`. A page asked for more than SERVE_STALE seconds after the
+    last read is answered from it while a fresh read runs in the background, so pages come at once
+    even where reading the plan takes seconds, and a change shows by the next click. The page's own
+    document is always read fresh."""
+
+    def __init__(self, root: str):
+        self.root, self.lock, self.busy = root, threading.Lock(), False
+        self.project = Project(root)
+        self.makers, self.at = block_makers(self.project), time.time()
+
+    def get(self) -> tuple:
+        with self.lock:
+            if not self.busy and time.time() - self.at > SERVE_STALE:
+                self.busy = True
+                threading.Thread(target=self._read, daemon=True).start()
+            return self.project, self.makers
+
+    def _read(self):
+        try:
+            project = Project(self.root)
+            makers = block_makers(project)
+            with self.lock:
+                self.project, self.makers = project, makers
+        except BaseException:  # a config broken mid-edit: keep showing the last good read
+            pass
+        finally:
+            with self.lock:
+                self.at, self.busy = time.time(), False
+
+
+def serve_response(project: Project, path: str, repo: str | None = None, makers: dict | None = None) -> tuple:
+    """(status, content type, body, headers) for one GET. Read-only: nothing here writes a document."""
+    import html
+    import mimetypes
+    from urllib.parse import parse_qs, quote, unquote, urlsplit
+    url = urlsplit(path)
+    redirect = lambda to: (302, "text/plain", b"", {"Location": quote(to)})  # noqa: E731
+    if url.path == "/":
+        home = os.path.join(project.spry, "README.md")
+        return redirect("/" + project.rel(home if os.path.isfile(home) else os.path.join(project.plan_dir, "README.md")))
+    if url.path == "/-/search":
+        query = (parse_qs(url.query).get("q") or [""])[0]
+        hits = find(project, query, limit=30, marks=("\x01", "\x02")) if query.strip() else []
+        rows = []
+        for rel, _line, heading, snippet in hits:
+            anchor = heading_slug(heading.split(" › ", 1)[1]) if " › " in heading else ""
+            snippet = html.escape(snippet).replace("\x01", "<mark>").replace("\x02", "</mark>")
+            rows.append(f'<li><a href="/{html.escape(quote(rel))}{"#" + html.escape(anchor) if anchor else ""}">{html.escape(heading)}</a>'
+                        f'<small>{html.escape(rel)}</small>{snippet}</li>')
+        found = f'<ol class="hits">{"".join(rows)}</ol>' if rows else ("<p>Nothing found.</p>" if query.strip() else "")
+        return 200, "text/html; charset=utf-8", serve_page(project, f"Search {query}", f"<h1>Search: {html.escape(query)}</h1>{found}"), {}
+    if url.path.startswith("/-/item/"):
+        item = project.items.get(url.path[len("/-/item/"):])
+        return redirect("/" + project.rel(item.doc)) if item else (404, "text/plain", b"no such item", {})
+    rel = unquote(url.path).lstrip("/")
+    parts = [p for p in rel.split("/") if p]
+    doc = os.path.join(project.root, *parts)
+    target = os.path.realpath(doc)
+    real_root = os.path.realpath(project.root)
+    inside = target == real_root or target.startswith(real_root + os.sep)
+    real_parts = os.path.relpath(target, real_root).split(os.sep) if inside else []
+    hidden = any(p.startswith(".") or p in SKIP_DIRS for p in parts + [p for p in real_parts if p != "."])
+    if not inside or hidden or not os.path.exists(target):  # a link to `.git` or `.env` is hidden too
+        return 404, "text/html; charset=utf-8", serve_page(project, "Not found", f"<h1>Not found</h1><p><code>{html.escape(rel)}</code></p>"), {}
+    if os.path.isdir(target):
+        for name in ("README.md", "INDEX.md"):
+            if os.path.isfile(os.path.join(target, name)):
+                return redirect("/" + "/".join(parts + [name]))
+        if not url.path.endswith("/"):
+            return redirect("/" + "/".join(parts) + "/")
+        names = [n for n in sorted(os.listdir(target), key=natural_key) if not n.startswith(".") and n not in SKIP_DIRS]
+        items = "".join(f'<li><a href="./{html.escape(quote(n))}{"/" if os.path.isdir(os.path.join(target, n)) else ""}">'
+                        f'{html.escape(n)}</a></li>' for n in names)
+        return 200, "text/html; charset=utf-8", serve_page(project, rel or "/", f'<p class="path">{html.escape(rel)}</p><ul>{items}</ul>'), {}
+    with open(target, "rb") as handle:
+        data = handle.read()
+    kind = mimetypes.guess_type(target)[0] or ""
+    if kind in SERVE_RAW:  # an image a document shows; never a page that could run script
+        return 200, kind, data, {"Content-Security-Policy": "sandbox; script-src 'none'"}
+    try:
+        text = data.decode("utf-8")
+    except UnicodeDecodeError:
+        return 200, "application/octet-stream", data, {"Content-Security-Policy": "sandbox; script-src 'none'"}
+    head = f'<p class="path">{html.escape(project.rel(doc))}</p>'
+    if not target.endswith(".md"):
+        return 200, "text/html; charset=utf-8", serve_page(project, os.path.basename(target),
+                                                           f"{head}<pre><code>{html.escape(text)}</code></pre>"), {}
+    for name, make, _required in (block_makers(project) if makers is None else makers).get(doc, []):
+        text = replace_block(text, name, make()) or text
+    item = next((i for i in project.items.values() if i.doc == doc), None)
+    fm, start, _ = parse_front_matter(text)
+    body = "\n".join(text.split("\n")[start:]) if fm is not None else text
+    meta = serve_meta(project, item, repo) if item else ""
+    title = item.label if item else (fm or {}).get("title") or os.path.basename(target)
+    return 200, "text/html; charset=utf-8", serve_page(project, title, head + meta + md_html(body), item), {}
+
+
+def serve(root: str, port: int | None = None, open_browser: bool = True, say=print) -> None:
+    """Browse the plan and knowledge at http://127.0.0.1:<port>/ until Ctrl-C. Local only."""
+    import http.server
+    import webbrowser
+    say("spry: reading the plan …")
+    snapshot, repo = Snapshot(root), github_url(root)
+    lock = threading.Lock()
+
+    class Handler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            host = (self.headers.get("Host") or "").rsplit(":", 1)[0]
+            if host not in ("127.0.0.1", "localhost"):
+                self.send_error(403, "spry serve answers only on 127.0.0.1 and localhost")
+                return
+            try:
+                with lock:  # one page at a time: `find` writes the search index
+                    project, makers = snapshot.get()
+                    code, ctype, body, headers = serve_response(project, self.path, repo, makers)
+            except Exception as e:  # a broken document shows as an error page, not a dead server
+                code, ctype, headers = 500, "text/plain; charset=utf-8", {}
+                body = f"spry serve: {type(e).__name__}: {e}".encode("utf-8")
+            self.send_response(code)
+            self.send_header("Content-Type", ctype)
+            self.send_header("Content-Length", str(len(body)))
+            self.send_header("Cache-Control", "no-store")
+            self.send_header("X-Content-Type-Options", "nosniff")
+            for key, value in headers.items():
+                self.send_header(key, value)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, *args):
+            pass
+
+    server = None
+    for candidate in [port] if port else range(SERVE_PORT, SERVE_PORT + 10):
+        try:
+            server = http.server.ThreadingHTTPServer(("127.0.0.1", candidate), Handler)
+            break
+        except OSError as e:
+            if port:
+                raise SystemExit(f"cannot listen on port {candidate}: {e}")
+    if server is None:
+        raise SystemExit(f"ports {SERVE_PORT}–{SERVE_PORT + 9} are all taken — pass --port")
+    server.daemon_threads = True
+
+    def warm():
+        with lock:
+            find(snapshot.project, "spry")  # builds the search index once, so the first search is quick
+    threading.Thread(target=warm, daemon=True).start()
+    address = f"http://127.0.0.1:{server.server_address[1]}/"
+    say(f"spry: serving {address} — read-only, this machine only. Ctrl-C stops it.")
+    sys.stdout.flush()
+    if open_browser:
+        webbrowser.open(address)
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        server.server_close()
+
+
 # ---------------------------------------------------------------- merge-check / merge-message
 
 def falsify_table(item: Item) -> list:
@@ -3628,6 +4215,9 @@ def main(argv=None) -> int:
     p = sub.add_parser("done", help="finished stories, tasks and bugs, newest first, with the day each closed")
     p = sub.add_parser("view", help="write the backlog, coverage and done pages for this working tree to .spry/view/")
     p.add_argument("--since", help="only when the plan or a test changed since this commit (for git hooks)")
+    p = sub.add_parser("serve", help="browse the plan and knowledge in a browser, read-only, on this machine")
+    p.add_argument("--port", type=int, help=f"default: the first free one from {SERVE_PORT}")
+    p.add_argument("--no-open", action="store_true", help="do not open a browser")
     p = sub.add_parser("hooks", help="git hooks that refresh .spry/view/ after a checkout or a pull")
     p.add_argument("--remove", action="store_true", help="remove the hooks spry wrote")
     p = sub.add_parser("index", help="regenerate marker blocks and INDEX.md files")
@@ -3795,6 +4385,9 @@ def main(argv=None) -> int:
         written = view(project, args.since)
         if written:
             print(("spry: refreshed " if args.since else "wrote: ") + ", ".join(written))
+        return 0
+    if args.command == "serve":
+        serve(project.root, args.port, not args.no_open)
         return 0
     if args.command == "hooks":
         print("\n".join(hooks(project, args.remove)) or "no spry hooks here")

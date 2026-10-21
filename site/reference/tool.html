@@ -151,6 +151,16 @@ order.</p>
 <pre><code>spry view [--since SINCE]</code></pre>
 <p><code>--since SINCE</code> — only when the plan or a test changed since this commit (used by the git hooks).</p>
 
+<h3 id="serve">serve</h3>
+<p>Browses the plan, knowledge and generated pages in a browser — read-only, on this machine only.
+Each document is rendered with its generated blocks built for the working tree, beside the plan tree;
+search is <code>find</code>. Ctrl-C stops it.</p>
+<pre><code>spry serve [--port PORT] [--no-open]</code></pre>
+<ul>
+  <li><code>--port PORT</code> — default: the first free one from 8765.</li>
+  <li><code>--no-open</code> — do not open a browser.</li>
+</ul>
+
 <h3 id="hooks">hooks</h3>
 <p>Installs git hooks, per clone, that refresh <code>.spry/view/</code> after a checkout or pull
 that changed the plan or a test.</p>

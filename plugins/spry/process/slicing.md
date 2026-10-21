@@ -100,7 +100,7 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
   by CI, or by `/spry:merge` when CI left them stale (`merging.md` step 8); `check --base` refuses a
   branch that changed one, and `index --restore origin/<main>` puts them back. For fresh pages,
   `spry.py backlog`, `spry.py coverage`, or `spry.py view` (writes both to `.spry/view/`, never
-  committed).
+  committed); `spry.py serve` shows them, and the whole plan, in a browser.
 - A test that proves a criterion has `<story>/AC-<n>` in its name — the title string, docstring or
   parametrize id. A citation in a comment or in code proves nothing.
 - A departure from the plan → note it for `What changed`; a new rule learned → `/spry:record` later.

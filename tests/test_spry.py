@@ -2069,5 +2069,117 @@ class Example(unittest.TestCase):
         self.assertNotIn("S-1", out.getvalue())
 
 
+class Markdown(unittest.TestCase):
+    def test_blocks(self):
+        out = spry.md_html("# S-1 Lend a book\n\n## Notes\n\n## Notes\n\n<!-- spry:children -->\n<!-- /spry:children -->\n"
+                           "| AC | Then |\n|---|:-:|\n| AC-1 | a \\| b |\n\n- one\n  - two\n- [x] done\n\n"
+                           "1. first\n2. second\n\n```ts\nif (a < b) {}\n```\n\n> quoted\n\n---\n")
+        self.assertIn('<h1 id="s-1-lend-a-book">S-1 Lend a book</h1>', out)
+        self.assertIn('<h2 id="notes-1">', out)
+        self.assertNotIn("spry:children", out)
+        self.assertIn('<td style="text-align:center">a | b</td>', out)
+        self.assertIn("<li>one\n<ul><li>two</li></ul></li>", out)
+        self.assertIn('<li class="task"><input type="checkbox" disabled checked> done</li>', out)
+        self.assertIn("<ol><li>first</li><li>second</li></ol>", out)
+        self.assertIn('<pre><code class="language-ts">if (a &lt; b) {}</code></pre>', out)
+        self.assertIn("<blockquote><p>quoted</p></blockquote>", out)
+        self.assertIn("<hr>", out)
+
+    def test_inline_escapes_all_but_safe_tags(self):
+        out = spry.md_inline("[`a` **b**](x.md) <n> <b>ok</b> <script>x</script> [c](javascript:alert(1)) "
+                             '<a href="javascript:x" onclick="y">d</a> snake_case_name')
+        self.assertIn('<a href="x.md"><code>a</code> <strong>b</strong></a>', out)
+        self.assertIn("&lt;n&gt; <b>ok</b> &lt;script&gt;", out)
+        self.assertIn('<a href="#">c</a>', out)
+        self.assertIn('<a href="#">d</a>', out)
+        self.assertNotIn("onclick", out)
+        self.assertIn("snake_case_name", out)
+
+    def test_hostile_input(self):
+        self.assertIn("a \ufffd b", spry.md_html("a \x00 b `\x00` \x0099\x00"))  # once hung the server
+        for href in ("java\tscript:x", "\x01javascript:x", "java\nscript:x", " javascript:x"):
+            self.assertIn('<a href="#">', spry.md_inline(f'<a href="{href}">x</a>'), repr(href))
+        self.assertIn('<a href="#">', spry.md_html('see <a href="java\nscript:alert(1)">x</a>'))
+        started = __import__("time").time()
+        spry.md_inline("*a " * 20000)
+        self.assertLess(__import__("time").time() - started, 2)
+
+    def test_longer_fences_hold_shorter_ones(self):
+        out = spry.md_html("````md\n```suggestion\nfix\n```\n````\n")
+        self.assertEqual(out, '<pre><code class="language-md">```suggestion\nfix\n```</code></pre>')
+
+
+class Serve(Base):
+    def get(self, t, path):
+        return spry.serve_response(t.project(), path, "https://github.com/o/r")
+
+    def test_item_page_has_fresh_blocks_and_links(self):
+        t = self.tree()
+        self.assertEqual(self.get(t, "/")[3], {"Location": "/spry/plan/README.md"})
+        code, ctype, body, _ = self.get(t, f"/{F}/README.md")
+        page = body.decode()
+        self.assertEqual((code, ctype), (200, "text/html; charset=utf-8"))
+        self.assertIn('href="S-1-s/README.md">S-1 Title of S-1</a>', page)  # the children block, built now
+        self.assertIn('aria-current="page"', page)
+        code, _, body, _ = self.get(t, f"/{S}/SL-1-a.md")
+        self.assertIn('<a class="badge" href="https://github.com/o/r/pull/1">PR #1</a>', body.decode())
+        self.assertIn(f'<a href="/{S}/README.md" title="Title of S-1">S-1/AC-1</a>', body.decode())
+
+    def test_folders_items_and_search(self):
+        t = self.tree()
+        self.assertEqual(self.get(t, f"/{M}")[3], {"Location": f"/{M}/README.md"})
+        self.assertEqual(self.get(t, "/-/item/S-1")[3], {"Location": f"/{S}/README.md"})
+        self.assertEqual(self.get(t, "/-/item/S-9")[0], 404)
+        self.assertIn("Member", self.get(t, "/-/search?q=borrows")[2].decode())
+        self.assertIn("<pre><code>test(&quot;S-1/AC-1", self.get(t, "/src/a.test.ts")[2].decode())
+
+    def test_nothing_outside_the_project_or_hidden(self):
+        t = self.tree(**{".env": "SECRET=1"})
+        os.makedirs(os.path.join(t.root, ".git"))
+        with open(os.path.join(t.root, ".git", "config"), "w") as handle:
+            handle.write("x")
+        os.symlink(os.path.join(t.root, ".git"), os.path.join(t.root, "gitlink"))
+        os.symlink(os.path.join(t.root, ".env"), os.path.join(t.root, "envlink"))
+        for path in ("/../etc/passwd", "/%2e%2e/x", "/.env", "/.git/config", "/spry/../../x", "/gitlink/config", "/envlink"):
+            self.assertEqual(self.get(t, path)[0], 404, path)
+
+    def test_listings_redirects_and_raw_files_run_no_script(self):
+        t = self.tree(**{"docs__javascript:alert(1)": "x", "docs__evil.html": "<script>x</script>\xe9",
+                         "docs__pic.svg": "<svg/>"})
+        with open(os.path.join(t.root, "docs", "latin.html"), "wb") as handle:
+            handle.write(b"<script>x</script>\xe9")
+        page = self.get(t, "/docs/")[2].decode()
+        self.assertIn('href="./javascript%3Aalert%281%29"', page)
+        self.assertEqual(self.get(t, "/%2Fdocs")[3], {"Location": "/docs/"})
+        code, ctype, _, headers = self.get(t, "/docs/latin.html")
+        self.assertEqual((ctype, headers), ("application/octet-stream", {"Content-Security-Policy": "sandbox; script-src 'none'"}))
+        self.assertIn("&lt;script&gt;", self.get(t, "/docs/evil.html")[2].decode())
+        self.assertEqual(self.get(t, "/docs/pic.svg")[1:4:2], ("image/svg+xml", {"Content-Security-Policy": "sandbox; script-src 'none'"}))
+
+    def test_answers_only_on_localhost(self):
+        import socket
+        import urllib.error
+        import urllib.request
+        t = self.tree()
+        with socket.socket() as s:
+            s.bind(("127.0.0.1", 0))
+            port = s.getsockname()[1]
+        import threading
+        threading.Thread(target=spry.serve, args=(t.root, port, False, lambda *a: None), daemon=True).start()
+        for _ in range(100):
+            try:
+                with urllib.request.urlopen(f"http://127.0.0.1:{port}/spry/plan/README.md") as response:
+                    self.assertEqual(response.status, 200)
+                break
+            except (ConnectionError, urllib.error.URLError):
+                import time
+                time.sleep(0.05)
+        request = urllib.request.Request(f"http://127.0.0.1:{port}/", headers={"Host": "evil.example"})
+        with self.assertRaises(urllib.error.HTTPError) as caught:
+            urllib.request.urlopen(request)
+        self.assertEqual(caught.exception.code, 403)
+        caught.exception.close()
+
+
 if __name__ == "__main__":
     unittest.main()

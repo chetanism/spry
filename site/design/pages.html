@@ -112,9 +112,29 @@ inside the blocks, so a stale table never fails a check.</p>
 <p><strong>Why not regenerate the tracked file and hide the change from git?</strong> That was tried
 with <code>skip-worktree</code>, and rejected: git then refuses to pull as soon as CI updates the file.</p>
 
-<h2>Later</h2>
-<p>A local <code>spry serve</code> — a small web server rendering the plan — is deferred. GitHub's own
-rendering of Markdown comes first, and is enough so far.</p>
+<h2>Browse in a browser</h2>
+<p>GitHub renders every page, and needs nothing installed. On a plan of a thousand items, though,
+clicking folder by folder to follow a story to its slices, blockers and proof gets slow. For that,
+optionally:</p>
+<pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py serve   <span class="c"># opens http://127.0.0.1:8765/</span></code></pre>
+<ul>
+  <li><strong>The plan tree beside every page</strong>, each item with a mark for where it stands and
+  its done/total; the branch you are on opens itself.</li>
+  <li><strong>Every document rendered at its own path</strong>, so its links work as on GitHub. Its
+  generated blocks are built for your working tree, so the backlog and coverage pages are your
+  branch's, not the main branch's.</li>
+  <li><strong>An item's front-matter as badges</strong>: where it stands, its owner, its pull request
+  and issue, and what it covers, waits on and relates to, each a link.</li>
+  <li><strong>Search</strong>, the same as <code>spry find</code>.</li>
+</ul>
+<p>It is read-only. Edits go through the skills, which run the conflict check and <code>spry check</code>
+— a second way to write would skip both. It answers only on <code>127.0.0.1</code>, never on the
+network, and never serves hidden folders like <code>.git</code> or <code>.env</code>. The files stay the
+only source: no database holds a document.</p>
+<p>On a big plan, reading every file takes seconds, so a page answers from the plan as last read
+while a fresh read runs in the background. A change to the tree or the progress tables shows once
+that read ends — at once on a small plan, a few seconds later on a big one. The document you open
+is always read fresh.</p>
 
 </article>
 </main>
