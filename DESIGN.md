@@ -555,3 +555,6 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-21 — `spry serve`: the plan, knowledge and generated pages in a browser, read-only, local
   only; `index` and `serve` share one list of generated blocks (CH-35, 0.24.0). From connect and
   pulse, where browsing hundreds of folders on GitHub got slow.
+- 2026-10-22 — plans deeper than Windows' 260 characters: every file call takes the `\\?\` prefix on
+  Windows, a plan document that still cannot be read is a `check` error instead of a crash, `check` warns at
+  a path over 200 characters, and new slugs stop at 20 (CH-36, 0.25.0). From pulse-v2's Windows users.

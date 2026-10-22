@@ -58,6 +58,7 @@ import filecmp
 import hashlib
 import json
 import math
+import ntpath
 import os
 import re
 import shlex
@@ -71,7 +72,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.24.0"
+VERSION = "0.25.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -82,6 +83,8 @@ SKIP_DIRS = {".git", "node_modules", ".spry", "dist", "build", "__pycache__", ".
 CONTAINERS = {"tasks": "task", "bugs": "bug"}
 # A change to these alone never needs a test run: the gate skips, and CI skips its test jobs.
 DEFAULT_DOCS = ["spry/**", "**/*.md"]
+# A repository path longer than this leaves under 60 characters for the clone's own folder on Windows.
+LONG_PATH = 200
 
 PLAN_STATES = {"draft", "ready", "dropped"}
 SLICE_STATES = {"planned", "open", "closed", "dropped"}
@@ -131,13 +134,32 @@ def shell_quote(arg: str) -> str:
     return f'"{arg}"' if any(c in arg for c in " \t&|<>^()") else arg
 
 
+def long_path(path: str) -> str:
+    r"""`path` absolute behind `\\?\`, which Windows opens past 260 characters whatever
+    LongPathsEnabled says. A plan six folders deep passes 260 easily."""
+    full = ntpath.abspath(path)
+    return "\\\\?\\UNC\\" + full[2:] if full.startswith("\\\\") else "\\\\?\\" + full
+
+
+def native(path: str) -> str:
+    r"""What every file call takes. The real system, not `WINDOWS`: no other one reads `\\?\`."""
+    return long_path(path) if os.name == "nt" and not path.startswith("\\\\?\\") else path
+
+
+def walk_dir(top: str):
+    """`os.walk`, past 260 characters on Windows, its folders named from `top` as given."""
+    long = native(top)
+    for dirpath, dirnames, filenames in os.walk(long):
+        yield top + dirpath[len(long):], dirnames, filenames
+
+
 def read(path: str) -> str:
-    with open(path, encoding="utf-8") as handle:
+    with open(native(path), encoding="utf-8") as handle:
         return handle.read()
 
 
 def write(path: str, text: str) -> None:
-    with open(path, "w", encoding="utf-8", newline="\n") as handle:  # LF on Windows too
+    with open(native(path), "w", encoding="utf-8", newline="\n") as handle:  # LF on Windows too
         handle.write(text)
 
 
@@ -397,29 +419,40 @@ class Project:
     def problem(self, path: str, line: int, message: str, level: str = "error"):
         self.problems.append(Problem(self.rel(path), line, message, level))
 
+    def readable(self, path: str) -> str | None:
+        """The file's text, or None and a problem named once: one file the system refuses must not
+        stop every command."""
+        try:
+            return read(path)
+        except OSError as e:
+            message = f"cannot be read: {e.strerror or e}"
+            if Problem(self.rel(path), 0, message) not in self.problems:
+                self.problem(path, 0, message)
+            return None
+
     def of_type(self, kind: str):
         return [i for i in self.items.values() if i.type == kind]
 
     # -- loading
 
     def _load_plan(self):
-        if not os.path.isdir(self.plan_dir):
+        if not os.path.isdir(native(self.plan_dir)):
             self.problem(self.spry, 0, "no spry/plan/ folder")
             return
         self._walk(self.plan_dir, None)
 
     def _walk(self, folder: str, parent: Item | None):
-        for name in sorted(os.listdir(folder), key=natural_key):
+        for name in sorted(os.listdir(native(folder)), key=natural_key):
             path = os.path.join(folder, name)
             if name.startswith(".") or name in ("__pycache__",):
                 continue
-            if os.path.isdir(path):
+            if os.path.isdir(native(path)):
                 if name in CONTAINERS and parent is not None:
-                    for sub in sorted(os.listdir(path), key=natural_key):
+                    for sub in sorted(os.listdir(native(path)), key=natural_key):
                         sub_path = os.path.join(path, sub)
                         if sub.startswith("."):
                             continue
-                        if os.path.isdir(sub_path):
+                        if os.path.isdir(native(sub_path)):
                             self._add_folder(sub_path, parent, name)
                         else:
                             self.problem(sub_path, 0, f"only {CONTAINERS[name]} folders belong in {name}/")
@@ -436,7 +469,9 @@ class Project:
 
     def _make(self, kind: str, ident: str, num: int, doc: str, folder: str | None,
               parent: Item | None, container: str | None):
-        text = read(doc)
+        text = self.readable(doc)
+        if text is None:
+            return None
         fm, body_start, errors = parse_front_matter(text)
         for line, message in errors:
             self.problem(doc, line, message)
@@ -467,13 +502,15 @@ class Project:
             self.problem(path, 0, "folder name is not `<PREFIX>-<n>-<slug>` for a plan item")
             return
         readme = os.path.join(path, "README.md")
-        if not os.path.isfile(readme):
+        if not os.path.isfile(native(readme)):
             self.problem(path, 0, f"{m.group(1)}-{m.group(2)} has no README.md")
             return
         if not self._placed_well(kind, parent, container):
             where = f"{parent.type} {parent.id}" if parent else "the top of the plan"
             self.problem(readme, 1, f"a {kind} cannot sit under {where}" + (f"/{container}" if container else ""))
         item = self._make(kind, f"{m.group(1)}-{m.group(2)}", int(m.group(2)), readme, path, parent, container)
+        if item is None:
+            return
         if kind == "story":
             item.acs = self._acceptance_criteria(item)
         self._walk(path, item)
@@ -483,7 +520,7 @@ class Project:
         if parent is None or parent.type not in ("story", "task", "bug"):
             self.problem(path, 1, "a slice must sit in a story, task or bug folder")
         item = self._make("slice", f"{self.ids['slice']}-{m.group(1)}", int(m.group(1)), path, None, parent, None)
-        if "covers" in item.fm and not isinstance(item.fm["covers"], list):
+        if item and "covers" in item.fm and not isinstance(item.fm["covers"], list):
             self.problem(path, 1, "`covers` must be a list: `covers: [AC-1]`")
 
     def _placed_well(self, kind: str, parent: Item | None, container: str | None) -> bool:
@@ -515,10 +552,10 @@ class Project:
 
     def _load_decisions(self):
         folder = os.path.join(self.spry, "knowledge", "decisions")
-        if not os.path.isdir(folder):
+        if not os.path.isdir(native(folder)):
             return
         prefix = self.ids["decision"]
-        for name in sorted(os.listdir(folder), key=natural_key):
+        for name in sorted(os.listdir(native(folder)), key=natural_key):
             m = re.match(r"^(" + re.escape(prefix) + r"-\d+)\b", name)
             if m and name.endswith(".md"):
                 if m.group(1) in self.decisions:
@@ -548,7 +585,7 @@ class Project:
         bug = re.compile(r"(?<![A-Za-z0-9_/-])(" + re.escape(self.ids["bug"]) + r"-\d+)(?!\d|\.\w|/\w+\.)")
         globs, found = self._test_globs(), {}
         self.unproving, self.bug_tests, self.bug_unproving = [], {}, []
-        for dirpath, dirnames, filenames in os.walk(self.root):
+        for dirpath, dirnames, filenames in walk_dir(self.root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
             if os.path.abspath(dirpath) == self.root and "spry" in dirnames:
                 dirnames.remove("spry")
@@ -558,7 +595,7 @@ class Project:
                 if not any(g.match(rel) for g in globs):
                     continue
                 try:
-                    if os.path.getsize(path) > 2_000_000:
+                    if os.path.getsize(native(path)) > 2_000_000:
                         continue
                     text = read(path)
                 except (UnicodeDecodeError, OSError):
@@ -595,7 +632,7 @@ class Project:
     def _manual_checks(self, story: Item):
         """{"AC-1": (date, build, by, result, line)} — the latest row per criterion."""
         path = os.path.join(story.folder, "checks.md")
-        if not os.path.isfile(path):
+        if not os.path.isfile(native(path)):
             return {}
         text = read(path)
         for _level, title, at, _end in sections(text):
@@ -719,7 +756,7 @@ class Project:
 def history_files(project: Project) -> list:
     """Documents kept from an earlier process, as they were: `spry/history/<source>/**/*.md`."""
     out, top = [], os.path.join(project.spry, "history")
-    for dirpath, dirnames, filenames in os.walk(top):
+    for dirpath, dirnames, filenames in walk_dir(top):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         if os.path.abspath(dirpath) != os.path.abspath(top):
             out += [os.path.join(dirpath, f) for f in filenames if f.endswith(".md")]
@@ -731,9 +768,9 @@ def markdown_files(project: Project):
     was (`history_files`), plus AGENTS.md."""
     out = []
     agents = os.path.join(project.root, "AGENTS.md")
-    if os.path.isfile(agents):
+    if os.path.isfile(native(agents)):
         out.append(agents)
-    for dirpath, dirnames, filenames in os.walk(project.spry):
+    for dirpath, dirnames, filenames in walk_dir(project.spry):
         rel = project.rel(dirpath)
         if rel in ("spry/process", "spry/tool", "spry/skills") or rel.startswith(("spry/process/", "spry/tool/", "spry/skills/", "spry/history/")):
             dirnames[:] = []
@@ -746,7 +783,7 @@ def markdown_files(project: Project):
 def glossary(project: Project):
     """[(banned phrase, preferred term)]."""
     path = os.path.join(project.root, project.config.get("glossary", "spry/knowledge/glossary.md"))
-    if not os.path.isfile(path):
+    if not os.path.isfile(native(path)):
         return path, []
     text = read(path)
     out = []
@@ -763,8 +800,13 @@ def check(project: Project):
     by_doc = {i.doc: i for i in project.items.values()}
 
     for path in markdown_files(project):
-        text = read(path)
         rel = project.rel(path)
+        if len(rel) > LONG_PATH:
+            project.problem(path, 0, f"{len(rel)} characters from the repository root — Windows without long paths "
+                                     f"stops at 260 in all: shorten a folder's slug (`git mv`)", "warning")
+        text = project.readable(path)
+        if text is None:
+            continue
         item = by_doc.get(path)
         fm = item.fm if item else None
         start = item.body_start if item else 0
@@ -805,7 +847,7 @@ def check(project: Project):
                     continue
                 base = project.root if target.startswith("/") else os.path.dirname(path)
                 resolved = os.path.normpath(os.path.join(base, target.split("#")[0].lstrip("/")))
-                if not os.path.exists(resolved):
+                if not os.path.exists(native(resolved)):
                     project.problem(path, n, f"link to `{target}` does not resolve")
             if check_words and n not in skip:
                 for regex, phrase, term in banned_res:
@@ -1279,12 +1321,12 @@ def done_block(project: Project, doc: str) -> str:
 def index_block(project: Project, index_path: str) -> str:
     folder = os.path.dirname(index_path)
     lines = []
-    for name in sorted(os.listdir(folder), key=natural_key):
+    for name in sorted(os.listdir(native(folder)), key=natural_key):
         path = os.path.join(folder, name)
         target = None
         if name.endswith(".md") and name != "INDEX.md":
             target = path
-        elif os.path.isdir(path) and os.path.isfile(os.path.join(path, "INDEX.md")):
+        elif os.path.isdir(native(path)) and os.path.isfile(native(os.path.join(path, "INDEX.md"))):
             target = os.path.join(path, "INDEX.md")
         if not target:
             continue
@@ -1296,7 +1338,7 @@ def index_block(project: Project, index_path: str) -> str:
         summary = fm.get("summary", "")
         if not summary and target != path:
             # A folder's own index: its count says enough, and setup writes these by the dozen.
-            count = sum(1 for n in os.listdir(path) if n != "INDEX.md" and (n.endswith(".md") or os.path.isdir(os.path.join(path, n))))
+            count = sum(1 for n in os.listdir(native(path)) if n != "INDEX.md" and (n.endswith(".md") or os.path.isdir(native(os.path.join(path, n)))))
             summary = f"{count} entr{'y' if count == 1 else 'ies'}"
         if not summary:
             project.problem(target, 1, "no `summary` in front-matter — the index line needs one", "warning")
@@ -1328,7 +1370,7 @@ def block_makers(project: Project) -> dict:
     add(queue, "backlog", lambda: backlog_block(project, queue), True)
     finish = os.path.join(project.spry, "DONE.md")
     add(finish, "done", lambda: done_block(project, finish), True)
-    for dirpath, dirnames, filenames in os.walk(os.path.join(project.spry, "knowledge")):
+    for dirpath, dirnames, filenames in walk_dir(os.path.join(project.spry, "knowledge")):
         dirnames[:] = [d for d in dirnames if not d.startswith(".")]
         if "INDEX.md" in filenames:
             path = os.path.join(dirpath, "INDEX.md")
@@ -1341,7 +1383,7 @@ def index(project: Project, dry: bool):
     changed = []
     for path, blocks in block_makers(project).items():
         for name, make, required in blocks:
-            if not os.path.isfile(path):
+            if not os.path.isfile(native(path)):
                 continue
             text = read(path)
             new = replace_block(text, name, make())
@@ -1412,7 +1454,7 @@ def plan_paths(text: str):
 
 def related(project: Project, target_path: str, limit: int = 8):
     target_path = os.path.abspath(target_path)
-    if not os.path.isfile(target_path):
+    if not os.path.isfile(native(target_path)):
         raise SystemExit(f"no such file: {target_path}")
     item = next((i for i in project.items.values() if i.doc == target_path), None)
     text = read(target_path)
@@ -1465,7 +1507,7 @@ def related(project: Project, target_path: str, limit: int = 8):
     section("Glossary terms used", [f"- {t}" for t in used])
 
     always = project.config.get("always_check", [])
-    section("Always check", [f"- {p}" + ("" if os.path.exists(os.path.join(project.root, p)) else " (missing)") for p in always])
+    section("Always check", [f"- {p}" + ("" if os.path.exists(native(os.path.join(project.root, p))) else " (missing)") for p in always])
 
     ids = {item.id, *(p.id for p in item.ancestors())} if item else set()
     hits = []
@@ -1501,7 +1543,7 @@ def next_id(project: Project, kind: str) -> str:
         nums = [i.num for i in project.items.values() if i.type == kind]
         # Folders and files that failed to load still hold their number.
         taken = re.compile(r"^" + re.escape(prefix) + r"-(\d+)(?:-|\.md$|$)")
-        for _dir, dirnames, filenames in os.walk(project.plan_dir):
+        for _dir, dirnames, filenames in walk_dir(project.plan_dir):
             nums += [int(m.group(1)) for n in dirnames + filenames if (m := taken.match(n))]
     return f"{prefix}-{max(nums, default=0) + 1}"
 
@@ -1535,8 +1577,8 @@ def link_slice(project: Project, slice_id: str, fields: dict) -> str:
 
 def slugify(title: str) -> str:
     slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")
-    if len(slug) > 40:
-        slug = slug[:40].rsplit("-", 1)[0]
+    if len(slug) > 20:  # a bug's slice six slugs deep, three-digit IDs, stays under `LONG_PATH`
+        slug = slug[:20].rsplit("-", 1)[0]
     return slug or "untitled"
 
 
@@ -1566,7 +1608,7 @@ DOCUMENT_KINDS = ("checks", "convention", "external", "audit")
 def ensure_index(project: Project, folder: str, name: str):
     """An INDEX.md for a knowledge folder, from the template, when there is none yet."""
     path = os.path.join(folder, "INDEX.md")
-    if not os.path.exists(path):
+    if not os.path.exists(native(path)):
         template = read(os.path.join(project.spry, "process", "templates", "index.md"))
         write(path, template.replace("<folder> index", f"{name} index").replace("# <folder>", f"# {name}"))
 
@@ -1584,7 +1626,7 @@ def new_document(project: Project, kind: str, parent_id: str | None, title: str,
         text = template.replace("S-<n>", story.id).replace("<story title>", story.title)
     elif kind == "convention":
         folder = os.path.join(knowledge, "conventions")
-        os.makedirs(folder, exist_ok=True)
+        os.makedirs(native(folder), exist_ok=True)
         ensure_index(project, folder, "Conventions")
         path = os.path.join(folder, f"{slugify(title)}.md")
         text = template.replace("<area>", title)
@@ -1592,7 +1634,7 @@ def new_document(project: Project, kind: str, parent_id: str | None, title: str,
         if not dependency:
             raise SystemExit("an external behaviour needs --dependency: the service it is about")
         folder = os.path.join(knowledge, "external", slugify(dependency))
-        os.makedirs(folder, exist_ok=True)
+        os.makedirs(native(folder), exist_ok=True)
         ensure_index(project, folder, dependency)
         path = os.path.join(folder, f"{slugify(title)}.md")
         text = (template.replace("<dependency>", dependency).replace("<behaviour, as a statement>", title)
@@ -1600,12 +1642,12 @@ def new_document(project: Project, kind: str, parent_id: str | None, title: str,
                 .replace("dependency: <name>", f"dependency: {dependency}").replace("affects: [<item IDs>]", "affects: []"))
     else:
         folder = os.path.join(knowledge, "audits")
-        os.makedirs(folder, exist_ok=True)
+        os.makedirs(native(folder), exist_ok=True)
         ensure_index(project, folder, "Audits")
         path = os.path.join(folder, f"{today}-{slugify(title)}.md")
         text = re.sub(r"(?m)^title: .*$", f"title: {title}", template, count=1)
         text = text.replace("date: <YYYY-MM-DD>", f"date: {today}").replace("# <title>", f"# {title}")
-    if os.path.exists(path):
+    if os.path.exists(native(path)):
         raise SystemExit(f"{project.rel(path)} already exists — edit it instead")
     write(path, text)
     return path
@@ -1619,7 +1661,7 @@ def new_item(project: Project, kind: str, parent_id: str | None, title: str,
     if kind not in project.ids:
         raise SystemExit(f"unknown type `{kind}` — one of {', '.join([*project.ids, *DOCUMENT_KINDS])}")
     template = os.path.join(project.spry, "process", "templates", f"{kind}.md")
-    if not os.path.isfile(template):
+    if not os.path.isfile(native(template)):
         raise SystemExit(f"no template {project.rel(template)} — bring the process in with `vendor`")
     ident, slug = next_id(project, kind), slugify(title)
     parent = None
@@ -1629,7 +1671,7 @@ def new_item(project: Project, kind: str, parent_id: str | None, title: str,
             raise SystemExit(f"no item {parent_id} in the plan")
     if kind == "decision":
         folder = os.path.join(project.spry, "knowledge", "decisions")
-        os.makedirs(folder, exist_ok=True)
+        os.makedirs(native(folder), exist_ok=True)
         path = os.path.join(folder, f"{ident}-{slug}.md")
     elif kind == "slice":
         if parent is None or parent.type not in ("story", "task", "bug"):
@@ -1642,9 +1684,9 @@ def new_item(project: Project, kind: str, parent_id: str | None, title: str,
             raise SystemExit(f"a {kind} cannot sit under {where}")
         base = parent.folder if parent else project.plan_dir
         folder = os.path.join(base, container, f"{ident}-{slug}") if container else os.path.join(base, f"{ident}-{slug}")
-        os.makedirs(folder)
+        os.makedirs(native(folder))
         path = os.path.join(folder, "README.md")
-    if os.path.exists(path):
+    if os.path.exists(native(path)):
         raise SystemExit(f"{project.rel(path)} already exists")
     write(path, fill_template(read(template), kind, ident, title, owner, today or date.today().isoformat()))
     return path
@@ -1685,7 +1727,7 @@ def last_line(done: subprocess.CompletedProcess) -> str:
 
 def drop_worktree(root: str, path: str):
     git(root, "worktree", "remove", "--force", path)
-    if os.path.exists(path):
+    if os.path.exists(native(path)):
         shutil.rmtree(path, ignore_errors=True)
     git(root, "worktree", "prune")
 
@@ -1695,7 +1737,7 @@ def mid_operation(project: Project) -> str | None:
     for name, what in (("MERGE_HEAD", "a merge"), ("rebase-merge", "a rebase"), ("rebase-apply", "a rebase"),
                        ("CHERRY_PICK_HEAD", "a cherry-pick")):
         path = git(project.root, "rev-parse", "--git-path", name).stdout.strip()
-        if path and os.path.exists(os.path.join(project.root, path)):
+        if path and os.path.exists(native(os.path.join(project.root, path))):
             return f"{what} is in progress — finish it first"
     if git(project.root, "diff", "--cached", "--quiet").returncode != 0:
         return "files are staged — commit or unstage them first"
@@ -1737,12 +1779,12 @@ def on_main(project: Project, step, ready=None) -> tuple:
             done = git(project.root, *NO_HOOKS, "worktree", "add", "-q", "--no-checkout", "--detach", tmp, tip)
             if done.returncode == 0:
                 patterns = os.path.join(tmp, git(tmp, "rev-parse", "--git-path", "info/sparse-checkout").stdout.strip())
-                os.makedirs(os.path.dirname(patterns), exist_ok=True)
+                os.makedirs(native(os.path.dirname(patterns)), exist_ok=True)
                 write(patterns, "/" + re.sub(r"([\\*?\[\]!#])", r"\\\1", prefix) + "spry/\n")
                 done = git(tmp, *NO_HOOKS, *SPARSE, "checkout", "-q", "--detach", tip)
             if done.returncode != 0:
                 raise SystemExit(f"cannot make a worktree of {REMOTE}/{main}: {last_line(done)} — nothing written")
-            if not os.path.isfile(os.path.join(tmp, prefix, "spry", "spry.config.json")):
+            if not os.path.isfile(native(os.path.join(tmp, prefix, "spry", "spry.config.json"))):
                 raise SystemExit(f"spry is not on {REMOTE}/{main} yet — nothing written. Keep `mint` local "
                                  f"until the setup is merged; IDs are taken on {main} after that")
             result, message = step(Project(os.path.join(tmp, prefix)))
@@ -1986,16 +2028,16 @@ def vendor(root: str, force: bool = False) -> list:
     here = os.path.dirname(os.path.abspath(__file__))
     source = os.path.join(os.path.dirname(here), "process")
     target = os.path.join(os.path.abspath(root), "spry")
-    if not os.path.isdir(source) or os.path.abspath(os.path.dirname(here)) == target:
+    if not os.path.isdir(native(source)) or os.path.abspath(os.path.dirname(here)) == target:
         raise SystemExit("run `vendor` with the plugin's spry.py, not a project's copy")
     process_target = os.path.join(target, "process")
-    if os.path.exists(process_target) and not force:
+    if os.path.exists(native(process_target)) and not force:
         raise SystemExit("spry/process/ already exists — it may hold local process changes; "
                          "use /spry:update to merge, or --force to overwrite")
-    if os.path.exists(process_target):
+    if os.path.exists(native(process_target)):
         shutil.rmtree(process_target)
     shutil.copytree(source, process_target, ignore=shutil.ignore_patterns("__pycache__", ".DS_Store"))
-    os.makedirs(os.path.join(target, "tool"), exist_ok=True)
+    os.makedirs(native(os.path.join(target, "tool")), exist_ok=True)
     shutil.copy2(os.path.abspath(__file__), os.path.join(target, "tool", "spry.py"))
     return ["spry/process/", "spry/tool/spry.py"]
 
@@ -2005,16 +2047,16 @@ def vendor_diff(root: str) -> list:
     here = os.path.dirname(os.path.abspath(__file__))
     plugin = os.path.dirname(here)
     target = os.path.join(os.path.abspath(root), "spry")
-    if not os.path.isdir(os.path.join(plugin, "process")) or os.path.abspath(plugin) == target:
+    if not os.path.isdir(native(os.path.join(plugin, "process"))) or os.path.abspath(plugin) == target:
         raise SystemExit("run `vendor --diff` with the plugin's spry.py, not a project's copy")
 
     def files(base):
         out = set()
-        for dirpath, dirnames, filenames in os.walk(os.path.join(base, "process")):
+        for dirpath, dirnames, filenames in walk_dir(os.path.join(base, "process")):
             dirnames[:] = [d for d in dirnames if d != "__pycache__" and not d.startswith(".")]
             out |= {os.path.relpath(os.path.join(dirpath, f), base).replace(os.sep, "/")
                     for f in filenames if not f.startswith(".")}
-        if os.path.isfile(os.path.join(base, "tool", "spry.py")):
+        if os.path.isfile(native(os.path.join(base, "tool", "spry.py"))):
             out.add("tool/spry.py")
         return out
 
@@ -2037,7 +2079,7 @@ def scrub(project: Project, path: str) -> list:
         words |= {member.get("name", ""), member.get("github", "")}
     gloss_path, banned = glossary(project)
     words |= {b for b, _ in banned} | {t for _, t in banned}
-    if os.path.isfile(gloss_path):
+    if os.path.isfile(native(gloss_path)):
         for _i, cells in table_rows(enumerate(read(gloss_path).split("\n"))):
             if cells and cells[0].lower() != "term" and not cells[0].startswith("<"):
                 words.add(cells[0])
@@ -2102,7 +2144,7 @@ def runner_cwd(project: Project, runner: dict, rel: str) -> str:
         return project.root
     folder = os.path.dirname(os.path.join(project.root, rel))
     while os.path.abspath(folder).startswith(project.root):
-        if any(os.path.isfile(os.path.join(folder, m)) for m in PACKAGE_MARKERS):
+        if any(os.path.isfile(native(os.path.join(folder, m))) for m in PACKAGE_MARKERS):
             return folder
         if os.path.abspath(folder) == project.root:
             break
@@ -2140,11 +2182,11 @@ def load_plan(project: Project, path: str) -> list:
         if entry["find"] == entry["with"]:
             raise PlanError(f"{where}: `find` equals `with` — nothing would change")
         target = os.path.join(project.root, entry["file"])
-        if not os.path.isfile(target):
+        if not os.path.isfile(native(target)):
             raise PlanError(f"{where}: no file {entry['file']}")
         if not git_clean(project.root, entry["file"]):
             raise PlanError(f"{where}: {entry['file']} has uncommitted changes — commit first; restoring would lose them")
-        with open(target, "rb") as handle:
+        with open(native(target), "rb") as handle:
             data = handle.read()
         count = data.decode("utf-8").count(in_line_endings(data, entry["find"]))
         if count != 1:
@@ -2224,12 +2266,12 @@ class Writer:
         self.lock = threading.Lock()
 
     def put(self, path: str, data: bytes):
-        with open(path, "wb") as handle:
+        with open(native(path), "wb") as handle:
             handle.write(data)
         with self.lock:
             self.clock = max(self.clock + 1, int(time.time()))
             stamp = self.clock
-        os.utime(path, (stamp, stamp))
+        os.utime(native(path), (stamp, stamp))
 
 
 def mutate(entry: dict, original: bytes) -> bytes:
@@ -2309,7 +2351,7 @@ def shared_paths(project: Project) -> list:
     """Untracked folders each worktree borrows from the main tree: installed dependencies."""
     names = set(DEFAULT_SHARE)
     found = list(project.config.get("falsify", {}).get("share", []))
-    for dirpath, dirnames, _files in os.walk(project.root):
+    for dirpath, dirnames, _files in walk_dir(project.root):
         depth = os.path.relpath(dirpath, project.root).count(os.sep)
         keep = []
         for d in dirnames:
@@ -2333,7 +2375,7 @@ def borrow(source: str, link: str, rel: str, pnpm: bool):
         shutil.copytree(source, link, symlinks=True)
         return
     try:
-        os.symlink(source, link, target_is_directory=os.path.isdir(source))
+        os.symlink(source, link, target_is_directory=os.path.isdir(native(source)))
     except OSError:
         if not WINDOWS:
             raise
@@ -2378,7 +2420,7 @@ def parallel_blocker(project: Project, plan: list):
     for path in sorted({f for e in plan for f in e["_tests"]}):
         if git(project.root, "ls-files", "--error-unmatch", "--", path).returncode != 0:
             return f"{path} is not committed, so a worktree would not have it"
-    if WINDOWS and os.path.isdir(os.path.join(project.root, "node_modules", ".pnpm")) and any(
+    if WINDOWS and os.path.isdir(native(os.path.join(project.root, "node_modules", ".pnpm"))) and any(
             os.path.basename(rel) == "node_modules" and os.path.dirname(rel.replace(os.sep, "/"))
             for rel in shared_paths(project)):
         # pnpm links packages with junctions there, which a copy follows: a worktree would test the
@@ -2456,7 +2498,7 @@ def falsify_serial(project: Project, plan: list, table: list, timeout: int, grou
     try:
         for entry in plan:
             target = os.path.join(project.root, entry["file"])
-            with open(target, "rb") as handle:
+            with open(native(target), "rb") as handle:
                 original = handle.read()
             touched[target] = original
             writer.put(target, mutate(entry, original))
@@ -2484,7 +2526,7 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
     trees, made, writer, lock = [], [], Writer(), threading.Lock()
     share = shared_paths(project)
     prefix = git_prefix(project.root)
-    pnpm = os.path.isdir(os.path.join(project.root, "node_modules", ".pnpm"))
+    pnpm = os.path.isdir(native(os.path.join(project.root, "node_modules", ".pnpm")))
     try:
         for n in range(jobs):
             tree = os.path.join(parent, f"w{n + 1}")
@@ -2496,8 +2538,8 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
             trees.append(tree)
             for rel in share:
                 link = os.path.join(tree, rel)
-                if not os.path.exists(link):
-                    os.makedirs(os.path.dirname(link), exist_ok=True)
+                if not os.path.exists(native(link)):
+                    os.makedirs(native(os.path.dirname(link)), exist_ok=True)
                     borrow(os.path.join(project.root, rel), link, rel, pnpm)
         say(f"{jobs} worktrees · sharing {', '.join(share) or 'nothing'}")
         red = baseline(project, groups, table, timeout, trees[0], say)
@@ -2514,7 +2556,7 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
             tree = free.get()
             target = os.path.join(tree, entry["file"])
             try:
-                with open(target, "rb") as handle:
+                with open(native(target), "rb") as handle:
                     original = handle.read()
                 writer.put(target, mutate(entry, original))
                 try:
@@ -2723,8 +2765,8 @@ def falsify_suggest(project: Project, slice_id: str, base: str, fallback: bool =
 def searchable_files(project: Project) -> list:
     out = markdown_files(project) + history_files(project)
     process = os.path.join(project.spry, "process")
-    if os.path.isdir(process):
-        for dirpath, _dirs, filenames in os.walk(process):
+    if os.path.isdir(native(process)):
+        for dirpath, _dirs, filenames in walk_dir(process):
             out += [os.path.join(dirpath, f) for f in filenames if f.endswith(".md")]
     return sorted(set(out))
 
@@ -2766,14 +2808,14 @@ def find(project: Project, query: str, limit: int = 10, rebuild: bool = False, m
         return []
     files = searchable_files(project)
     db_path = os.path.join(project.root, ".spry", "index.db")
-    os.makedirs(os.path.dirname(db_path), exist_ok=True)
-    if rebuild and os.path.exists(db_path):
-        os.remove(db_path)
+    os.makedirs(native(os.path.dirname(db_path)), exist_ok=True)
+    if rebuild and os.path.exists(native(db_path)):
+        os.remove(native(db_path))
     con = sqlite3.connect(db_path)
     columns = [r[1] for r in con.execute("PRAGMA table_info(sections)")]
     if columns and "title" not in columns:
         con.close()
-        os.remove(db_path)
+        os.remove(native(db_path))
         con = sqlite3.connect(db_path)
     try:
         con.execute("CREATE VIRTUAL TABLE IF NOT EXISTS sections USING "
@@ -2785,7 +2827,7 @@ def find(project: Project, query: str, limit: int = 10, rebuild: bool = False, m
     known = dict(con.execute("SELECT path, stamp FROM files"))
     current = {}
     for path in files:
-        st = os.stat(path)
+        st = os.stat(native(path))
         current[project.rel(path)] = (path, f"{st.st_mtime_ns}:{st.st_size}")
     for rel in set(known) - set(current):
         con.execute("DELETE FROM sections WHERE path = ?", (rel,))
@@ -2844,15 +2886,15 @@ def install(root: str, agent: str) -> list:
     here = os.path.dirname(os.path.abspath(__file__))
     plugin = os.path.dirname(here)
     skills = os.path.join(plugin, "skills")
-    if not os.path.isdir(skills):
+    if not os.path.isdir(native(skills)):
         raise SystemExit("run `install` with the plugin's spry.py, not a project's copy")
     if agent not in AGENTS:
         raise SystemExit(f"unknown agent `{agent}` — one of {', '.join(AGENTS)}")
     root = os.path.abspath(root)
     written, listing = [], []
-    for name in sorted(os.listdir(skills), key=natural_key):
+    for name in sorted(os.listdir(native(skills)), key=natural_key):
         source = os.path.join(skills, name, "SKILL.md")
-        if not os.path.isfile(source):
+        if not os.path.isfile(native(source)):
             continue
         text = read(source).replace("two folders above this file's folder (`…/plugins/spry`)",
                                     f"`{plugin}` — a copy of spry's `plugins/spry`")
@@ -2879,7 +2921,7 @@ def install(root: str, agent: str) -> list:
             path = os.path.join(root, ".gemini", "commands", "spry", f"{name}.toml")
             content = (f"description = {json.dumps(description, ensure_ascii=False)}\n"
                        f"prompt = '''\n{body.replace('$ARGUMENTS', '{{args}}')}'''\n")
-        os.makedirs(os.path.dirname(path), exist_ok=True)
+        os.makedirs(native(os.path.dirname(path)), exist_ok=True)
         write(path, content)
         written.append(os.path.relpath(path, root).replace(os.sep, "/"))
     if agent == "generic":
@@ -2887,7 +2929,7 @@ def install(root: str, agent: str) -> list:
         block = ("When the person types `/spry:<name>`, or asks for what a skill below does, read its file "
                  "and follow it. `$ARGUMENTS` in a skill means what they wrote after the command.\n\n"
                  + "\n".join(listing))
-        text = read(agents_md) if os.path.isfile(agents_md) else "# AGENTS.md\n"
+        text = read(agents_md) if os.path.isfile(native(agents_md)) else "# AGENTS.md\n"
         new = replace_block(text, "skills", block)
         if new is None:
             new = text.rstrip("\n") + "\n\n## spry skills\n\n<!-- spry:skills -->\n" + block + "\n<!-- /spry:skills -->\n"
@@ -2953,7 +2995,7 @@ def slowest(project: Project, junit: str | None = None, limit: int = 10) -> str:
     if not pattern or pattern.startswith("<"):
         raise SystemExit("no JUnit report — set tests.junit in spry.config.json, or pass --junit <path>")
     base = os.path.join(project.root, pattern)
-    paths = sorted(globber.glob(os.path.join(base, "**", "*.xml"), recursive=True)) if os.path.isdir(base) \
+    paths = sorted(globber.glob(os.path.join(base, "**", "*.xml"), recursive=True)) if os.path.isdir(native(base)) \
         else sorted(globber.glob(base, recursive=True))
     if not paths:
         raise SystemExit(f"no report at {pattern} — run the full test suite first")
@@ -3063,7 +3105,7 @@ def changed_criteria(project: Project, base: str):
                 project.problem(story.doc, story.acs[ac]["line"],
                                 f"{ref} changed since {base}, and {tests} cite it — check they still prove it",
                                 "warning")
-            if story.acs[ac]["dropped"] or not os.path.isfile(checks):
+            if story.acs[ac]["dropped"] or not os.path.isfile(native(checks)):
                 continue
             if checks_then is None:
                 checks_then = git(project.root, "show", f"{fork}:./{project.rel(checks)}").stdout
@@ -3099,7 +3141,7 @@ def block_drift(project: Project, base: str) -> list:
     out = []
     for rel in sorted(line for line in touched.stdout.split("\n") if line.endswith(".md")):
         path = os.path.join(project.root, rel)
-        if not os.path.isfile(path) or rel.startswith(("spry/process/", "spry/history/")):
+        if not os.path.isfile(native(path)) or rel.startswith(("spry/process/", "spry/history/")):
             continue
         olds = [dict(BLOCK.findall(shown.stdout)) for shown in
                 (git(project.root, "show", f"{ref}:./{rel}") for ref in refs) if shown.returncode == 0]
@@ -3189,20 +3231,20 @@ def view(project: Project, since: str | None = None) -> list:
     With `since` (a git hook passes the commit it came from), only when the plan or a test file
     changed since then, or no view exists yet. Returns the files written."""
     folder = os.path.join(project.root, ".spry", "view")
-    if since and all(os.path.isfile(os.path.join(folder, name)) for name, _, _ in VIEWS):
+    if since and all(os.path.isfile(native(os.path.join(folder, name))) for name, _, _ in VIEWS):
         diff = git(project.root, "diff", "--relative", "--name-only", since, "HEAD", "--", ".")
         globs = project._test_globs()
         paths = [p for p in diff.stdout.split("\n") if p]
         if diff.returncode == 0 and not any(p.startswith("spry/") or any(g.match(p) for g in globs) for p in paths):
             return []
-    os.makedirs(folder, exist_ok=True)
+    os.makedirs(native(folder), exist_ok=True)
     stamp = f"> Local view of this working tree, written {time.strftime('%Y-%m-%d %H:%M')} by `spry view`. Not committed."
     written = []
     for name, block, make in VIEWS:
         target = os.path.join(folder, name)
         content = make(project, target)
         source = os.path.join(project.spry, name)
-        frame = read(source) if os.path.isfile(source) else f"# {name[:-3].title()}\n\n<!-- spry:{block} -->\n<!-- /spry:{block} -->\n"
+        frame = read(source) if os.path.isfile(native(source)) else f"# {name[:-3].title()}\n\n<!-- spry:{block} -->\n<!-- /spry:{block} -->\n"
         text = replace_block(frame, block, content) or frame
         text = re.sub(r"^(# .*)$", lambda m: m.group(1) + "\n\n" + stamp, text, count=1, flags=re.M)
         write(target, text)
@@ -3226,16 +3268,16 @@ def hooks(project: Project, remove: bool = False) -> list:
     out = []
     for name, head in scripts.items():
         path = os.path.join(folder, name)
-        ours = os.path.isfile(path) and HOOK_MARK in read(path)
+        ours = os.path.isfile(native(path)) and HOOK_MARK in read(path)
         if remove:
             if ours:
-                os.remove(path)
+                os.remove(native(path))
                 out.append(f"removed: {name}")
             continue
-        if os.path.isfile(path) and not ours:
+        if os.path.isfile(native(path)) and not ours:
             out.append(f"kept: {name} is not spry's — add to it: python3 {tool} view --since <previous commit>")
             continue
-        os.makedirs(folder, exist_ok=True)
+        os.makedirs(native(folder), exist_ok=True)
         write(path, f"#!/bin/sh\n{HOOK_MARK} when the plan or a test changed. "
                     f"Remove: python3 {tool} hooks --remove\n{head}{run}")
         os.chmod(path, 0o755)
@@ -3645,8 +3687,8 @@ def serve_page(project: Project, title: str, main: str, current: Item | None = N
            ("Done", os.path.join(s, "DONE.md")), ("Knowledge", os.path.join(s, "knowledge")),
            ("Glossary", os.path.join(project.root, project.config.get("glossary", "spry/knowledge/glossary.md"))),
            ("AGENTS.md", os.path.join(project.root, "AGENTS.md"))]
-    links = "".join(f'<a href="{serve_href(project, p)}{"/" if os.path.isdir(p) else ""}">{label}</a>'
-                    for label, p in nav if os.path.exists(p))
+    links = "".join(f'<a href="{serve_href(project, p)}{"/" if os.path.isdir(native(p)) else ""}">{label}</a>'
+                    for label, p in nav if os.path.exists(native(p)))
     product = html.escape(project.config.get("product") or "spry")
     page = (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -3697,7 +3739,7 @@ def serve_response(project: Project, path: str, repo: str | None = None, makers:
     redirect = lambda to: (302, "text/plain", b"", {"Location": quote(to)})  # noqa: E731
     if url.path == "/":
         home = os.path.join(project.spry, "README.md")
-        return redirect("/" + project.rel(home if os.path.isfile(home) else os.path.join(project.plan_dir, "README.md")))
+        return redirect("/" + project.rel(home if os.path.isfile(native(home)) else os.path.join(project.plan_dir, "README.md")))
     if url.path == "/-/search":
         query = (parse_qs(url.query).get("q") or [""])[0]
         hits = find(project, query, limit=30, marks=("\x01", "\x02")) if query.strip() else []
@@ -3715,24 +3757,24 @@ def serve_response(project: Project, path: str, repo: str | None = None, makers:
     rel = unquote(url.path).lstrip("/")
     parts = [p for p in rel.split("/") if p]
     doc = os.path.join(project.root, *parts)
-    target = os.path.realpath(doc)
-    real_root = os.path.realpath(project.root)
+    target = os.path.realpath(native(doc))
+    real_root = os.path.realpath(native(project.root))
     inside = target == real_root or target.startswith(real_root + os.sep)
     real_parts = os.path.relpath(target, real_root).split(os.sep) if inside else []
     hidden = any(p.startswith(".") or p in SKIP_DIRS for p in parts + [p for p in real_parts if p != "."])
-    if not inside or hidden or not os.path.exists(target):  # a link to `.git` or `.env` is hidden too
+    if not inside or hidden or not os.path.exists(native(target)):  # a link to `.git` or `.env` is hidden too
         return 404, "text/html; charset=utf-8", serve_page(project, "Not found", f"<h1>Not found</h1><p><code>{html.escape(rel)}</code></p>"), {}
-    if os.path.isdir(target):
+    if os.path.isdir(native(target)):
         for name in ("README.md", "INDEX.md"):
-            if os.path.isfile(os.path.join(target, name)):
+            if os.path.isfile(native(os.path.join(target, name))):
                 return redirect("/" + "/".join(parts + [name]))
         if not url.path.endswith("/"):
             return redirect("/" + "/".join(parts) + "/")
-        names = [n for n in sorted(os.listdir(target), key=natural_key) if not n.startswith(".") and n not in SKIP_DIRS]
-        items = "".join(f'<li><a href="./{html.escape(quote(n))}{"/" if os.path.isdir(os.path.join(target, n)) else ""}">'
+        names = [n for n in sorted(os.listdir(native(target)), key=natural_key) if not n.startswith(".") and n not in SKIP_DIRS]
+        items = "".join(f'<li><a href="./{html.escape(quote(n))}{"/" if os.path.isdir(native(os.path.join(target, n))) else ""}">'
                         f'{html.escape(n)}</a></li>' for n in names)
         return 200, "text/html; charset=utf-8", serve_page(project, rel or "/", f'<p class="path">{html.escape(rel)}</p><ul>{items}</ul>'), {}
-    with open(target, "rb") as handle:
+    with open(native(target), "rb") as handle:
         data = handle.read()
     kind = mimetypes.guess_type(target)[0] or ""
     if kind in SERVE_RAW:  # an image a document shows; never a page that could run script
@@ -3972,7 +4014,7 @@ def code_fingerprint(project: Project, base: str | None = None):
     for path in changed:
         full = os.path.join(project.root, path)
         try:
-            with open(full, "rb") as handle:
+            with open(native(full), "rb") as handle:
                 entries[path] = hashlib.sha1(handle.read()).hexdigest()
         except OSError:
             entries[path] = "deleted"
@@ -4052,7 +4094,7 @@ def gate(project: Project, force: bool = False, say=print, fast: bool = False) -
         say("fast checks green — tests not run; `spry.py gate` runs them")
         return 0
     if fingerprint:
-        os.makedirs(os.path.dirname(stamp_path), exist_ok=True)
+        os.makedirs(native(os.path.dirname(stamp_path)), exist_ok=True)
         write(stamp_path, json.dumps({"code": fingerprint, "at": time.strftime("%Y-%m-%d %H:%M")}) + "\n")
         say("green — stamped; until the code changes, the gate runs only `spry check`")
     return 0
@@ -4190,7 +4232,7 @@ def review_check(payload, diff: str, own: bool = False) -> list:
 def find_root(start: str):
     here = os.path.abspath(start)
     while True:
-        if os.path.isfile(os.path.join(here, "spry", "spry.config.json")):
+        if os.path.isfile(native(os.path.join(here, "spry", "spry.config.json"))):
             return here
         parent = os.path.dirname(here)
         if parent == here:
@@ -4444,12 +4486,12 @@ def main(argv=None) -> int:
         for p in project.problems:
             print(p)
         path = os.path.join(project.root, ".github", "CODEOWNERS")
-        current = read(path) if os.path.isfile(path) else None
+        current = read(path) if os.path.isfile(native(path)) else None
         if args.check:
             print("up to date" if current == text else "stale: .github/CODEOWNERS")
             return 0 if current == text else 1
         if current != text:
-            os.makedirs(os.path.dirname(path), exist_ok=True)
+            os.makedirs(native(os.path.dirname(path)), exist_ok=True)
             write(path, text)
             print("wrote: .github/CODEOWNERS")
         else:
@@ -4480,7 +4522,7 @@ def main(argv=None) -> int:
                 base = args.base or project.config.get("main_branch", "main")
                 plan = falsify_suggest(project, args.slice, base)
                 out = args.out or os.path.join(project.root, ".spry", "falsify", f"{args.slice}.json")
-                os.makedirs(os.path.dirname(out), exist_ok=True)
+                os.makedirs(native(os.path.dirname(out)), exist_ok=True)
                 write(out, json.dumps(plan, indent=2, ensure_ascii=False) + "\n")
                 if not plan and not added_or_none(project, base):
                     print("the branch adds no source lines — nothing to falsify; merge-check accepts an empty table")

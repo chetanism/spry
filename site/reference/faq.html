@@ -60,7 +60,9 @@ tool is plain Python, so another host is possible, but you would adapt the proce
 <h3>Does it work on Windows?</h3>
 <p>The tool is plain Python 3.10+. Falsify was made to work on Windows from a pilot team's
 feedback — quoted paths for <code>cmd</code>, process-tree kills on timeout, junctions where symlinks
-are refused, LF line endings.</p>
+are refused, LF line endings. A plan six folders deep can pass Windows' 260-character path limit:
+the tool opens such files anyway, and <code>spry check</code> warns at a path over 200 characters so
+your editor and git keep working too.</p>
 
 <h3>Is it ready?</h3>
 <p>It is early. The tool has a test suite, and the process is being run on pilot projects — most recent

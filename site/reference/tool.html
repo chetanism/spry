@@ -56,7 +56,8 @@ written rules into rules that are actually enforced.</p>
   <li>Always: front-matter, IDs, each item's place in the folder tree, the glossary's banned words,
   line budgets, links, references to acceptance criteria, QA scenarios, conflict checks present and
   resolved before <code>ready</code> / <code>open</code>, guide comments and placeholders left in
-  finished documents, <code>blocked_by</code> pointing at a dropped item or forming a circle.</li>
+  finished documents, <code>blocked_by</code> pointing at a dropped item or forming a circle; a warning
+  at a path over 200 characters, which Windows without long paths cannot open from most folders.</li>
   <li><code>--base BASE</code> — the git ref the branch merges into. Adds: a warning when a criterion's
   text changed under a test, a QA scenario or a check-log row that relied on it; a refusal when the
   branch changed a generated block; and an ID the branch and the base both took. CI passes it on pull

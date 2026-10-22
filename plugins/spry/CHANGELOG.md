@@ -628,3 +628,22 @@ Entry format:
   - Read-only, standard library only, nothing to install; documents stay the only source.
 - **Adapt:** nothing — use it or not, per person.
 - **Migrate:** nothing
+
+## CH-36 · Plans deeper than Windows' 260 characters
+
+- **Date:** 2026-10-22 · **Version:** 0.25.0
+- **Touches:** `tool/spry.py` (every file call; `check`; `new` slugs)
+- **Why:** on pulse-v2's Windows machines, with `LongPathsEnabled` off, every command crashed: a bug's
+  slice six folders deep had a 280-character path, and Python could not open it.
+  - Every call that reads, writes or lists a project's files goes through the `\\?\` prefix on
+    Windows, which opens past 260 characters whatever the registry says.
+  - A plan document the system still refuses is a `check` error naming it; the other commands go on
+    without it.
+  - `check` warns at a path over 200 characters from the repository root, which leaves under 60 for
+    the clone's own folder.
+  - New items get slugs of at most 20 characters, not 40: a bug's slice with three-digit IDs stays
+    under 180.
+- **Adapt:** nothing
+- **Migrate:** nothing required. To keep editors and git working too, either shorten the folders
+  `check` warns about (`git mv`, then `spry.py index`), or on each Windows machine run
+  `git config --global core.longpaths true` and set `LongPathsEnabled` to 1.

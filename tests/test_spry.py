@@ -10,6 +10,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import unittest.mock
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.dirname(HERE)
@@ -772,7 +773,7 @@ class New(Base):
         self.assertEqual(os.path.relpath(conv, t.root), "spry/knowledge/conventions/domain-code.md")
         self.assertTrue(os.path.isfile(os.path.join(t.root, "spry/knowledge/conventions/INDEX.md")))
         ext = spry.new_item(p, "external", None, "Lookups are rate-limited", dependency="Open Library", today="2026-10-08")
-        self.assertEqual(os.path.relpath(ext, t.root), "spry/knowledge/external/open-library/lookups-are-rate-limited.md")
+        self.assertEqual(os.path.relpath(ext, t.root), "spry/knowledge/external/open-library/lookups-are-rate.md")
         with open(ext) as handle:
             text = handle.read()
         self.assertIn("dependency: Open Library", text)
@@ -803,8 +804,8 @@ class New(Base):
             spry.new_item(t.project(), "slice", "F-1", "x")
 
     def test_slug(self):
-        self.assertEqual(spry.slugify("Lend a book — at the Desk!"), "lend-a-book-at-the-desk")
-        self.assertLessEqual(len(spry.slugify("word " * 30)), 40)
+        self.assertEqual(spry.slugify("Lend a book — at the Desk!"), "lend-a-book-at-the")
+        self.assertLessEqual(len(spry.slugify("word " * 30)), 20)
 
 
 class PrBody(Base):
@@ -1187,6 +1188,44 @@ class Windows(unittest.TestCase):
         spry.write(path, "one\ntwo\n")
         with open(path, "rb") as handle:
             self.assertEqual(handle.read(), b"one\ntwo\n")
+
+
+class LongPaths(Base):
+    """A plan six folders deep passes Windows' 260 characters; pulse-v2's machines refuse past it."""
+
+    def test_past_260_through_the_extended_prefix(self):
+        self.assertEqual(spry.long_path("C:/w/spry/plan/a.md"), "\\\\?\\C:\\w\\spry\\plan\\a.md")
+        self.assertEqual(spry.long_path("\\\\srv\\share\\a.md"), "\\\\?\\UNC\\srv\\share\\a.md")
+        if os.name != "nt":
+            self.assertEqual(spry.native("spry/plan/a.md"), "spry/plan/a.md", "only Windows reads the prefix")
+
+    def test_walk_names_folders_from_the_top_given(self):
+        t = self.tree()
+        top = os.path.join(t.root, "spry", "plan")
+        prefixed = (lambda p: "/" + p if not p.startswith("//") else p)  # stands in for `\\?\`
+        with unittest.mock.patch.object(spry, "native", prefixed):
+            self.assertEqual([d for d, _, _ in spry.walk_dir(top)], [d for d, _, _ in os.walk(top)])
+
+    def test_a_file_that_cannot_be_read_is_a_problem_not_a_crash(self):
+        t = self.tree()
+        refused, read = os.path.join(t.root, S, "SL-1-a.md"), spry.read
+
+        def refuse(path):
+            if path == refused:
+                raise FileNotFoundError(2, "No such file or directory")
+            return read(path)
+        with unittest.mock.patch.object(spry, "read", refuse):
+            problems = t.problems()
+        self.assertEqual([p for p in problems if "cannot be read" in p],
+                         [f"{S}/SL-1-a.md:0: error: cannot be read: No such file or directory"])
+
+    def test_a_long_path_is_named_before_windows_refuses_it(self):
+        deep = f"{S}/bugs/B-1-{'b' * 100}/SL-2-{'s' * 60}.md"
+        t = self.tree(**{f"{S}/bugs/B-1-{'b' * 100}/README.md".replace("/", "__"): item("B-1"),
+                         deep.replace("/", "__"): slice_("SL-2", covers="[]")})
+        warnings = [str(p) for p in spry.check(t.project()) if p.level == "warning"]
+        self.assertProblem(warnings, f"{deep}:0: warning: {len(deep)} characters")
+        self.assertFalse(any(f"{S}/README.md" in w for w in warnings), warnings)
 
 
 class Kit(unittest.TestCase):
