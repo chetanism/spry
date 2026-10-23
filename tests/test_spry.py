@@ -940,11 +940,11 @@ class Shared(unittest.TestCase):
         self.git(self.b, "switch", "-qc", "sl-8-b")
         real, raced, made = spry.git, [], {}
 
-        def git(root, *args):
+        def git(root, *args, **kw):
             if "push" in args and not raced:
                 raced.append(True)  # b takes a number between a's commit and a's push
                 made["b"] = spry.mint(spry.Project(self.b), "task", "M-1", "Second")
-            return real(root, *args)
+            return real(root, *args, **kw)
 
         spry.git = git
         self.addCleanup(setattr, spry, "git", real)
@@ -1052,7 +1052,7 @@ class Shared(unittest.TestCase):
         self.assertIn("uncommitted changes", self.refused(lambda: spry.claim(spry.Project(self.a), "SL-1")))
         self.assertEqual(self.remote_head(), head)
 
-    def test_only_spry_is_checked_out_no_hook_runs_and_the_git_config_is_unchanged(self):
+    def test_nothing_is_checked_out_no_hook_runs_and_the_git_config_is_unchanged(self):
         with open(os.path.join(self.a, "big.txt"), "w") as handle:
             handle.write("not needed to take a number")
         self.git(self.a, "add", "big.txt")
@@ -1065,23 +1065,103 @@ class Shared(unittest.TestCase):
                 handle.write(f"#!/bin/sh\necho {name} >> {fired}\n")
             os.chmod(hook, 0o755)
         config = self.git(self.a, "config", "--list", "--local")
-        seen = []
+        status, before = self.git(self.a, "status", "--porcelain"), self.remote_head()
+        real, opened = spry.read, []
 
-        def step(there):
-            seen.extend(sorted(os.path.relpath(os.path.join(d, f), there.root) for d, _, fs in os.walk(there.root)
-                               if ".git" not in d.split(os.sep) for f in fs if f != ".git"))
-            spry.new_item(there, "task", "M-1", "Sparse")
-            return None, "docs(plan): new T-1 Sparse"
+        def read(path):
+            opened.append(path)
+            return real(path)
 
-        _, commit, _ = spry.on_main(spry.Project(self.a), step)
-        self.assertTrue(seen and all(p.startswith("spry" + os.sep) for p in seen), seen)
-        self.assertFalse(os.path.exists(fired), "a project hook ran in the temporary worktree")
+        spry.read = read
+        self.addCleanup(setattr, spry, "read", real)
+        project = spry.Project(self.a, load=False)
+        opened.clear()
+
+        def step(names):
+            self.assertEqual(names.project.config["mint"], "main")
+            return None, "docs(plan): new T-1 Sparse", {f"{M}/tasks/T-1-sparse/README.md": "---\nid: T-1\n---\n"}
+
+        _, commit, _ = spry.on_main(project, step)
+        self.assertEqual(opened, [], "on_main opened a file in the tree")
+        self.assertFalse(os.path.exists(fired), "a project hook ran")
         self.assertEqual(self.git(self.a, "config", "--list", "--local"), config)
+        self.assertEqual(self.git(self.a, "status", "--porcelain"), status)
         self.assertEqual(self.remote_head(), commit)
+        self.assertEqual(self.git(self.a, "show", f"{commit}:{M}/tasks/T-1-sparse/README.md"), "---\nid: T-1\n---")
         listed = self.git(self.a, "ls-tree", "-r", "--name-only", commit).splitlines()
         self.assertIn("big.txt", listed, "files outside spry/ stay in the commit")
-        self.assertTrue(any(p.endswith("T-1-sparse/README.md") for p in listed))
         self.assertEqual(self.worktrees(self.a), 1)
+        self.assertEqual(self.git(self.a, "log", "-1", "--format=%P", commit), before)
+
+    def test_new_opens_only_the_files_it_needs(self):
+        real, opened = spry.read, []
+
+        def read(path):
+            opened.append(os.path.relpath(path, self.a))
+            return real(path)
+
+        spry.read = read
+        self.addCleanup(setattr, spry, "read", real)
+        with contextlib.redirect_stdout(io.StringIO()):
+            spry.main(["--root", self.a, "new", "task", "--parent", "M-1", "--title", "Fast"])
+        self.assertEqual(opened, [os.path.join("spry", "spry.config.json")])
+        self.assertTrue(os.path.isfile(os.path.join(self.a, M, "tasks", "T-1-fast", "README.md")))
+
+    def test_a_batch_is_one_commit_numbered_on_with_parents_from_the_same_batch(self):
+        batch = os.path.join(self.tmp, "batch.json")
+        with open(batch, "w") as handle:
+            json.dump([{"key": "f", "type": "feature", "parent": "E-1", "title": "Renew"},
+                       {"type": "story", "parent": "f", "title": "Renew a loan", "owner": "Asha"},
+                       {"type": "story", "parent": "f", "title": "Refuse a renewal"},
+                       {"type": "story", "parent": "F-1", "title": "Elsewhere"}], handle)
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(spry.main(["--root", self.a, "new", "--batch", batch]), 0)
+        self.assertEqual([p.rsplit("/", 2)[-2] for p in out.getvalue().split()],
+                         ["F-2-renew", "S-2-renew-a-loan", "S-3-refuse-a-renewal", "S-4-elsewhere"])
+        self.assertEqual(self.git(self.a, "rev-parse", "HEAD"), self.remote_head())
+        self.assertEqual(self.git(self.a, "rev-list", "--count", "HEAD"), "2")
+        self.assertEqual(self.git(self.a, "log", "-1", "--format=%s"), "docs(plan): new F-2, S-2, S-3, S-4")
+        with open(os.path.join(self.a, E, "F-2-renew", "S-2-renew-a-loan", "README.md")) as handle:
+            self.assertIn("owner: Asha", handle.read())
+        with contextlib.redirect_stdout(io.StringIO()):
+            spry.main(["--root", self.a, "new", "slice", "--parent", "S-2", "--title", "One", "--title", "Two"])
+        self.assertEqual(sorted(os.listdir(os.path.join(self.a, E, "F-2-renew", "S-2-renew-a-loan"))),
+                         ["README.md", "SL-3-one.md", "SL-4-two.md"])
+        self.assertEqual([str(p) for p in spry.check(spry.Project(self.a)) if p.level == "error"], [])
+
+    def test_a_batch_that_fails_check_or_names_a_missing_parent_writes_nothing(self):
+        head = self.remote_head()
+        entries = [{"type": "story", "parent": "F-1", "title": "Fine", "owner": None, "key": None},
+                   {"type": "story", "parent": "F-1", "title": "Ask a patron", "owner": None, "key": None}]
+        said = self.refused(lambda: spry.mint_batch(spry.Project(self.a), entries))
+        self.assertIn("the glossary says `Member`", said)
+        self.assertIn("S-3-ask-a-patron", said)
+        entries[1] = {"type": "story", "parent": "nope", "title": "X", "owner": None, "key": None}
+        self.assertIn("nope is not on origin/main yet", self.refused(lambda: spry.mint_batch(spry.Project(self.a), entries)))
+        self.assertEqual(self.remote_head(), head)
+        self.assertFalse(os.path.exists(os.path.join(self.a, F, "S-2-fine")))
+        for bad in ([], [{"type": "story"}], [{"type": "story", "title": "x", "key": "S-1"}],
+                    [{"type": "story", "title": "x", "colour": "red"}], [{"type": "story", "title": 5}],
+                    [{"type": ["story"], "title": "x"}], [{"type": "story", "title": "x", "parent": "f"},
+                                                         {"type": "feature", "title": "y", "key": "f"}]):
+            self.assertIn("--batch", self.refused(lambda: spry.batch_entries(bad)))
+
+    def test_a_race_retries_the_whole_batch(self):
+        real, raced = spry.git, []
+
+        def git(root, *args, **kw):
+            if "push" in args and not raced:
+                raced.append(True)
+                spry.mint(spry.Project(self.b), "story", "F-1", "Theirs")
+            return real(root, *args, **kw)
+
+        spry.git = git
+        self.addCleanup(setattr, spry, "git", real)
+        with contextlib.redirect_stderr(io.StringIO()):
+            paths = spry.mint_batch(spry.Project(self.a), [
+                {"type": "story", "parent": "F-1", "title": t, "owner": None, "key": None} for t in ("One", "Two")])
+        self.assertEqual([p.rsplit("/", 2)[-2] for p in paths], ["S-3-one", "S-4-two"])
 
     def test_a_subfolder_with_glob_characters_is_checked_out(self):
         folder = "docs [v2]*"
@@ -1092,6 +1172,13 @@ class Shared(unittest.TestCase):
         path = spry.mint(spry.Project(os.path.join(self.a, folder)), "task", "M-1", "Moved")
         self.assertTrue(path.endswith("T-1-moved/README.md"))
         self.assertEqual(self.git(self.a, "rev-parse", "HEAD"), self.remote_head())
+
+    def test_local_numbers_count_empty_and_hidden_folders_as_the_old_walk_did(self):
+        with open(os.path.join(self.a, "spry", "spry.config.json"), "w") as handle:
+            handle.write(json.dumps({**CONFIG, "mint": "local"}))
+        os.makedirs(os.path.join(self.a, "spry", "plan", "M-2-empty"))
+        os.makedirs(os.path.join(self.a, "spry", "plan", ".old", "M-7-x"))
+        self.assertTrue(spry.mint(spry.Project(self.a), "milestone", None, "Fresh").endswith("M-8-fresh/README.md"))
 
     def test_local_mint_behaves_as_before(self):
         with open(os.path.join(self.a, "spry", "spry.config.json"), "w") as handle:

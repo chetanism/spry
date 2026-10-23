@@ -72,7 +72,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.25.0"
+VERSION = "0.26.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -385,14 +385,16 @@ class Item:
 
 
 class Project:
-    def __init__(self, root: str):
+    def __init__(self, root: str, load: bool = True, config: dict | None = None):
+        """`load=False` reads the config alone — or takes `config`, read from another commit — for
+        `new`, `claim` and `release`, which open only the files they write (`Names`)."""
         self.root = os.path.abspath(root)
         self.spry = os.path.join(self.root, "spry")
         self.plan_dir = os.path.join(self.spry, "plan")
         self.problems: list[Problem] = []
         config_path = os.path.join(self.spry, "spry.config.json")
         try:
-            self.config = json.loads(read(config_path))
+            self.config = config if config is not None else json.loads(read(config_path))
         except FileNotFoundError:
             raise SystemExit(f"no spry/spry.config.json under {self.root}")
         except json.JSONDecodeError as e:
@@ -405,11 +407,14 @@ class Project:
         self.items: dict[str, Item] = {}
         self.top: list[Item] = []
         self.decisions: dict[str, str] = {}
+        self._memo: dict = {}
+        if not load:
+            self.tests, self.manual = {}, {}
+            return
         self._load_plan()
         self._load_decisions()
         self.tests = self._scan_tests()
         self.manual = {s.id: self._manual_checks(s) for s in self.of_type("story")}
-        self._memo: dict = {}
 
     # -- paths
 
@@ -785,18 +790,73 @@ def glossary(project: Project):
     path = os.path.join(project.root, project.config.get("glossary", "spry/knowledge/glossary.md"))
     if not os.path.isfile(native(path)):
         return path, []
-    text = read(path)
+    return path, glossary_terms(read(path))
+
+
+def glossary_terms(text: str) -> list:
     out = []
     for _i, cells in table_rows(enumerate(text.split("\n"))):
         if len(cells) >= 3 and cells[0].lower() != "term":
             out += [(b.strip(), cells[0]) for b in cells[2].split(",") if b.strip() and not b.strip().startswith("<")]
-    return path, out
+    return out
+
+
+def banned_patterns(banned: list) -> list:
+    return [(re.compile(r"(?<![\w-])" + re.escape(b) + r"(?![\w-])", re.I), b, t) for b, t in banned]
+
+
+def budget_patterns(project: Project) -> list:
+    return [(glob_regex(g), n, g) for g, n in project.config.get("budgets", {}).items()]
+
+
+def check_text(project: Project, path: str, text: str, fm: dict, banned_res: list, budgets: list, gloss_path: str,
+               exists=lambda path: os.path.exists(native(path))):
+    """`check` of one document's text: budget, guides and placeholders, links, glossary words.
+    `exists` says whether a link's target is there — on disk, or at a commit for `new` on the main branch."""
+    rel = project.rel(path)
+    lines = text.split("\n")
+
+    for regex, limit, pattern in budgets:
+        if regex.match(rel) and len(lines) > limit:
+            project.problem(path, len(lines), f"{len(lines)} lines, budget {limit} ({pattern}) — /spry:compact moves sections to the files that own them")
+
+    unfinished_ok = fm.get("state") in ("draft", "planned")
+    if not unfinished_ok:
+        in_fence = False
+        for n, line in enumerate(lines, 1):
+            if FENCE.match(line):
+                in_fence = not in_fence
+            if not in_fence and "<!-- guide:" in line:
+                project.problem(path, n, "template guide left in a finished document")
+        for n, line in prose(strip_blocks(text)):
+            for m in PLACEHOLDER.finditer(line):
+                word = m.group(1).split()[0].lower()
+                if word not in HTML_TAGS and not m.group(1).startswith(("http", "/")):
+                    project.problem(path, n, f"placeholder `<{m.group(1)}>` left in a finished document")
+
+    visible = strip_blocks(text)
+    skip = set()
+    for _level, title, at, end in sections(visible):
+        if title.lower() == "conflict check":
+            skip.update(range(at + 1, end + 1))
+    check_words = os.path.abspath(path) != os.path.abspath(gloss_path) and rel != "AGENTS.md"
+    for n, line in prose(visible):
+        for target in LINK.findall(line):
+            if target.startswith(("http:", "https:", "mailto:", "#")):
+                continue
+            base = project.root if target.startswith("/") else os.path.dirname(path)
+            resolved = os.path.normpath(os.path.join(base, target.split("#")[0].lstrip("/")))
+            if not exists(resolved):
+                project.problem(path, n, f"link to `{target}` does not resolve")
+        if check_words and n not in skip:
+            for regex, phrase, term in banned_res:
+                if regex.search(line):
+                    project.problem(path, n, f"`{phrase}` — the glossary says `{term}`")
 
 
 def check(project: Project):
     gloss_path, banned = glossary(project)
-    banned_res = [(re.compile(r"(?<![\w-])" + re.escape(b) + r"(?![\w-])", re.I), b, t) for b, t in banned]
-    budgets = [(glob_regex(g), n, g) for g, n in project.config.get("budgets", {}).items()]
+    banned_res, budgets = banned_patterns(banned), budget_patterns(project)
     by_doc = {i.doc: i for i in project.items.values()}
 
     for path in markdown_files(project):
@@ -814,45 +874,7 @@ def check(project: Project):
             fm, start, errors = parse_front_matter(text)
             for line, message in errors:
                 project.problem(path, line, message)
-        fm = fm or {}
-        lines = text.split("\n")
-
-        for regex, limit, pattern in budgets:
-            if regex.match(rel) and len(lines) > limit:
-                project.problem(path, len(lines), f"{len(lines)} lines, budget {limit} ({pattern}) — /spry:compact moves sections to the files that own them")
-
-        unfinished_ok = fm.get("state") in ("draft", "planned")
-        if not unfinished_ok:
-            in_fence = False
-            for n, line in enumerate(lines, 1):
-                if FENCE.match(line):
-                    in_fence = not in_fence
-                if not in_fence and "<!-- guide:" in line:
-                    project.problem(path, n, "template guide left in a finished document")
-            for n, line in prose(strip_blocks(text)):
-                for m in PLACEHOLDER.finditer(line):
-                    word = m.group(1).split()[0].lower()
-                    if word not in HTML_TAGS and not m.group(1).startswith(("http", "/")):
-                        project.problem(path, n, f"placeholder `<{m.group(1)}>` left in a finished document")
-
-        visible = strip_blocks(text)
-        skip = set()
-        for _level, title, at, end in sections(visible):
-            if title.lower() == "conflict check":
-                skip.update(range(at + 1, end + 1))
-        check_words = os.path.abspath(path) != os.path.abspath(gloss_path) and rel != "AGENTS.md"
-        for n, line in prose(visible):
-            for target in LINK.findall(line):
-                if target.startswith(("http:", "https:", "mailto:", "#")):
-                    continue
-                base = project.root if target.startswith("/") else os.path.dirname(path)
-                resolved = os.path.normpath(os.path.join(base, target.split("#")[0].lstrip("/")))
-                if not os.path.exists(native(resolved)):
-                    project.problem(path, n, f"link to `{target}` does not resolve")
-            if check_words and n not in skip:
-                for regex, phrase, term in banned_res:
-                    if regex.search(line):
-                        project.problem(path, n, f"`{phrase}` — the glossary says `{term}`")
+        check_text(project, path, text, fm or {}, banned_res, budgets, gloss_path)
 
     known = set(project.items) | set(project.decisions)
     for item in project.items.values():
@@ -1562,7 +1584,13 @@ def link_slice(project: Project, slice_id: str, fields: dict) -> str:
             fields[key] = str(fields[key]).lstrip("#")
             if not fields[key].isdigit():
                 raise SystemExit(f"`{key}` is a number, not {fields[key]!r}")
-    lines = item.text.split("\n")
+    write(item.doc, set_fields(item.text, fields))
+    return item.doc
+
+
+def set_fields(text: str, fields: dict) -> str:
+    """The document with these front-matter fields set — replaced where present, added at the end."""
+    lines = text.split("\n")
     end = next(i for i in range(1, len(lines)) if lines[i].strip() == "---")
     for key, value in fields.items():
         at = next((i for i in range(1, end) if lines[i].split(":", 1)[0] == key), None)
@@ -1571,8 +1599,7 @@ def link_slice(project: Project, slice_id: str, fields: dict) -> str:
             end += 1
         else:
             lines[at] = f"{key}: {value}".rstrip()
-    write(item.doc, "\n".join(lines))
-    return item.doc
+    return "\n".join(lines)
 
 
 def slugify(title: str) -> str:
@@ -1695,9 +1722,14 @@ def new_item(project: Project, kind: str, parent_id: str | None, title: str,
 # ---------------------------------------------------------------- mint and claim on the main branch
 
 # With `"mint": "main"` the main branch on the remote is the counter and the push is the lock: an ID
-# is taken, and a slice claimed, by a commit pushed straight to it from a temporary worktree. Two
-# sessions racing both build on the same tip; one push is refused as behind, and that one fetches,
-# recomputes and tries again. `"mint": "local"` (the default) takes the next number in this tree.
+# is taken, and a slice claimed, by a commit pushed straight to it. Two sessions racing both build on
+# the same tip; one push is refused as behind, and that one fetches, recomputes and tries again.
+# `"mint": "local"` (the default) takes the next number in this tree.
+#
+# Neither way loads the plan: the next number, the parent and the slice come from the plan's file
+# names (`Names`), and only the files written are opened. On the main branch the commit is made with
+# git's plumbing from the fetched tip — nothing is checked out — so where a virus scanner reads every
+# file opened, `new` costs the network and little else (Pulse: a minute before, mostly file opens).
 
 REMOTE = "origin"
 MAIN_TRIES = 5
@@ -1725,11 +1757,183 @@ def last_line(done: subprocess.CompletedProcess) -> str:
     return lines[-1] if lines else f"exit {done.returncode}"
 
 
-def drop_worktree(root: str, path: str):
-    git(root, "worktree", "remove", "--force", path)
-    if os.path.exists(native(path)):
-        shutil.rmtree(path, ignore_errors=True)
-    git(root, "worktree", "prune")
+class Names:
+    """The plan and the decisions by file name alone — from `git ls-tree` at a commit, or from the
+    folders of this tree — plus `read` for the few files `new`, `claim` and `release` open."""
+
+    def __init__(self, project: Project, commit: str | None = None):
+        self.project, self.commit = project, commit
+        self.cache: dict = {}
+        if commit:
+            self.top = git(project.root, "rev-parse", "--show-toplevel").stdout.strip()
+            self.prefix = git_prefix(project.root)
+            done = git(self.top, "ls-tree", "-r", "-z", "--name-only", f"{commit}:{self.prefix}spry")
+            self.files = {"spry/" + n for n in done.stdout.split("\0") if n}
+            self.dirs = {d for f in self.files for d in parents(f)}
+        else:
+            self.files, self.dirs = set(), set()
+            for top in (project.plan_dir, os.path.join(project.spry, "knowledge", "decisions")):
+                for dirpath, dirnames, filenames in walk_dir(top):
+                    self.files |= {project.rel(os.path.join(dirpath, f)) for f in filenames}
+                    self.dirs |= {project.rel(os.path.join(dirpath, d)) for d in dirnames}
+            self.dirs |= {d for f in self.files for d in parents(f)}
+
+    def read(self, rel: str) -> str | None:
+        if rel not in self.cache:
+            if self.commit:
+                done = git(self.top, "cat-file", "blob", f"{self.commit}:{self.prefix}{rel}")
+                self.cache[rel] = done.stdout if done.returncode == 0 else None
+            else:
+                path = os.path.join(self.project.root, rel)
+                self.cache[rel] = read(path) if os.path.isfile(native(path)) else None
+        return self.cache[rel]
+
+    def exists(self, rel: str) -> bool:
+        if rel in self.files or rel in self.dirs:
+            return True
+        if rel.startswith(("spry/",) if self.commit else ("spry/plan/", "spry/knowledge/decisions/")):
+            return False  # listed in full above
+        if self.commit:
+            return git(self.top, "cat-file", "-e", f"{self.commit}:{self.prefix}{rel}").returncode == 0
+        return os.path.exists(native(os.path.join(self.project.root, rel)))
+
+    def located(self) -> dict:
+        """{ID: [(type, document, folder or None)]}, paths from the project root."""
+        p, out = self.project, {}
+        for rel in sorted(self.files):
+            if not rel.startswith("spry/plan/") or any(n.startswith(".") for n in rel.split("/")):
+                continue  # as the plan loads: hidden folders are not part of it
+            head, name = rel.rsplit("/", 1)
+            if name == "README.md":
+                m = p.item_dir.match(head.rsplit("/", 1)[-1])
+                kind = p.type_of_prefix.get(m.group(1)) if m else None
+                if kind not in (None, "slice", "decision"):
+                    out.setdefault(f"{m.group(1)}-{m.group(2)}", []).append((kind, rel, head))
+            elif m := p.slice_file.match(name):
+                out.setdefault(f"{p.ids['slice']}-{m.group(1)}", []).append(("slice", rel, None))
+        return out
+
+    def numbers(self, kind: str) -> set:
+        """Every number of this type a name holds — an item that fails to load still holds its own."""
+        prefix = re.escape(self.project.ids[kind])
+        if kind == "decision":
+            taken = re.compile(r"^" + prefix + r"-(\d+)\b.*\.md$")
+            names = [f.rsplit("/", 1)[1] for f in self.files if f.startswith("spry/knowledge/decisions/")]
+        else:
+            taken = re.compile(r"^" + prefix + r"-(\d+)(?:-|\.md$|$)")
+            names = {n for f in self.files | self.dirs if f.startswith("spry/plan/") for n in f.split("/")[2:]}
+        return {int(m.group(1)) for n in names if (m := taken.match(n))}
+
+
+def parents(rel: str):
+    while "/" in rel:
+        rel = rel.rsplit("/", 1)[0]
+        yield rel
+
+
+def batch_entries(raw) -> list:
+    """`new --batch`: a JSON list of {type, title, parent?, owner?, key?}. `parent` names an item in
+    the plan or the `key` of an earlier entry."""
+    if not isinstance(raw, list) or not raw:
+        raise SystemExit("--batch takes a JSON list of {type, title, parent, owner, key}")
+    keys, out = set(), []
+    for n, entry in enumerate(raw, 1):
+        if not isinstance(entry, dict) or set(entry) - {"type", "title", "parent", "owner", "key"}:
+            raise SystemExit(f"--batch entry {n}: an object with type, title and optionally parent, owner, key")
+        if not all(isinstance(entry.get(k), str) and entry[k].strip() for k in ("type", "title")) \
+                or not all(isinstance(entry.get(k), (str, type(None))) for k in ("parent", "owner")):
+            raise SystemExit(f"--batch entry {n}: `type` and `title` are needed, and every value is a string")
+        key = entry.get("key")
+        if key is not None:
+            if not isinstance(key, str) or re.fullmatch(r"[A-Z]+-\d+", key) or key in keys:
+                raise SystemExit(f"--batch entry {n}: `key` {key!r} must be unique and not look like an ID")
+            keys.add(key)
+        out.append({k: entry.get(k) for k in ("type", "title", "parent", "owner", "key")})
+    for n, entry in enumerate(out, 1):
+        later = {e["key"] for e in out[n:]}
+        if entry["parent"] and entry["parent"] in later and entry["parent"] not in {e["key"] for e in out[:n - 1]}:
+            raise SystemExit(f"--batch entry {n}: its parent `{entry['parent']}` comes later — put parents first")
+    return out
+
+
+def plan_new(project: Project, names: Names, entries: list, missing) -> list:
+    """[(ID, title, path from the root, text)] for each entry, numbered on from `names` in order —
+    nothing written. `missing(parent)` is the refusal for a parent the plan does not have."""
+    today, made, keyed, numbers, templates = date.today().isoformat(), [], {}, {}, {}
+    located = names.located()
+    for entry in entries:
+        kind, title, parent_id, owner = entry["type"], entry["title"].strip(), entry["parent"], entry["owner"]
+        if kind in DOCUMENT_KINDS:
+            raise SystemExit(f"a {kind} has no ID of its own — `new {kind}` makes one at a time")
+        if kind not in project.ids:
+            raise SystemExit(f"unknown type `{kind}` — one of {', '.join([*project.ids, *DOCUMENT_KINDS])}")
+        if kind not in templates:
+            templates[kind] = names.read(f"spry/process/templates/{kind}.md")
+            if templates[kind] is None:
+                raise SystemExit(f"no template spry/process/templates/{kind}.md — bring the process in with `vendor`")
+            numbers[kind] = names.numbers(kind)
+        parent = None
+        if parent_id:
+            if parent_id in keyed:
+                parent = keyed[parent_id]
+            else:
+                found = [Item(t, parent_id, 0, doc, folder, {}, "", 0) for t, doc, folder in located.get(parent_id, [])]
+                if not found:
+                    raise SystemExit(missing(parent_id))
+                if len(found) > 1:
+                    raise SystemExit(f"{parent_id} is {' and '.join(i.doc for i in found)} — `check` names the "
+                                     f"one to rename; fix that first")
+                parent = found[0]
+        num = max(numbers[kind], default=0) + 1
+        numbers[kind].add(num)
+        ident, slug = f"{project.ids[kind]}-{num}", slugify(title)
+        if kind == "decision":
+            path = f"spry/knowledge/decisions/{ident}-{slug}.md"
+        elif kind == "slice":
+            if parent is None or parent.type not in ("story", "task", "bug"):
+                raise SystemExit("a slice needs --parent: a story, task or bug")
+            path = f"{parent.folder}/{ident}-{slug}.md"
+        else:
+            container = {"task": "tasks", "bug": "bugs"}.get(kind)
+            if not project._placed_well(kind, parent, container):
+                where = f"{parent.type} {parent.id}" if parent else "the top of the plan (pass --parent)"
+                raise SystemExit(f"a {kind} cannot sit under {where}")
+            folder = "/".join(filter(None, (parent.folder if parent else "spry/plan", container, f"{ident}-{slug}")))
+            path = f"{folder}/README.md"
+        folder = os.path.dirname(path) if path.endswith("/README.md") else None
+        if names.exists(folder or path):
+            raise SystemExit(f"{folder or path} already exists")
+        if entry["key"]:
+            keyed[entry["key"]] = Item(kind, ident, num, path, folder, {}, "", 0)
+        made.append((ident, title, path, fill_template(templates[kind], kind, ident, title, owner, today)))
+    return made
+
+
+def check_new(project: Project, names: Names, files: dict):
+    """`check` of the files about to be written, by their text, before anything is written: the rest
+    of the plan is not loaded, and a template, title or glossary that fails stops here."""
+    gloss = project.config.get("glossary", "spry/knowledge/glossary.md")
+    text = names.read(gloss)
+    banned_res = banned_patterns(glossary_terms(text) if text else [])
+    budgets = budget_patterns(project)
+
+    def exists(path: str) -> bool:
+        rel = project.rel(path)
+        return rel in files or any(f.startswith(rel + "/") for f in files) or names.exists(rel)
+
+    project.problems = []
+    for rel, text in files.items():
+        path = os.path.join(project.root, rel)
+        fm, _start, errors = parse_front_matter(text)
+        for line, message in errors:
+            project.problem(path, line, message)
+        for key in ("id", "title", "state"):
+            if not (fm or {}).get(key):
+                project.problem(path, 1, f"front-matter has no `{key}`")
+        check_text(project, path, text, fm or {}, banned_res, budgets, os.path.join(project.root, gloss), exists)
+    mine = [p for p in project.problems if p.level == "error"]
+    if mine:
+        raise SystemExit("the new item fails `check` — nothing written:\n" + "\n".join(map(str, mine)))
 
 
 def mid_operation(project: Project) -> str | None:
@@ -1745,19 +1949,58 @@ def mid_operation(project: Project) -> str | None:
 
 
 NO_HOOKS = ("-c", f"core.hooksPath={os.devnull}")
-SPARSE = ("-c", "core.sparseCheckout=true", "-c", "core.sparseCheckoutCone=false")
+
+
+def commit_on(names: Names, files: dict, message: str) -> subprocess.CompletedProcess:
+    """A commit on `names.commit` with `files` (paths from the project root) written — by plumbing,
+    in an index of its own: no worktree, no checkout, no hook, and nothing here changes."""
+    folder = tempfile.mkdtemp(prefix="spry-index-")
+    try:
+        env = {**os.environ, "GIT_INDEX_FILE": os.path.join(folder, "index")}
+        done = git(names.top, "read-tree", names.commit, env=env)
+        entries = []
+        for rel, text in files.items():
+            if done.returncode != 0:
+                return done
+            done = git(names.top, "hash-object", "-w", "--stdin", input=text)
+            entries.append(f"100644 {done.stdout.strip()}\t{names.prefix}{rel}")
+        for args, given in ((("update-index", "--add", "--index-info"), "\n".join(entries) + "\n"),
+                            (("write-tree",), None)):
+            if done.returncode != 0:
+                return done
+            done = git(names.top, *args, input=given, env=env)
+        if done.returncode != 0:
+            return done
+        subject, _, body = message.partition("\n\n")
+        return git(names.top, "commit-tree", done.stdout.strip(), "-p", names.commit, "-m", subject,
+                   *(("-m", body) if body else ()))
+    finally:
+        shutil.rmtree(folder, ignore_errors=True)
+
+
+def pushed(done: subprocess.CompletedProcess, main: str) -> bool:
+    """Did `push --porcelain` update the main branch? Its line starts with a flag: ` ` fast-forward,
+    `*` new, `=` up to date; `!` is refused."""
+    lines = [l.split("\t") for l in done.stdout.splitlines()]
+    return done.returncode == 0 and any(len(l) >= 2 and l[0] in (" ", "*", "+", "=")
+                                        and l[1].endswith(f":refs/heads/{main}") for l in lines)
+
+
+def push_said(done: subprocess.CompletedProcess) -> str:
+    refused = [l.split("\t")[2] for l in done.stdout.splitlines() if l.startswith("!\t") and l.count("\t") >= 2]
+    return refused[0] if refused else last_line(done)
 
 
 def on_main(project: Project, step, ready=None) -> tuple:
-    """Run `step(project on the remote main branch)` in a temporary worktree, commit what it wrote with
-    the message it returns, and push to the main branch — again from a fresh fetch when the remote moved
-    under the push. `ready(tip)` runs after each fetch and may refuse before anything is written.
-    Returns (step's result, the pushed commit, tries). The worktree is always removed; nothing is
-    written to this tree, and no shared ref is written: two worktrees of one clone can mint at once."""
+    """Run `step(names of the remote main branch)`, which returns (result, commit message, {path:
+    text}), commit those files on that tip and push it to the main branch — again from a fresh fetch
+    when the remote moved under the push. `ready(tip)` runs after each fetch and may refuse before
+    anything is written. `names.project` carries the main branch's config. Returns (step's result,
+    the pushed commit, tries). Nothing is written to this tree, and no shared ref is written: two
+    worktrees of one clone can mint at once."""
     main = main_branch(project)
     if git(project.root, "rev-parse", "--show-toplevel").returncode != 0:
         raise SystemExit("`mint: main` needs a git repository — set `mint` to local in spry/spry.config.json")
-    prefix = git_prefix(project.root)
     url = git(project.root, "remote", "get-url", REMOTE).stdout.strip()
     if not url:
         raise SystemExit(f"no remote `{REMOTE}` — nothing written. `mint: main` takes IDs from {REMOTE}/{main}")
@@ -1771,43 +2014,37 @@ def on_main(project: Project, step, ready=None) -> tuple:
                              f"The ID comes from {REMOTE}/{main}; never from this tree alone while `mint` is main")
         if ready:
             ready(tip)
-        tmp = tempfile.mkdtemp(prefix="spry-main-")
+        names = Names(project, tip)
+        config = names.read("spry/spry.config.json")
+        if config is None:
+            raise SystemExit(f"spry is not on {REMOTE}/{main} yet — nothing written. Keep `mint` local "
+                             f"until the setup is merged; IDs are taken on {main} after that")
         try:
-            # Only `spry/` is checked out: a whole large repository took minutes where a virus scanner
-            # reads every file written. Sparse by `-c`, so the project's own git config is never changed;
-            # hooks off, so the project's checkout and commit hooks never run here.
-            done = git(project.root, *NO_HOOKS, "worktree", "add", "-q", "--no-checkout", "--detach", tmp, tip)
-            if done.returncode == 0:
-                patterns = os.path.join(tmp, git(tmp, "rev-parse", "--git-path", "info/sparse-checkout").stdout.strip())
-                os.makedirs(native(os.path.dirname(patterns)), exist_ok=True)
-                write(patterns, "/" + re.sub(r"([\\*?\[\]!#])", r"\\\1", prefix) + "spry/\n")
-                done = git(tmp, *NO_HOOKS, *SPARSE, "checkout", "-q", "--detach", tip)
-            if done.returncode != 0:
-                raise SystemExit(f"cannot make a worktree of {REMOTE}/{main}: {last_line(done)} — nothing written")
-            if not os.path.isfile(native(os.path.join(tmp, prefix, "spry", "spry.config.json"))):
-                raise SystemExit(f"spry is not on {REMOTE}/{main} yet — nothing written. Keep `mint` local "
-                                 f"until the setup is merged; IDs are taken on {main} after that")
-            result, message = step(Project(os.path.join(tmp, prefix)))
-            git(tmp, *SPARSE, "add", "-A", "--", os.path.join(prefix, "spry") if prefix else "spry")
-            # Hooks are skipped: this commit holds one checked document, and a worktree has no installed tools.
-            done = git(tmp, *NO_HOOKS, *SPARSE, "commit", "-q", "--no-verify", "-m", message)
-            if done.returncode != 0:
-                raise SystemExit(f"cannot commit on {main}: {last_line(done)} — nothing written")
-            commit = git(tmp, "rev-parse", "HEAD").stdout.strip()
-            done = git(tmp, *NO_HOOKS, "push", "-q", "--no-verify", url, f"{commit}:refs/heads/{main}")
-            # Judge by where the remote stands, not by the message: a race reads "fetch first",
-            # "non-fast-forward" or "cannot lock ref" depending on timing and host.
-            now = remote_tip(project, main)
-            if now == commit:
-                return result, commit, attempt
-            if now is None:
-                raise SystemExit(f"cannot reach {REMOTE} to push `{main}` ({last_line(done)}) — nothing written")
-            if now == tip:
-                raise SystemExit(f"{REMOTE} refused the push to `{main}` ({last_line(done)}) — nothing written. "
-                                 f"A project that never commits to {main} directly sets `mint` to local")
-            print(f"{main} moved while writing — fetching and trying again ({attempt}/{MAIN_TRIES})", file=sys.stderr)
-        finally:
-            drop_worktree(project.root, tmp)
+            config = json.loads(config)
+        except json.JSONDecodeError as e:
+            raise SystemExit(f"spry/spry.config.json on {REMOTE}/{main} is not valid JSON: {e} — nothing written")
+        if not isinstance(config, dict):
+            raise SystemExit(f"spry/spry.config.json on {REMOTE}/{main} is not a JSON object — nothing written")
+        names.project = Project(project.root, load=False, config=config)
+        result, message, files = step(names)
+        done = commit_on(names, files, message)
+        if done.returncode != 0:
+            raise SystemExit(f"cannot commit on {main}: {last_line(done)} — nothing written")
+        commit = done.stdout.strip()
+        done = git(project.root, *NO_HOOKS, "push", "--porcelain", "--no-verify", url, f"{commit}:refs/heads/{main}")
+        if pushed(done, main):
+            return result, commit, attempt
+        # Judge a failure by where the remote stands, not by the message: a race reads "fetch first",
+        # "non-fast-forward" or "cannot lock ref" depending on timing and host.
+        now = remote_tip(project, main)
+        if now == commit:
+            return result, commit, attempt
+        if now is None:
+            raise SystemExit(f"cannot reach {REMOTE} to push `{main}` ({push_said(done)}) — nothing written")
+        if now == tip:
+            raise SystemExit(f"{REMOTE} refused the push to `{main}` ({push_said(done)}) — nothing written. "
+                             f"A project that never commits to {main} directly sets `mint` to local")
+        print(f"{main} moved while writing — fetching and trying again ({attempt}/{MAIN_TRIES})", file=sys.stderr)
     raise SystemExit(f"`{main}` moved under every one of {MAIN_TRIES} pushes — nothing written; try again")
 
 
@@ -1841,29 +2078,41 @@ def bring_in(project: Project, commit: str, what: str):
 
 def mint(project: Project, kind: str, parent_id: str | None, title: str, owner: str | None = None,
          dependency: str | None = None) -> str:
-    """`new`: with `mint: main`, take the ID on the remote main branch, then bring the file here."""
-    if kind in DOCUMENT_KINDS or mint_mode(project) == "local":
+    """`new` of one item or document. Returns its path."""
+    if kind in DOCUMENT_KINDS:
         return new_item(project, kind, parent_id, title, owner, dependency=dependency)
-    if kind not in project.ids:
-        raise SystemExit(f"unknown type `{kind}` — one of {', '.join([*project.ids, *DOCUMENT_KINDS])}")
+    return mint_batch(project, [{"type": kind, "title": title, "parent": parent_id, "owner": owner, "key": None}])[0]
+
+
+def mint_batch(project: Project, entries: list) -> list:
+    """`new`: items numbered on in order, checked, and written all together or not at all — with
+    `mint: main` as one commit pushed to the remote main branch, then brought here. Returns the paths."""
+    if mint_mode(project) == "local":
+        names = Names(project)
+        made = plan_new(project, names, entries, lambda parent: f"no item {parent} in the plan")
+        check_new(project, names, {path: text for _, _, path, text in made})
+        for _, _, path, text in made:
+            os.makedirs(native(os.path.dirname(os.path.join(project.root, path))), exist_ok=True)
+            write(os.path.join(project.root, path), text)
+        return [os.path.join(project.root, path) for _, _, path, _ in made]
     main = main_branch(project)
 
-    def step(there: Project):
-        if parent_id and parent_id not in there.items:
-            raise SystemExit(f"{parent_id} is not on {REMOTE}/{main} yet — nothing written. Merge it first: "
-                             f"a new item takes its ID on {main}, so its parent must be there")
-        ident = next_id(there, kind)
-        path = new_item(there, kind, parent_id, title, owner, dependency=dependency)
-        rel = there.rel(path)
-        own = there.rel(os.path.dirname(path)) + "/" if path.endswith("README.md") else rel
-        mine = [p for p in check(Project(there.root)) if p.level == "error" and p.path.startswith(own)]
-        if mine:
-            raise SystemExit("the new item fails `check` — nothing written:\n" + "\n".join(map(str, mine)))
-        return (ident, rel), f"docs(plan): new {ident} {title}"
+    def step(names: Names):
+        made = plan_new(names.project, names, entries,
+                        lambda parent: f"{parent} is not on {REMOTE}/{main} yet — nothing written. Merge it first: "
+                                       f"a new item takes its ID on {main}, so its parent must be there")
+        files = {path: text for _, _, path, text in made}
+        check_new(names.project, names, files)
+        if len(made) == 1:
+            message = f"docs(plan): new {made[0][0]} {made[0][1]}"
+        else:
+            message = (f"docs(plan): new {', '.join(i for i, _, _, _ in made)}\n\n"
+                       + "\n".join(f"- {i} {t}" for i, t, _, _ in made))
+        return made, message, files
 
-    (ident, rel), commit, _ = on_main(project, step, can_bring_in(project))
-    bring_in(project, commit, ident)
-    return os.path.join(project.root, rel)
+    made, commit, _ = on_main(project, step, can_bring_in(project))
+    bring_in(project, commit, ", ".join(i for i, _, _, _ in made))
+    return [os.path.join(project.root, path) for _, _, path, _ in made]
 
 
 def branch_of(item: Item) -> str:
@@ -1893,6 +2142,19 @@ def slice_branch(item: Item) -> str:
     return os.path.basename(item.doc)[:-3].lower()
 
 
+def slice_named(names: Names, slice_id: str) -> Item | None:
+    """The slice, read from its one file — None when the plan has no slice by that ID."""
+    found = [doc for kind, doc, _ in names.located().get(slice_id, []) if kind == "slice"]
+    if len(found) > 1:
+        raise SystemExit(f"{slice_id} is {' and '.join(found)} — `check` names the one to rename; fix that first")
+    text = names.read(found[0]) if found else None
+    if text is None:
+        return None
+    fm, start, _ = parse_front_matter(text)
+    return Item("slice", slice_id, int(slice_id.rsplit("-", 1)[1]), os.path.join(names.project.root, found[0]),
+                None, fm or {}, text, start)
+
+
 def claim(project: Project, slice_id: str, owner: str | None = None, switch: bool = True) -> str:
     """`slice-open`'s first step: with `mint: main`, set `branch:` on the slice on the remote main branch —
     refused when someone holds it — then cut the branch from that commit. Returns the branch."""
@@ -1900,7 +2162,7 @@ def claim(project: Project, slice_id: str, owner: str | None = None, switch: boo
     shared = mint_mode(project) == "main"
 
     def refuse(s: Item | None, where: str):
-        if s is None or s.type != "slice":
+        if s is None:
             raise SystemExit(f"no slice {slice_id}{where}")
         taken = holder(s)
         if taken:
@@ -1917,14 +2179,15 @@ def claim(project: Project, slice_id: str, owner: str | None = None, switch: boo
         raise SystemExit("nothing written: this tree has uncommitted changes, and claim switches to a branch "
                          f"cut from {REMOTE}/{main} — commit or stash them, or pass --no-switch")
     if shared:
-        def step(there: Project):
-            branch = refuse(there.items.get(slice_id), f" on {REMOTE}/{main} — merge the slices first")
-            link_slice(there, slice_id, {"branch": branch, **({"owner": owner} if owner else {})})
-            return branch, f"docs(slice): claim {slice_id} for {branch}"
+        def step(names: Names):
+            s = slice_named(names, slice_id)
+            branch = refuse(s, f" on {REMOTE}/{main} — merge the slices first")
+            text = set_fields(s.text, {"branch": branch, **({"owner": owner} if owner else {})})
+            return branch, f"docs(slice): claim {slice_id} for {branch}", {names.project.rel(s.doc): text}
 
         branch, start, _ = on_main(project, step)
     else:
-        branch = refuse(project.items.get(slice_id), "")
+        branch = refuse(slice_named(Names(project), slice_id), "")
         start = main if git(project.root, "rev-parse", "-q", "--verify", main).returncode == 0 else f"{REMOTE}/{main}"
     make = ["switch", "-q", "--no-track", "-c", branch, start] if switch else ["branch", "--no-track", branch, start]
     done = git(project.root, *make)
@@ -1939,19 +2202,22 @@ def release(project: Project, slice_id: str) -> str:
     branch with `mint: main`, in this tree otherwise. The branch itself is left for its owner."""
     main = main_branch(project)
 
-    def free(there: Project):
-        s = there.items.get(slice_id)
-        if s is None or s.type != "slice":
-            raise SystemExit(f"no slice {slice_id}" + (f" on {REMOTE}/{main}" if there is not project else ""))
+    def free(names: Names):
+        s = slice_named(names, slice_id)
+        if s is None:
+            raise SystemExit(f"no slice {slice_id}" + (f" on {REMOTE}/{main}" if names.commit else ""))
         if not claimed(s):
             raise SystemExit(f"{slice_id} is not held — " + (holder(s) or "planned, with no branch"))
         was = branch_of(s) or "no branch"
-        link_slice(there, slice_id, {"state": "planned", "branch": ""})
-        return was, f"docs(slice): release {slice_id} from {was}"
+        text = set_fields(s.text, {"state": "planned", "branch": ""})
+        return was, f"docs(slice): release {slice_id} from {was}", {names.project.rel(s.doc): text}
 
     if mint_mode(project) == "main":
         return on_main(project, free)[0]
-    return free(project)[0]
+    was, _, files = free(Names(project))
+    for rel, text in files.items():
+        write(os.path.join(project.root, rel), text)
+    return was
 
 
 # ---------------------------------------------------------------- pr-body
@@ -2105,9 +2371,13 @@ class PlanError(Exception):
     pass
 
 
-def git(root: str, *args: str) -> subprocess.CompletedProcess:
+def git(root: str, *args: str, input: str | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
+    if input is not None:  # as bytes: a text pipe turns "\n" into "\r\n" on Windows, and the blob with it
+        done = subprocess.run(["git", "-C", root, *args], capture_output=True, input=input.encode("utf-8"), env=env)
+        return subprocess.CompletedProcess(done.args, done.returncode, done.stdout.decode("utf-8", "replace"),
+                                           done.stderr.decode("utf-8", "replace"))
     return subprocess.run(["git", "-C", root, *args], capture_output=True, text=True, encoding="utf-8",
-                          errors="replace")
+                          errors="replace", env=env)
 
 
 def git_prefix(root: str) -> str:
@@ -4281,10 +4551,12 @@ def main(argv=None) -> int:
     p.add_argument("slice")
     p = sub.add_parser("next", help="next free ID for a type")
     p.add_argument("type")
-    p = sub.add_parser("new", help="create an item from its template, with the next ID, in the right folder")
-    p.add_argument("type")
+    p = sub.add_parser("new", help="create items from their templates, with the next IDs, in the right folders")
+    p.add_argument("type", nargs="?")
     p.add_argument("--parent")
-    p.add_argument("--title", required=True)
+    p.add_argument("--title", action="append", help="repeat for several items of one type under one parent")
+    p.add_argument("--batch", metavar="FILE", help="a JSON list of {type, title, parent, owner, key}, or - for stdin; "
+                                                   "a parent may be the key of an earlier entry")
     p.add_argument("--owner")
     p.add_argument("--dependency", help="external: the service the behaviour belongs to")
     p = sub.add_parser("issue-body", help="a slice's issue: the work order as agreed, or with --close its close summary")
@@ -4398,7 +4670,9 @@ def main(argv=None) -> int:
     if not root:
         print("not inside a spry project — no spry/spry.config.json above here; pass --root", file=sys.stderr)
         return 2
-    project = Project(root)
+    # `new`, `claim` and `release` open only the files they write (`Names`); a document needs the plan.
+    light = args.command in ("claim", "release") or (args.command == "new" and args.type not in DOCUMENT_KINDS)
+    project = Project(root, load=not light)
 
     if args.command == "check":
         if args.base:
@@ -4461,7 +4735,28 @@ def main(argv=None) -> int:
         print(next_id(project, args.type))
         return 0
     if args.command == "new":
-        print(project.rel(mint(project, args.type, args.parent, args.title, args.owner, dependency=args.dependency)))
+        if args.batch:
+            if args.type or args.title or args.parent or args.owner:
+                print("--batch carries the type, title, parent and owner of each item — give nothing else", file=sys.stderr)
+                return 2
+            try:
+                raw = json.loads(sys.stdin.read() if args.batch == "-" else read(args.batch))
+            except (OSError, ValueError) as e:
+                print(f"cannot read {args.batch}: {e}", file=sys.stderr)
+                return 2
+            paths = mint_batch(project, batch_entries(raw))
+        elif not args.type or not args.title:
+            print("new needs a type and --title, or --batch", file=sys.stderr)
+            return 2
+        elif args.type in DOCUMENT_KINDS:
+            if len(args.title) > 1:
+                print(f"a {args.type} is made one at a time — one --title", file=sys.stderr)
+                return 2
+            paths = [mint(project, args.type, args.parent, args.title[0], args.owner, dependency=args.dependency)]
+        else:
+            paths = mint_batch(project, [{"type": args.type, "title": t, "parent": args.parent, "owner": args.owner,
+                                          "key": None} for t in args.title])
+        print("\n".join(project.rel(p) for p in paths))
         return 0
     if args.command == "claim":
         branch = claim(project, args.slice, args.owner, switch=not args.no_switch)

@@ -82,9 +82,10 @@ start on <code>SL-4</code>. The <code>mint</code> setting says where an ID is ta
   </tbody>
 </table></div>
 
-<p>With <code>mint: main</code>, <code>spry.py new</code> writes the new item in a temporary checkout of the main
-branch, commits <code>docs(plan): new S-7 …</code>, pushes it, and merges that commit into your branch — so
-the ID is final the moment you have it. Offline, or if the push is refused for any other reason, it stops
+<p>With <code>mint: main</code>, <code>spry.py new</code> takes the next number from the main branch on the
+remote, commits <code>docs(plan): new S-7 …</code> there without checking anything out, pushes it, and merges
+that commit into your branch — so the ID is final the moment you have it. Several items in one
+<code>new</code> share one commit and one push. Offline, or if the push is refused for any other reason, it stops
 and writes nothing; it never falls back to a local number.</p>
 
 <pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py claim SL-4 --owner Ravi   <span class="c"># take it before writing the work order</span>

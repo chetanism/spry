@@ -370,7 +370,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `index --restore <base>` | on a branch: put back the base's copy of each generated block it changed |
 | `related <file>` | conflict-check candidates (§10) |
 | `next <type>` | next free ID |
-| `new <type> --parent --title` | create an item from its template, next ID, right folder; with `mint: main` the ID is taken on the main branch (§20) |
+| `new <type> --parent --title…` · `new --batch <file>` | create items from their templates, next IDs, right folders — several in one call, all or none; with `mint: main` the IDs are taken on the main branch in one push (§20) |
 | `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it — and cut its branch; give it back |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
@@ -460,6 +460,11 @@ in `spry/history/writ.md`, then retires `canon/`.
   slice**, not `state: open`: `check` refuses an open slice without its work order and conflict
   check, which the main branch cannot have yet. `mint` defaults to `local`, so nothing pushes to
   the main branch until a project says it may.
+- 2026-10-24 — `new`, `claim` and `release` never load the plan (CH-37). The next number, the parent
+  and the slice come from file names (`git ls-tree` on the main branch, a folder walk locally); only
+  the template, the glossary and the file changed are read. The pre-push `check` is of the new
+  files' text — what a fresh template can get wrong — not the whole plan, which cost Pulse 20 s a
+  run. A batch is all or nothing: one commit, renumbered whole on a race.
 
 ## 21. Built
 
@@ -558,3 +563,8 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-22 — plans deeper than Windows' 260 characters: every file call takes the `\\?\` prefix on
   Windows, a plan document that still cannot be read is a `check` error instead of a crash, `check` warns at
   a path over 200 characters, and new slugs stop at 20 (CH-36, 0.25.0). From pulse-v2's Windows users.
+- 2026-10-24 — `new`, `claim` and `release` read the plan by file name and open only what they write;
+  with `mint: main` the commit is made by git plumbing on the fetched tip — no worktree, no checkout
+  — and checked by its text alone. `new` takes several items, a feature and its stories included, in
+  one commit and one push (CH-37, 0.26.0). From pulse-v2, where a virus scanner made each file open
+  cost 11 ms and one `new` a minute.

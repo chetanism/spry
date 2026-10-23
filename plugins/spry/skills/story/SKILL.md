@@ -11,7 +11,8 @@ argument-hint: "[parent ID] [title]"
 - **Template:** `spry/process/templates/story.md` — its `audience` sets the tone of the document
   and of this conversation.
 - Parent: a feature. Without one in `$ARGUMENTS`, list the ready features and ask.
-- One run may write several stories; offer the list of story titles first, then do each in turn.
+- One run may write several stories; offer the list of story titles first, create them all in one
+  `spry.py new story --parent <F> --title "…" --title "…"` (`planning.md` §3), then do each in turn.
 - Criteria rules: `planning.md` §4. Offer QA's view: "how would you check this by hand?"
 - **No spry here?** If `spry/spry.config.json` is missing, stop and offer `/spry:init` or
   `/spry:adopt`.

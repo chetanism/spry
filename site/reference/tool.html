@@ -170,14 +170,20 @@ that changed the plan or a test.</p>
 <h2>Creating and linking items</h2>
 
 <h3 id="new">new</h3>
-<p>Creates an item from its template, with the next ID, in the right folder.</p>
-<pre><code>spry new [--parent PARENT] --title TITLE [--owner OWNER] [--dependency DEPENDENCY] type</code></pre>
+<p>Creates items from their templates, with the next IDs, in the right folders — one, several, or a batch
+of mixed types. All are written, or none.</p>
+<pre><code>spry new [--parent PARENT] --title TITLE [--title TITLE …] [--owner OWNER] [--dependency DEPENDENCY] type
+spry new --batch FILE</code></pre>
 <ul>
   <li>Item types, with IDs: <code>milestone</code>, <code>epic</code>, <code>feature</code>, <code>story</code>, <code>slice</code>, <code>task</code>, <code>bug</code>, <code>decision</code>.</li>
   <li>Documents without an ID of their own: <code>checks</code> (a story's QA file; <code>--parent</code> is the story), <code>convention</code>, <code>external</code> (<code>--dependency</code> names the service), <code>audit</code>.</li>
-  <li>With <code>mint: main</code>, the ID is taken on the main branch, pushed there, and merged into the current branch, so two sessions never take one number.</li>
+  <li>Repeat <code>--title</code> for several items of one type under one parent; they are numbered in the order given.</li>
+  <li><code>--batch</code> reads a JSON list of <code>{"type", "title", "parent", "owner", "key"}</code> from a file, or stdin with <code>-</code>. A <code>parent</code> names an item in the plan or the <code>key</code> of an earlier entry, so a feature and its stories go in one call.</li>
+  <li>With <code>mint: main</code>, the IDs are taken on the main branch in one commit and one push, then merged into the current branch, so two sessions never take one number. Nothing is checked out.</li>
 </ul>
-<pre data-label="Example"><code><span class="p">$ </span>python3 spry/tool/spry.py new story --parent F-1 --title "Loan limit" --owner Asha</code></pre>
+<pre data-label="Example"><code><span class="p">$ </span>python3 spry/tool/spry.py new story --parent F-1 --title "Loan limit" --title "Overdue block" --owner Asha
+<span class="p">$ </span>echo '[{"key": "f", "type": "feature", "parent": "E-2", "title": "Renewals"},
+        {"type": "story", "parent": "f", "title": "Renew a loan"}]' | python3 spry/tool/spry.py new --batch -</code></pre>
 
 <h3 id="next">next</h3>
 <p>The next free ID for a type.</p>

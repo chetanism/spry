@@ -11,5 +11,7 @@ argument-hint: "[milestone ID to continue, or a title]"
 - **Template:** `spry/process/templates/milestone.md` — its `audience` sets the tone of the document
   and of this conversation.
 - No parent. Ask for the outcome in one sentence if `$ARGUMENTS` is empty; offer the roadmap's `Later` lines as candidates.
+- Several milestones named at once → create their drafts in one `spry.py new` (`planning.md` §3),
+  then define each in turn.
 - **No spry here?** If `spry/spry.config.json` is missing, stop and offer `/spry:init` or
   `/spry:adopt`.

@@ -11,4 +11,5 @@ argument-hint: "<story, task or bug ID>"
   (`python3 spry/tool/spry.py status`) and ask.
 - Every criterion of a story must be covered by its slices between them; say which slice covers each.
 - A slice that needs an earlier one names it in `blocked_by`; one that merely comes after it does not.
-- Creates `planned` slices only — no branch, no code. `/spry:slice-open` comes next.
+- Creates `planned` slices only, all in one `spry.py new slice` with a `--title` each — no branch,
+  no code. `/spry:slice-open` comes next.

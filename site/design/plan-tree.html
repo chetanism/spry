@@ -120,7 +120,7 @@ story" and both pick <code>S-7</code>. The <code>mint</code> setting decides how
 <thead><tr><th><code>mint</code></th><th>How an ID is taken</th><th>Best for</th></tr></thead>
 <tbody>
 <tr><td><code>local</code> <span class="badge">default</span></td><td>The next free number in your working tree. Two branches can take the same number; <code>check --base</code> names the clash before merge, and the later branch renames.</td><td>Solo work, or a main branch that accepts no direct commits</td></tr>
-<tr><td><code>main</code></td><td>The main branch on the remote is the counter and the push is the lock: <code>new</code> takes the number there, pushes it, and merges that commit into your branch. Two sessions can never get the same number. It works in a temporary worktree holding only <code>spry/</code>, with git hooks off and your git config untouched.</td><td>Several sessions or people creating items in parallel</td></tr>
+<tr><td><code>main</code></td><td>The main branch on the remote is the counter and the push is the lock: <code>new</code> takes the number there, pushes it, and merges that commit into your branch. Two sessions can never get the same number. Nothing is checked out: the commit is made from the file names on the main branch, with git hooks off and your git config untouched, so it costs the fetch and the push. Several items in one <code>new</code> share one commit and one push.</td><td>Several sessions or people creating items in parallel</td></tr>
 </tbody></table></div>
 <p><strong>Why merge it in, rather than write the same file on the branch?</strong> Because the branch
 then fills that file in, and git would see two different additions of one path — a conflict at

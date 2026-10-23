@@ -647,3 +647,27 @@ Entry format:
 - **Migrate:** nothing required. To keep editors and git working too, either shorten the folders
   `check` warns about (`git mv`, then `spry.py index`), or on each Windows machine run
   `git config --global core.longpaths true` and set `LongPathsEnabled` to 1.
+
+## CH-37 · Fast `mint: main`, and several items in one `new`
+
+- **Date:** 2026-10-24 · **Version:** 0.26.0
+- **Touches:** `tool/spry.py` (`new`, `claim`, `release`), `process/planning.md` (§3),
+  `process/slicing.md` (*Split*, *IDs and claims*), `process/setup.md`, `process/from-writ.md`,
+  `skills/milestone`, `skills/epic`, `skills/feature`, `skills/story`, `skills/slice`
+- **Why:** on pulse-v2, where a virus scanner makes every file open cost about 11 ms, one `new`
+  took a minute: the whole plan was loaded three times — in this tree, in a temporary worktree, and
+  again to check one file — and the push took 8 s of it. Writing the stories of a feature cost that
+  once per story.
+  - `new`, `claim` and `release` no longer load the plan. The next number, the parent and the slice
+    come from file names — `git ls-tree` on the fetched main branch, or the folders here with
+    `mint: local` — and only the template, the glossary and the file written are opened.
+  - With `mint: main`, nothing is checked out: the commit is made with git plumbing on the fetched
+    tip and pushed; `ls-remote` runs only when the push fails, to tell a race from a refusal.
+  - `new` checks the new files' text before writing anything — front-matter, budget, links,
+    glossary — with `mint: local` too, which used to write without a check.
+  - `new story --parent F-3 --title "…" --title "…"` makes several of one type; `new --batch
+    file.json` (or `-`) takes a list of `{type, title, parent, owner, key}`, where a parent may be
+    the `key` of an earlier entry. One commit and one push hold them all; a race renumbers the whole
+    batch; one failing `check` writes none. The planning and slicing skills create in one call.
+- **Adapt:** nothing
+- **Migrate:** nothing

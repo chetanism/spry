@@ -11,5 +11,7 @@ argument-hint: "[parent ID] [title]"
 - **Template:** `spry/process/templates/epic.md` — its `audience` sets the tone of the document
   and of this conversation.
 - Parent: a milestone. Without one in `$ARGUMENTS`, list the milestones and ask.
+- Several epics named at once → create their drafts in one `spry.py new` (`planning.md` §3),
+  then define each in turn.
 - **No spry here?** If `spry/spry.config.json` is missing, stop and offer `/spry:init` or
   `/spry:adopt`.

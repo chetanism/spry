@@ -12,5 +12,7 @@ argument-hint: "[parent ID] [title]"
   and of this conversation.
 - Parent: an epic, or a milestone when `levels` has no epic. Without one in `$ARGUMENTS`, list them and ask.
 - **Rules** are numbered `R-1…` so stories can cite them; one rule per line.
+- Several features named at once → create their drafts in one `spry.py new` (`planning.md` §3),
+  then define each in turn.
 - **No spry here?** If `spry/spry.config.json` is missing, stop and offer `/spry:init` or
   `/spry:adopt`.

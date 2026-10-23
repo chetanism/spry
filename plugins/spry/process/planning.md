@@ -32,6 +32,18 @@ python3 spry/tool/spry.py new <level> --parent <parent ID> --title "<working tit
 
 The command picks the next ID, the folder and the template. With `mint: main` the ID is taken on
 the main branch and pushed at once (`slicing.md` → *IDs and claims*), so the parent must be there. Interview into that file (`interview.md`).
+
+**Several at once** — the stories of a feature, or a list of titles the person gave in one go —
+take one call, not one per item: each `new` with `mint: main` is a fetch and a push.
+
+```
+python3 spry/tool/spry.py new story --parent F-3 --title "Renew a loan" --title "Refuse a renewal"
+python3 spry/tool/spry.py new --batch items.json   # mixed types and parents; `-` reads stdin
+```
+
+`items.json` is a list of `{"type", "title", "parent", "owner", "key"}`; `parent` names an item in
+the plan or the `key` of an earlier entry — a feature and its first stories in one call. IDs are
+numbered in order, one commit holds them all, and if one fails `check` none is written.
 **An existing `draft`** named in the arguments — for example a milestone `init` created — is continued
 instead: read it, then interview only for its empty sections.
 
@@ -44,7 +56,8 @@ instead: read it, then interview only for its empty sections.
 | feature | summary, who, how it works step by step, numbered rules, out of scope | stories |
 | story | one story per file; criteria as Given / When / Then | slices |
 
-- **Stories:** one run may create several stories under the same feature — one `new story` each.
+- **Stories:** one run may create several stories under the same feature — agree the titles, then
+  one `new story` with a `--title` each (§3).
 - **Acceptance criteria** — each one:
   - observable by a person using the product, at audience 3;
   - one behaviour; "and" joining two outcomes means two criteria;

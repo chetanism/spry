@@ -299,7 +299,8 @@ manual regression list. One row per scenario, in file order:
 2. **Interview** topics a–c and e–j as usual, with drafts taken from the documents in §1.4: the BRD,
    personas, and the security and performance specs. Topic d has no questions: show the tree from
    §1.1 instead.
-3. **Plan.** `spry.py new` top-down, in the tree's order, which is where the IDs come from.
+3. **Plan.** `spry.py new --batch` top-down, in the tree's order, which is where the IDs come from —
+   a whole area per call, parents named by `key` (`planning.md` §3).
    - Each `ac` row becomes one criterion row (Given / When / Then) in plain words. It keeps the
      requirement's meaning, but not its wording when that wording is technical.
    - A `story` row gets the criteria its Note names.

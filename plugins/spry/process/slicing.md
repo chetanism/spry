@@ -40,9 +40,10 @@ missing. So open, build, test and close run as one piece of work.
 3. Propose the slices in one reply: title, the criteria each covers, one line on the visible
    change. Order them so each builds on the last, and say which **need** an earlier one — its code,
    its data, its screen — and which could be built at the same time.
-4. On approval, for each: `spry.py new slice --parent <ID> --title "…"` — with `mint: main` it takes
-   the number on the main branch (*IDs and claims*), so the parent must be there; fill only `Summary`,
-   `covers`, and `blocked_by` with the earlier slices it needs — none when it only comes after one.
+4. On approval, all at once: `spry.py new slice --parent <ID> --title "…" --title "…"` — numbered in
+   the order given; with `mint: main` it takes the numbers on the main branch in one push (*IDs and
+   claims*), so the parent must be there. In each, fill only `Summary`, `covers`, and `blocked_by`
+   with the earlier slices it needs — none when it only comes after one.
    The backlog lists a slice as ready only when those are closed, so two people never pick up a
    pair that cannot be built side by side. Everything else waits for `slice-open`.
 5. `spry.py check`; commit `docs(plan): slices for <ID>`.
@@ -189,15 +190,16 @@ Several sessions, or several people, work on one repository at once. `mint` in c
 an ID is taken and a slice is claimed:
 
 - **`main`** — the main branch on the remote is the counter, and the push is the lock. `spry.py new`
-  (with an ID) fetches it, writes the item in a temporary worktree of `origin/<main>`, checks it,
-  commits `docs(plan): new <ID> <title>` and pushes there; a push refused because someone pushed
-  first fetches and tries again, up to five times. Then it merges that commit into the current
-  branch — the file is there to fill, and the merge base holds it, so the branch's edits never meet
-  the main branch's copy as a second addition. `claim` does the same with `branch:`, reading the
-  slice as the main branch has it, and refuses when a branch for it already exists here or on the
-  remote. Offline, a push refused for any other reason, files staged, or a merge in progress → it
-  stops and writes nothing; it never falls back to a local number. The temporary worktree is
-  removed every time.
+  (with an ID) fetches it, numbers the item from the file names on `origin/<main>`, checks the new
+  file, commits `docs(plan): new <ID> <title>` on that tip and pushes there; a push refused because
+  someone pushed first fetches and tries again, up to five times. Several items in one `new` are
+  one commit and one push, and a retry renumbers them all. Then it merges that commit into the
+  current branch — the file is there to fill, and the merge base holds it, so the branch's edits
+  never meet the main branch's copy as a second addition. `claim` does the same with `branch:`,
+  reading the slice as the main branch has it, and refuses when a branch for it already exists here
+  or on the remote. Offline, a push refused for any other reason, files staged, or a merge in
+  progress → it stops and writes nothing; it never falls back to a local number. Nothing is checked
+  out and no other plan file is opened, so it costs the fetch and the push.
 - **`local`** — the next number in this tree, as before. For a main branch that takes no direct
   commit. Two branches can take the same number; `check --base origin/<main>` names it before the
   merge, and the later branch renames.
