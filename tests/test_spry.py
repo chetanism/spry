@@ -404,16 +404,16 @@ class Coverage(Base):
 
     def test_totals_when_everything_is_proven(self):
         out = spry.coverage_block(self.tree().project(), "spry/COVERAGE.md")
-        self.assertIn("| Stories | 1 | 1 | 100% |", out)
-        self.assertIn("| Acceptance criteria proven | 1 | 1 | 100% |", out)
-        self.assertIn("| 1 of 1 | 1 of 1 | 0 |", out)
+        self.assertIn("| Stories | 1 | 0 | 1 | 100% |", out)
+        self.assertIn("| Acceptance criteria proven | 1 | — | 1 | 100% |", out)
+        self.assertIn("| 1 of 1 | 0 | 1 of 1 | 0 |", out)
         self.assertEqual(out.count("_None._"), 2)
 
     def test_built_but_not_proven_and_cited_only_in_a_comment(self):
         t = self.tree(**{f"{S}/README.md".replace("/", "__"): story("S-1", acs=("AC-1", "AC-2")),
                          "src__b.test.ts": "// S-1/AC-2 covered below\ntest('x', () => {})\n"})
         out = spry.coverage_block(t.project(), os.path.join(t.root, "spry/COVERAGE.md"))
-        self.assertIn("| Acceptance criteria proven | 1 | 2 | 50% |", out)
+        self.assertIn("| Acceptance criteria proven | 1 | — | 2 | 50% |", out)
         self.assertIn("| [S-1 Title of S-1](plan/M-1-m/E-1-e/F-1-f/S-1-s/README.md) | AC-2 |", out)
         self.assertIn("| [S-1/AC-2](plan/M-1-m/E-1-e/F-1-f/S-1-s/README.md) Title of S-1 | `src/b.test.ts:1` |", out)
 
@@ -422,9 +422,19 @@ class Coverage(Base):
                          "src__a.test.ts": "nothing\n",
                          f"{F}/S-2-x/README.md".replace("/", "__"): story("S-2", state="dropped")})
         out = spry.coverage_block(t.project(), os.path.join(t.root, "spry/COVERAGE.md"))
-        self.assertIn("| Stories | 0 | 1 | 0% |", out)
+        self.assertIn("| Stories | 0 | 1 | 1 | 0% |", out)
+        self.assertIn("| Slices closed | 0 | 1 | 1 | 0% |", out)
+        self.assertIn("| Milestones | 0 | 1 | 1 | 0% |", out)
+        self.assertIn("| 0 of 1 | 1 | 0 of 1 | 0 |", out)
         self.assertIn("### Built, not proven", out)
         self.assertNotIn("| AC-1 |", out)
+
+    def test_a_ready_slice_is_not_in_progress(self):
+        t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): slice_("SL-1", state="ready"),
+                         "src__a.test.ts": "nothing\n"})
+        out = spry.coverage_block(t.project(), os.path.join(t.root, "spry/COVERAGE.md"))
+        self.assertIn("| Stories | 0 | 0 | 1 | 0% |", out)
+        self.assertIn("| Slices closed | 0 | 0 | 1 | 0% |", out)
 
     def test_index_fills_the_page(self):
         t = self.tree(**{"spry__COVERAGE.md": self.PAGE})

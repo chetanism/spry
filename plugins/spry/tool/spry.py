@@ -72,7 +72,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.26.0"
+VERSION = "0.27.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -1026,32 +1026,42 @@ def coverage_block(project: Project, doc: str) -> str:
     def criteria(story):
         return [a for a, v in story.acs.items() if not v["dropped"]]
 
+    def started(item):
+        """Some slice under it — or it, if a slice — is open or closed."""
+        slices = [item] if item.type == "slice" else project.descendants(item, "slice")
+        return any(s.state in ("open", "closed") for s in slices)
+
+    def tally(items):
+        done = sum(map(project.done, items))
+        return done, sum(1 for i in items if not project.done(i) and started(i)), len(items)
+
     stories = live("story")
     rows = []
     for kind in project.levels:
-        items = live(kind)
-        done = sum(map(project.done, items))
-        rows.append((PLURAL.get(kind, kind).capitalize(), done, len(items)))
+        rows.append((PLURAL.get(kind, kind).capitalize(), *tally(live(kind))))
     acs = [(s, a) for s in stories for a in criteria(s)]
-    rows.append(("Acceptance criteria proven", sum(1 for s, a in acs if project.proof(s, a)[0]), len(acs)))
+    rows.append(("Acceptance criteria proven", sum(1 for s, a in acs if project.proof(s, a)[0]), None, len(acs)))
     for kind in ("slice", "task", "bug"):
-        items = live(kind)
         label = {"slice": "Slices closed", "task": "Tasks", "bug": "Bugs fixed"}[kind]
-        rows.append((label, sum(map(project.done, items)), len(items)))
-    out = ["### Totals", "", "| | Done | Defined | |", "|---|--:|--:|--:|"]
-    out += [f"| {name} | {done} | {total} | {pct(done, total)} |" for name, done, total in rows]
+        rows.append((label, *tally(live(kind))))
+    out = ["### Totals", "",
+           "In progress: not done, and some slice under it is open or closed. A criterion is proven or not.", "",
+           "| | Done | In progress | Defined | |", "|---|--:|--:|--:|--:|"]
+    out += [f"| {name} | {done} | {'—' if busy is None else busy} | {total} | {pct(done, total)} |"
+            for name, done, busy, total in rows]
 
     first = project.levels[0]
     tops = [i for i in project.top if i.type == first and i.state != "dropped"]
     out += ["", f"### By {first}", ""]
     if tops:
-        out += [f"| {first.capitalize()} | State | Stories done | Criteria proven | Open bugs |",
-                "|---|---|--:|--:|--:|"]
+        out += [f"| {first.capitalize()} | State | Stories done | Stories in progress | Criteria proven | Open bugs |",
+                "|---|---|--:|--:|--:|--:|"]
         for m in tops:
             ss = [m] if m.type == "story" else project.descendants(m, "story")
             pairs = [(s, a) for s in ss for a in criteria(s)]
             proven = sum(1 for s, a in pairs if project.proof(s, a)[0])
-            out.append(f"| {link(doc, m)} | {m.state} | {sum(map(project.done, ss))} of {len(ss)} | "
+            done, busy, total = tally(ss)
+            out.append(f"| {link(doc, m)} | {m.state} | {done} of {total} | {busy} | "
                        f"{proven} of {len(pairs)} | {len(project.open_bugs(m))} |")
     else:
         out.append(f"_No {PLURAL.get(first, first)} yet._")

@@ -671,3 +671,15 @@ Entry format:
     batch; one failing `check` writes none. The planning and slicing skills create in one call.
 - **Adapt:** nothing
 - **Migrate:** nothing
+
+## CH-38 · Coverage counts what is in progress
+
+- **Date:** 2026-10-26 · **Version:** 0.27.0
+- **Touches:** `tool/spry.py` (`coverage`)
+- **Why:** the coverage page counted only what was done, so a plan with most of its stories half
+  built read the same as one nobody had started.
+  - *Totals* gains an *In progress* column: not done, and some slice under it is open or closed. A
+    criterion stays proven or not.
+  - *By milestone* gains *Stories in progress*.
+- **Adapt:** nothing
+- **Migrate:** nothing — CI's next `spry index` rewrites `spry/COVERAGE.md`.
