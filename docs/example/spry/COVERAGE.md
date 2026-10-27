@@ -27,9 +27,17 @@ In progress: not done, and some slice under it is open or closed. A criterion is
 
 ### By milestone
 
-| Milestone | State | Stories done | Stories in progress | Criteria proven | Open bugs |
-|---|---|--:|--:|--:|--:|
-| [M-1 Members can borrow books](plan/M-1-members-borrow-books/README.md) | ready | 0 of 2 | 2 | 2 of 5 | 1 |
+#### [M-1 Members can borrow books](plan/M-1-members-borrow-books/README.md) — ready
+
+| | Done | In progress | Defined | |
+|---|--:|--:|--:|--:|
+| Epics | 0 | 1 | 1 | 0% |
+| Features | 0 | 1 | 2 | 0% |
+| Stories | 0 | 2 | 2 | 0% |
+| Acceptance criteria proven | 2 | — | 5 | 40% |
+| Slices closed | 2 | 1 | 5 | 40% |
+| Tasks | 1 | 0 | 1 | 100% |
+| Bugs fixed | 0 | 0 | 1 | 0% |
 
 ### Built, not proven
 

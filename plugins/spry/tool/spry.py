@@ -72,7 +72,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.27.0"
+VERSION = "0.28.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -1035,36 +1035,38 @@ def coverage_block(project: Project, doc: str) -> str:
         done = sum(map(project.done, items))
         return done, sum(1 for i in items if not project.done(i) and started(i)), len(items)
 
-    stories = live("story")
-    rows = []
-    for kind in project.levels:
-        rows.append((PLURAL.get(kind, kind).capitalize(), *tally(live(kind))))
-    acs = [(s, a) for s in stories for a in criteria(s)]
-    rows.append(("Acceptance criteria proven", sum(1 for s, a in acs if project.proof(s, a)[0]), None, len(acs)))
-    for kind in ("slice", "task", "bug"):
-        label = {"slice": "Slices closed", "task": "Tasks", "bug": "Bugs fixed"}[kind]
-        rows.append((label, *tally(live(kind))))
-    out = ["### Totals", "",
-           "In progress: not done, and some slice under it is open or closed. A criterion is proven or not.", "",
-           "| | Done | In progress | Defined | |", "|---|--:|--:|--:|--:|"]
-    out += [f"| {name} | {done} | {'—' if busy is None else busy} | {total} | {pct(done, total)} |"
+    def table(levels, under=None):
+        """The totals table, for the whole plan or for what sits under one top-level item."""
+        def of(kind):
+            return [i for i in live(kind) if under is None or under in i.ancestors()]
+        rows = [(PLURAL.get(kind, kind).capitalize(), *tally(of(kind))) for kind in levels]
+        acs = [(s, a) for s in ([under] if under and under.type == "story" else of("story"))
+               for a in criteria(s)]
+        rows.append(("Acceptance criteria proven", sum(1 for s, a in acs if project.proof(s, a)[0]), None, len(acs)))
+        for kind in ("slice", "task", "bug"):
+            label = {"slice": "Slices closed", "task": "Tasks", "bug": "Bugs fixed"}[kind]
+            rows.append((label, *tally(of(kind))))
+        return ["| | Done | In progress | Defined | |", "|---|--:|--:|--:|--:|"] + [
+            f"| {name} | {done} | {'—' if busy is None else busy} | {total} | {pct(done, total)} |"
             for name, done, busy, total in rows]
+
+    stories = live("story")
+    out = ["### Totals", "",
+           "In progress: not done, and some slice under it is open or closed. A criterion is proven or not.", ""]
+    out += table(project.levels)
 
     first = project.levels[0]
     tops = [i for i in project.top if i.type == first and i.state != "dropped"]
     out += ["", f"### By {first}", ""]
-    if tops:
-        out += [f"| {first.capitalize()} | State | Stories done | Stories in progress | Criteria proven | Open bugs |",
-                "|---|---|--:|--:|--:|--:|"]
-        for m in tops:
-            ss = [m] if m.type == "story" else project.descendants(m, "story")
-            pairs = [(s, a) for s in ss for a in criteria(s)]
-            proven = sum(1 for s, a in pairs if project.proof(s, a)[0])
-            done, busy, total = tally(ss)
-            out.append(f"| {link(doc, m)} | {m.state} | {done} of {total} | {busy} | "
-                       f"{proven} of {len(pairs)} | {len(project.open_bugs(m))} |")
-    else:
+    if not tops:
         out.append(f"_No {PLURAL.get(first, first)} yet._")
+    for m in tops:
+        if project.done(m):
+            out += [f"{link(doc, m)} — done.", ""]
+        else:
+            out += [f"#### {link(doc, m)} — {m.state}", ""] + table(project.levels[1:], m) + [""]
+    if tops:
+        out.pop()
 
     out += ["", "### Built, not proven", "",
             "Every slice is closed and these criteria still have no passing proof — no test names them "

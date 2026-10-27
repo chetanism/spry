@@ -406,7 +406,8 @@ class Coverage(Base):
         out = spry.coverage_block(self.tree().project(), "spry/COVERAGE.md")
         self.assertIn("| Stories | 1 | 0 | 1 | 100% |", out)
         self.assertIn("| Acceptance criteria proven | 1 | — | 1 | 100% |", out)
-        self.assertIn("| 1 of 1 | 0 | 1 of 1 | 0 |", out)
+        self.assertRegex(out, r"\n\[M-1 Title of M-1\]\([^)]*\) — done\.\n")
+        self.assertNotIn("#### ", out)
         self.assertEqual(out.count("_None._"), 2)
 
     def test_built_but_not_proven_and_cited_only_in_a_comment(self):
@@ -425,7 +426,9 @@ class Coverage(Base):
         self.assertIn("| Stories | 0 | 1 | 1 | 0% |", out)
         self.assertIn("| Slices closed | 0 | 1 | 1 | 0% |", out)
         self.assertIn("| Milestones | 0 | 1 | 1 | 0% |", out)
-        self.assertIn("| 0 of 1 | 1 | 0 of 1 | 0 |", out)
+        self.assertIn("#### [M-1 Title of M-1](plan/M-1-m/README.md) — ", out)
+        self.assertEqual(out.count("| Stories | 0 | 1 | 1 | 0% |"), 2, "the totals and the milestone's own table")
+        self.assertEqual(out.count("| Milestones |"), 1, "a milestone's table starts one level down")
         self.assertIn("### Built, not proven", out)
         self.assertNotIn("| AC-1 |", out)
 

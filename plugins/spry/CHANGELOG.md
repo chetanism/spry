@@ -683,3 +683,17 @@ Entry format:
   - *By milestone* gains *Stories in progress*.
 - **Adapt:** nothing
 - **Migrate:** nothing — CI's next `spry index` rewrites `spry/COVERAGE.md`.
+
+## CH-39 · Coverage for each milestone
+
+- **Date:** 2026-10-27 · **Version:** 0.28.0
+- **Touches:** `tool/spry.py` (`coverage`)
+- **Why:** *By milestone* showed stories, criteria and open bugs only — no epics, features, slices,
+  tasks or fixed bugs, and no percentage — so it could not say how far one milestone had got.
+  - Each milestone not done gets its own table under *By milestone*, the same as *Totals* from one
+    level down: done, in progress, defined and a percentage at each level, criteria proven, slices,
+    tasks and bugs.
+  - A milestone that is done is one line.
+  - *Totals* is unchanged.
+- **Adapt:** nothing
+- **Migrate:** nothing — CI's next `spry index` rewrites `spry/COVERAGE.md`.

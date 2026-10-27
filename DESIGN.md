@@ -228,8 +228,8 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
 - Each item `README.md` has a marker block — `<!-- spry:children -->` … `<!-- /spry:children -->` —
   holding its children with links and done/total. Stories also get `<!-- spry:proof -->`.
 - `spry/COVERAGE.md` holds a `<!-- spry:coverage -->` block: done, in progress (not done, some slice
-  under it open or closed) and defined at each level, criteria proven, slices, tasks and bugs; one
-  row per milestone; stories whose slices are all closed with
+  under it open or closed) and defined at each level, criteria proven, slices, tasks and bugs; the
+  same table for each milestone not done, from one level down, and one line for each done; stories whose slices are all closed with
   criteria still unproven; and unproven criteria cited only in a comment or code. `spry coverage`
   prints it on any branch.
 - `spry/BACKLOG.md` holds a `<!-- spry:backlog -->` block: slices in progress (open, or a branch
@@ -572,3 +572,6 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-26 — the coverage page counts what is in progress beside what is done: not done, and some
   slice under it open or closed. One count, not split by how far along — slices are planned a story
   at a time, so a fraction would overstate (CH-38, 0.27.0).
+- 2026-10-27 — the coverage page gives each milestone the same table as the totals, from one level
+  down; a done milestone is one line. The old one-row summary left out epics, features, slices,
+  tasks and fixed bugs (CH-39, 0.28.0).
