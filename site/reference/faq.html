@@ -146,6 +146,11 @@ worktree and session. With <code>mint: main</code>, IDs and slice claims are tak
 so two sessions never take one number or start the same slice. Generated pages are written only on the
 main branch, so branches never conflict over them. <a href="../guides/team.html">Work as a team</a>.</p>
 
+<h3>Can I see what one person did last week?</h3>
+<p>Yes. <code>/spry:work-report Ravi last week</code> lists each story, task and bug they worked on with
+a short summary, and the slices under it. It reads who built each slice and the day it closed from the
+plan, not from git. <a href="../guides/team.html#who-built-what">Who built what</a>.</p>
+
 <h3>Does it work in a monorepo?</h3>
 <p>Yes. The TypeScript profile covers Turborepo — filtering checks and tests to changed packages — and
 falsify runners can run in each test file's nearest package (<code>"cwd": "package"</code>), including

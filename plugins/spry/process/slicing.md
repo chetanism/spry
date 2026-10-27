@@ -28,6 +28,9 @@ missing. So open, build, test and close run as one piece of work.
 - **One visible change:** its demo shows something that was not there before.
 - Covers one or more acceptance criteria of **one** story; a story's criteria are all covered by
   its slices between them. A task's or bug's slices cover its `Done when` / the behaviour it fixes.
+- **Its `owner` is who builds it** — set at open, from the person git says is at this clone (their
+  `team.members` name; solo, git's `user.name`), whoever planned it. `--owner <name>` names someone
+  else. `merge-check` blocks a slice without one; `/spry:work-report` counts work by it.
 - Lives as `SL-<n>-<slug>.md` in its parent's folder. States: `planned` → `open` → `closed`
   (or `dropped`). `closed` is set in the pull request's last commit, so on the main branch it
   means merged.
@@ -57,9 +60,9 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
   dependencies', and what else bears on the choice (a design not settled, an outside team's date) is
   the person's. The one exception to `chat.md`'s single `(recommended)`.
 
-0. **Claim it:** `spry.py claim SL-<n>` (`--owner <name>` when `team.members` is set) — before
-   anything else, so nobody spends an hour on a work order someone else is writing. With
-   `mint: main` it sets the slice's `branch:` on the main branch and pushes; refused when someone
+0. **Claim it:** `spry.py claim SL-<n>` — before anything else, so nobody spends an hour on a work
+   order someone else is writing. With `mint: main` it sets the slice's `branch:` and `owner:` on
+   the main branch and pushes; refused when someone
    holds it, naming the branch — then offer the next ready row. Either way it makes the branch
    `sl-<n>-<slug>` and switches to it. Not opened after all → `spry.py release SL-<n>`.
 1. **Read:** the parent and its feature, every knowledge file the change could touch (conventions,
@@ -77,7 +80,8 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
      --title "SL-<n> <title>" --body-file -`. Its body is the work order as agreed, saying it is
      never updated — the file goes on changing, and the difference is the record. Set `issue:` to
      its number (`spry.py link SL-<n> --issue <n>`); `check` refuses an open slice without one;
-   - set `state: open`, and `spry.py link SL-<n> --branch <branch>`; `spry.py check`; commit `docs(slice): SL-<n> work order` —
+   - set `state: open`, and `spry.py link SL-<n> --branch <branch> --owner` (`--owner <name>` when
+     building it for someone else); `spry.py check`; commit `docs(slice): SL-<n> work order` —
      the branch's first commit, before any code;
    - push; open a **draft** pull request titled `SL-<n> <title>`, body from
      `spry.py pr-body SL-<n>`; `spry.py link SL-<n> --pr <number>`; commit and push.

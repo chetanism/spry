@@ -126,6 +126,10 @@ spry/
   Filled by the conflict check (`Dependency`) and by `slice` (a slice that needs an earlier one).
 - `state` for plan items: `draft` | `ready` | `dropped`. For slices: `planned` | `open` |
   `closed` | `dropped`. **`done` is never written** — it is derived (§6).
+- A slice's `owner` is **who builds it**, not who planned it: set at open from the person git says
+  is at the clone (their `team.members` name; solo, git's `user.name`), and required by
+  `merge-check`. Work is counted by it (`work`, §17); slices older than CH-40 get theirs once from
+  their pull request's author (`owners --from-prs`).
 - Slices add `covers: [AC-1, AC-2]`, `branch`, `pr` — and `issue` with `slices.issue` on: a GitHub
   issue made at open from the work order, frozen and saying so; the close summary is a comment on
   it, and the merge commit's `Closes #n` closes it. `check` refuses an open slice without one.
@@ -366,15 +370,18 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `coverage` | the coverage page (§13): defined vs done, built but not proven |
 | `backlog` | the backlog page (§13): in progress, ready to build, needs slicing, blocked, needs planning |
 | `done` | the done page (§13): finished stories, tasks and bugs, newest first |
+| `work <owner> --since [--until] [--json]` | what one person built: their slices closed in the range under each story, task or bug, newest first; their slices being built now; closed slices with no owner or no date, named |
+| `owners --from-prs <file>` | once, for slices from before CH-40: fill a missing slice `owner` from its pull request's author (`gh pr list --json number,author`), a member's name by login |
 | `view [--since]` · `hooks [--remove]` | the generated pages for the working tree in `.spry/view/`; git hooks that refresh them (§13) |
 | `serve [--port] [--no-open]` | browse the plan and knowledge in a browser, read-only, local only (§13) |
 | `index --restore <base>` | on a branch: put back the base's copy of each generated block it changed |
 | `related <file>` | conflict-check candidates (§10) |
 | `next <type>` | next free ID |
 | `new <type> --parent --title…` · `new --batch <file>` | create items from their templates, next IDs, right folders — several in one call, all or none; with `mint: main` the IDs are taken on the main branch in one push (§20) |
-| `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it — and cut its branch; give it back |
+| `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it, with its `owner` — and cut its branch; give it back |
+| `link <slice> [--branch] [--pr] [--issue] [--owner [name]]` | set them in the slice's front-matter; a bare `--owner` is the person at this clone |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
-| `merge-check <slice> [--base]` | ready to merge? closed, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
+| `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
 | `gate [--force] [--fast]` | §15 |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
@@ -404,6 +411,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `merge` | 8 | Checks green — or, when CI never started, the gate on the PR's head, accepted at the ask and named in a `CI:` trailer —, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main if main moved under the PR → progress tables written when CI left them stale → what is unblocked |
 | `bug` / `task` | 4 / 7 | Record one, attached to its parent |
 | `status` | reader's | Roll-up explained at the asker's tone |
+| `work-report` | reader's | What one person built between two dates: each story, task and bug with 2–3 lines on their part, written from the close summaries, and its slices by ID and title; what they are building now. Report only |
 | `tone` | — | Personal audience override |
 | `test-scenarios` | 4 | Scenarios in a story's `checks.md` from its ACs |
 | `record` | 6–7 | A decision, convention or external behaviour, into the right index |
@@ -461,6 +469,12 @@ in `spry/history/writ.md`, then retires `canon/`.
   slice**, not `state: open`: `check` refuses an open slice without its work order and conflict
   check, which the main branch cannot have yet. `mint` defaults to `local`, so nothing pushes to
   the main branch until a project says it may.
+- 2026-10-27 — a work report counts slices by `owner:` and `closed:`, never by git authors (CH-40):
+  the files are the record, the same in every clone, and a squash merge's author is whoever pressed
+  the button. So a slice's owner became who builds it, set at open and required at merge. Old
+  slices are filled **once** from their PR's author, not looked up on every report — a lookup would
+  put `gh` and the network in a read-only page for good. The summaries come from close summaries,
+  not diffs: what a slice did is already written there, in words anyone can read.
 - 2026-10-24 — `new`, `claim` and `release` never load the plan (CH-37). The next number, the parent
   and the slice come from file names (`git ls-tree` on the main branch, a folder walk locally); only
   the template, the glossary and the file changed are read. The pre-push `check` is of the new
@@ -575,3 +589,7 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-27 — the coverage page gives each milestone the same table as the totals, from one level
   down; a done milestone is one line. The old one-row summary left out epics, features, slices,
   tasks and fixed bugs (CH-39, 0.28.0).
+- 2026-10-27 — `/spry:work-report` and `spry work`: one person's slices closed in a range, under the
+  story, task or bug each builds, with what they are building now. A slice's `owner` is who builds
+  it — set at open (`link --owner`, `claim`), blocked at merge without one; `owners --from-prs` fills
+  old slices once from their PRs (CH-40, 0.29.0).

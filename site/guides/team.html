@@ -77,7 +77,7 @@ start on <code>SL-4</code>. The <code>mint</code> setting says where an ID is ta
   <tbody>
     <tr><td><strong>Counter</strong></td><td>The next number in your working tree</td><td>The main branch on the remote — the push is the lock</td></tr>
     <tr><td><strong>Two sessions, one number</strong></td><td>Possible. <code>check --base</code> names it before the merge, and the later branch renames</td><td>Can't happen. A refused push fetches and tries again, up to five times</td></tr>
-    <tr><td><strong>Claiming a slice</strong></td><td>Makes the branch locally</td><td>Writes <code>branch:</code> on the slice on the main branch, and refuses when someone holds it, naming their branch</td></tr>
+    <tr><td><strong>Claiming a slice</strong></td><td>Makes the branch locally</td><td>Writes <code>branch:</code> and <code>owner:</code> on the slice on the main branch, and refuses when someone holds it, naming their branch</td></tr>
     <tr><td><strong>Needs</strong></td><td>Nothing</td><td>A main branch that accepts a direct commit of documents</td></tr>
   </tbody>
 </table></div>
@@ -157,6 +157,27 @@ they show the main branch as of CI's last run. For pages that match your own wor
 <span class="p">$ </span>python3 spry/tool/spry.py serve   <span class="c"># or browse them, and the whole plan, in a browser</span></code></pre>
 
 <p>More in <a href="../design/pages.html">Generated pages</a>.</p>
+
+<h2>Who built what</h2>
+
+<p>A slice's <code>owner</code> is the person who built it. <code>/spry:slice-open</code> sets it when the
+slice opens, from the person git says is at the clone — their name in <code>team.members</code> — and
+<code>/spry:merge</code> won't merge a slice without one. That makes a report of one person's work a
+plain read of the plan:</p>
+
+<pre data-label="Claude Code"><code>/spry:work-report Ravi last week</code></pre>
+
+<p>Each story, task and bug Ravi worked on gets two or three lines on what Ravi's slices did — written
+from their close summaries — then the slices by ID and title, then what Ravi is building now. Slices
+someone else closed under the same story are counted, not credited. The tool behind it is
+<code>spry.py work Ravi --since 2026-10-19</code>.</p>
+
+<div class="callout tip">
+  <span class="callout-title">Slices from before owners were set</span>
+  <p><code>/spry:update</code> to 0.29.0 fills them once from each pull request's author
+  (<code>spry.py owners --from-prs</code>), shows you what it will write first, and lists what it
+  couldn't fill.</p>
+</div>
 
 <h2>Next</h2>
 
