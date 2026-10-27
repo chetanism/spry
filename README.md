@@ -54,6 +54,7 @@ Start at its [`spry/README.md`](docs/example/spry/README.md) and click down.
 | `/spry:security-audit`, `/spry:prelaunch` | Reviews that report and turn findings into bugs and tasks — never fix, never deploy |
 | `/spry:process-change` | Change the process in every file it touches, kept through updates |
 | `/spry:status`, `/spry:tone` | Where things stand, at your tone; how technical replies are for you |
+| `/spry:work-report` | What one person built between two dates: each story, task and bug with a short summary, and its slices |
 | `/spry:update`, `/spry:contribute` | Take what spry gained since; offer back what your project built |
 
 The design and every decision behind it: [`DESIGN.md`](DESIGN.md).

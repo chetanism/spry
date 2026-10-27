@@ -91,7 +91,7 @@ written rules into rules that are actually enforced.</p>
 <h3 id="merge-check">merge-check</h3>
 <p>Is a closed slice ready to merge? Exits 1 if anything blocks it.</p>
 <pre><code>spry merge-check [--base BASE] slice</code></pre>
-<p>It blocks (<code>✗</code>) when the slice is not closed or has no <code>closed:</code> date or PR
+<p>It blocks (<code>✗</code>) when the slice is not closed or has no <code>closed:</code> date, owner or PR
 number, when a control the diff adds has no falsify row, when a survivor has no reason, when the branch
 changed a criterion and code together without <code>criteria_approved_by:</code> the story's owner,
 or when <code>check</code> is not clean. It warns (<code>!</code>) about things a person must accept
@@ -136,6 +136,29 @@ order.</p>
 <p>Finished stories, tasks and bugs, newest first, with the day each closed (from the slices'
 <code>closed:</code> dates — never from git).</p>
 <pre><code>spry done</code></pre>
+
+<h3 id="work">work</h3>
+<p>What one person built between two days: their slices closed in the range, under the story, task or
+bug each builds, newest first — with what else closed there and by whom — then their slices being built
+now. Closed slices it could not count (no owner, or no <code>closed:</code> date) are named. Read from the
+slice files alone, never git. <code>/spry:work-report</code> writes its report from this.</p>
+<pre><code>spry work --since SINCE [--until UNTIL] [--json] owner</code></pre>
+<ul>
+  <li><code>owner</code> — a <code>team.members</code> name or GitHub login, or the name in the slices' <code>owner:</code>.</li>
+  <li><code>--since SINCE</code>, <code>--until UNTIL</code> — the first and last day, <code>YYYY-MM-DD</code>; <code>--until</code> defaults to today.</li>
+  <li><code>--json</code> — with each file's path, for the skill.</li>
+</ul>
+
+<h3 id="owners">owners</h3>
+<p>Once, for slices opened before CH-40: fills each open or closed slice's missing <code>owner</code> from
+its pull request's author — a member's name by their GitHub login, or with no members the author's GitHub
+name. An owner already there is kept and listed when the author differs.</p>
+<pre><code>gh pr list --state all --limit 5000 --json number,author &gt; .spry/prs.json
+spry owners --from-prs .spry/prs.json [--replace] [--dry-run]</code></pre>
+<ul>
+  <li><code>--replace</code> — also change an owner the PR's author contradicts.</li>
+  <li><code>--dry-run</code> — change nothing; say what would change.</li>
+</ul>
 
 <h3 id="index">index</h3>
 <p>Regenerates the marker blocks (children tables, proof tables, coverage, backlog, done) and every
@@ -194,7 +217,7 @@ spry new --batch FILE</code></pre>
 <code>mint: main</code> the claim is made on the main branch and refused when someone already holds it.</p>
 <pre><code>spry claim [--owner OWNER] [--no-switch] slice</code></pre>
 <ul>
-  <li><code>--owner OWNER</code> — who is building it, from <code>team.members</code>.</li>
+  <li><code>--owner OWNER</code> — who is building it: a <code>team.members</code> name or GitHub login. Left out, the person git says is at this clone. With <code>mint: main</code> it is written on the main branch with the claim.</li>
   <li><code>--no-switch</code> — make the branch without switching to it, for a separate worktree.</li>
 </ul>
 
@@ -204,8 +227,11 @@ The branch itself is left for its owner to delete.</p>
 <pre><code>spry release slice</code></pre>
 
 <h3 id="link">link</h3>
-<p>Sets a slice's <code>branch</code>, <code>pr</code> or <code>issue</code> in its front-matter.</p>
-<pre><code>spry link [--branch BRANCH] [--pr PR] [--issue ISSUE] slice</code></pre>
+<p>Sets a slice's <code>branch</code>, <code>pr</code>, <code>issue</code> or <code>owner</code> in its front-matter.</p>
+<pre><code>spry link [--branch BRANCH] [--pr PR] [--issue ISSUE] [--owner [OWNER]] slice</code></pre>
+<p><code>--owner</code> alone is the person git says is at this clone: their <code>team.members</code> name,
+matched by git's <code>user.name</code> or the start of <code>user.email</code> — or, with no members,
+<code>user.name</code>. <code>/spry:slice-open</code> runs it, so a slice's owner is who built it.</p>
 
 <h3 id="related">related</h3>
 <p>Conflict-check candidates for a document: its parent, siblings, items sharing glossary terms,

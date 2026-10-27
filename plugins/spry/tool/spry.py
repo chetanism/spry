@@ -8,6 +8,8 @@
     python3 spry/tool/spry.py coverage           # defined vs done, and what is built but not proven
     python3 spry/tool/spry.py backlog            # in progress, ready to build, needs slicing, blocked, needs planning
     python3 spry/tool/spry.py done               # finished stories, tasks and bugs, newest first
+    python3 spry/tool/spry.py work <owner> --since <day> [--until <day>] [--json]   # what one person built
+    python3 spry/tool/spry.py owners --from-prs <file|-> [--replace] [--dry-run]   # once: slice owners from PR authors
     python3 spry/tool/spry.py view [--since <commit>]   # the generated pages for this working tree → .spry/view/
     python3 spry/tool/spry.py serve [--port N] [--no-open]   # browse the plan in a browser, read-only, local only
     python3 spry/tool/spry.py hooks [--remove]   # refresh .spry/view/ after each checkout and pull
@@ -29,7 +31,7 @@
     python3 spry/tool/spry.py draw --seed        # a fresh seed for an exploratory walk
     python3 spry/tool/spry.py draw <seed> <n> --pick < choices   # the same choice for ever, per (seed, n)
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
-    python3 spry/tool/spry.py link <slice> [--branch B] [--pr N] [--issue N]   # set them in the slice's front-matter
+    python3 spry/tool/spry.py link <slice> [--branch B] [--pr N] [--issue N] [--owner [NAME]]   # set them in the slice's front-matter
     python3 spry/tool/spry.py issue-body <slice> [--close]   # the slice's issue (slices.issue): work order, or close summary
     python3 spry/tool/spry.py merge-message <slice> [--ci-local REASON]   # the squash commit: subject, summary, trailers
     python3 spry/tool/spry.py gate [--force] [--fast]   # check, fast checks, affected tests (--fast: no tests, no stamp); skipped while no code changed
@@ -72,7 +74,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.28.0"
+VERSION = "0.29.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -888,6 +890,8 @@ def check(project: Project):
                     project.problem(item.doc, 1, f"`{key}` names {ref}, which does not exist")
         if item.type == "slice" and item.fm.get("closed") and not closed_on(item):
             project.problem(item.doc, 1, f"`closed: {item.fm['closed']}` is not a date — YYYY-MM-DD, the day the slice closed")
+        if item.type == "slice" and item.state == "open" and not owner_of(item):
+            project.problem(item.doc, 1, f"open without an `owner:` — who is building it: `link {item.id} --owner`", "warning")
         if item.type == "slice" and item.state == "open" and project.config.get("slices", {}).get("issue") \
                 and not str(item.fm.get("issue", "")).isdigit():
             project.problem(item.doc, 1, "open without an `issue:` number — `slices.issue` is on: "
@@ -1352,6 +1356,184 @@ def done_block(project: Project, doc: str) -> str:
     return "\n".join(out)
 
 
+# ---------------------------------------------------------------- owners and work
+
+def owner_of(item: Item) -> str:
+    """An item's `owner:` — empty while it is still the template's `<name>`. A slice's is who built it."""
+    owner = str(item.fm.get("owner") or "").strip()
+    return "" if owner.startswith("<") else owner
+
+
+def members(project: Project) -> list:
+    return [m for m in project.config.get("team", {}).get("members", []) if isinstance(m, dict) and m.get("name")]
+
+
+def member_named(project: Project, who: str) -> dict | None:
+    """The team member a name or a GitHub login stands for, ignoring case."""
+    who = who.strip().lower()
+    return next((m for m in members(project) if who in (m["name"].lower(), str(m.get("github") or "").lower())), None)
+
+
+def whoami(project: Project) -> str | None:
+    """The person at this clone, as `owner:` names them: their `team.members` name, found by git's
+    user.name or the start of user.email; solo, git's user.name. None when neither says."""
+    said = [git(project.root, "config", key).stdout.strip() for key in ("user.name", "user.email")]
+    if not members(project):
+        return said[0] or None
+    for word in (said[0], said[1].split("@")[0]):
+        found = member_named(project, word) if word else None
+        if found:
+            return found["name"]
+    return None
+
+
+def resolve_owner(project: Project, given: str) -> str:
+    """`--owner NAME` as `owner:` writes it — a member's name, given by name or login — or, bare, `whoami`."""
+    names = ", ".join(m["name"] for m in members(project))
+    if not given:
+        me = whoami(project)
+        if me is None:
+            raise SystemExit("who is building this? git's user.name and user.email match no one in team.members "
+                             f"— pass --owner <name>, one of: {names}" if names else
+                             "who is building this? git has no user.name — pass --owner <name>")
+        return me
+    if not members(project):
+        return given.strip()
+    found = member_named(project, given)
+    if found is None:
+        raise SystemExit(f"{given} is not in team.members — one of: {names}")
+    return found["name"]
+
+
+def work(project: Project, who: str, since: str, until: str) -> dict:
+    """What one person built between two days: their slices closed in the range, under the story, task
+    or bug each builds — newest first, by the last of their slices to close — and their slices being
+    built now. Read from the slice files alone (`owner:`, `closed:`), never from git."""
+    for day in (since, until):
+        try:
+            date.fromisoformat(day if DATE.match(day) else "")
+        except ValueError:
+            raise SystemExit(f"{day!r} is not a date — YYYY-MM-DD")
+    if since > until:
+        raise SystemExit(f"--since {since} is after --until {until}")
+    found = member_named(project, who)
+    name = found["name"] if found else who.strip()
+    aliases = {name.lower()} | ({str(found.get("github") or "").lower()} - {""} if found else set())
+
+    def theirs(s):
+        return owner_of(s).lower() in aliases
+
+    def rel(item):
+        return project.rel(item.doc)
+
+    # A slice under something dropped later was still built, so only a dropped slice is left out.
+    slices = sorted((s for s in project.of_type("slice") if s.state != "dropped"), key=lambda s: natural_key(s.id))
+    closed = [s for s in slices if s.state == "closed"]
+    in_range = [s for s in closed if since <= closed_on(s) <= until]
+    groups = {}
+    for s in in_range:
+        if theirs(s) and s.parent is not None:
+            groups.setdefault(s.parent.id, (s.parent, []))[1].append(s)
+    items = []
+    for parent, mine in groups.values():
+        others = {}
+        for s in project.counted(parent, "slice"):
+            if s.state == "closed" and not theirs(s):
+                found = member_named(project, owner_of(s)) if owner_of(s) else None
+                key = found["name"] if found else owner_of(s)
+                others[key] = others.get(key, 0) + 1
+        items.append({"id": parent.id, "title": parent.title, "type": parent.type, "doc": rel(parent),
+                      "part_of": [a.label for a in reversed(parent.ancestors())],
+                      "progress": project.progress(parent),
+                      "slices": [{"id": s.id, "title": s.title, "closed": closed_on(s), "doc": rel(s)} for s in mine],
+                      "others": dict(sorted(others.items()))})
+    items.sort(key=lambda i: max(s["closed"] for s in i["slices"]), reverse=True)
+    return {
+        "owner": name, "since": since, "until": until, "items": items,
+        "in_progress": [{"id": s.id, "title": s.title, "state": s.state if s.state == "open" else "claimed",
+                         "parent": s.parent.label if s.parent else "", "doc": rel(s)}
+                        for s in slices if theirs(s) and claimed(s)],
+        "unowned": [s.id for s in in_range if not owner_of(s)],
+        "undated": [s.id for s in closed if theirs(s) and not closed_on(s)],
+        "owners": sorted({owner_of(s) for s in slices if owner_of(s)}, key=str.lower),
+    }
+
+
+def work_text(report: dict) -> str:
+    """`work` for a person to read: one heading per story, task or bug, its slices under it."""
+    who = report["owner"]
+    count = sum(len(i["slices"]) for i in report["items"])
+    out = [f"# Work by {who} · {report['since']} to {report['until']}", ""]
+    if not report["items"] and not report["in_progress"] and who.lower() not in (o.lower() for o in report["owners"]):
+        out.append(f"No slice names {who} as its owner. Owners: {', '.join(report['owners']) or 'none yet'}.")
+    else:
+        out.append(f"{count} slice{'s' if count != 1 else ''} closed, under {len(report['items'])} "
+                   f"item{'s' if len(report['items']) != 1 else ''}." if count else "Nothing closed in this range.")
+    for i in report["items"]:
+        out += ["", f"## {i['id']} {i['title']}", "", f"{i['type']} · {i['progress']} · {' › '.join(i['part_of']) or '—'}", ""]
+        out += [f"- {s['id']} {s['title']} — closed {s['closed']}" for s in i["slices"]]
+        if i["others"]:
+            out.append("- also closed here: " + ", ".join(f"{n} by {o}" if o else f"{n} with no owner"
+                                                          for o, n in i["others"].items()))
+    if report["in_progress"]:
+        out += ["", "## In progress now", ""]
+        out += [f"- {s['id']} {s['title']} — {s['state']} · {s['parent']}" for s in report["in_progress"]]
+    notes = []
+    if report["unowned"]:
+        notes.append(f"{len(report['unowned'])} slice{'s' if len(report['unowned']) != 1 else ''} closed in this range "
+                     f"name{'s' if len(report['unowned']) == 1 else ''} no owner, so may be missing here: "
+                     f"{', '.join(report['unowned'])} — `owners --from-prs` fills them from their pull requests")
+    if report["undated"]:
+        one = len(report["undated"]) == 1
+        notes.append(f"{len(report['undated'])} of {who}'s closed slices {'has' if one else 'have'} no `closed:` date "
+                     f"and {'is' if one else 'are'} left out: "
+                     + ", ".join(report["undated"]))
+    if notes:
+        out += ["", "## Not counted", ""] + [f"- {n}" for n in notes]
+    return "\n".join(out)
+
+
+def fill_owners(project: Project, prs: list, replace: bool = False, dry: bool = False) -> dict:
+    """Once, for slices opened before `slice-open` set `owner:`: each open or closed slice's owner from
+    its pull request's author (`gh pr list --state all --json number,author`) — a member's name by
+    their login, solo the author's name. With `replace`, an owner the author contradicts is changed too."""
+    authors = {}
+    for pr in prs if isinstance(prs, list) else []:
+        author = pr.get("author") if isinstance(pr, dict) else None
+        if isinstance(author, dict) and str(pr.get("number", "")).isdigit():
+            authors[int(pr["number"])] = author
+    out = {"filled": [], "replaced": [], "differs": [], "unknown": [], "no_pr": []}
+    for s in sorted(project.of_type("slice"), key=lambda s: natural_key(s.id)):
+        if s.state not in ("open", "closed"):
+            continue
+        pr = str(s.fm.get("pr", "")).lstrip("#")
+        author = authors.get(int(pr)) if pr.isdigit() else None
+        if author is None:
+            if not owner_of(s):
+                out["no_pr"].append(s.id if not pr.isdigit() else f"{s.id} (PR #{pr} not in the list)")
+            continue
+        login = str(author.get("login") or "")
+        if members(project):
+            found = member_named(project, login)
+            name = found["name"] if found else ""
+        else:
+            name = str(author.get("name") or "").strip() or login
+        if not name:
+            if not owner_of(s):
+                out["unknown"].append(f"{s.id} (PR #{pr} by {login})")
+            continue
+        now = owner_of(s)
+        if now and now.lower() == name.lower():
+            continue
+        if now and not replace:
+            out["differs"].append(f"{s.id}: {now}, PR #{pr} by {name}")
+            continue
+        out["replaced" if now else "filled"].append(f"{s.id}: {name}" + (f" (was {now})" if now else ""))
+        if not dry:
+            write(s.doc, set_fields(s.text, {"owner": name}))
+    return out
+
+
 def index_block(project: Project, index_path: str) -> str:
     folder = os.path.dirname(index_path)
     lines = []
@@ -1585,12 +1767,12 @@ def next_id(project: Project, kind: str) -> str:
 # ---------------------------------------------------------------- new
 
 def link_slice(project: Project, slice_id: str, fields: dict) -> str:
-    """Set front-matter fields on a slice — `branch`, `pr`, `issue` — in place. Returns the file."""
+    """Set front-matter fields on a slice — `branch`, `pr`, `issue`, `owner` — in place. Returns the file."""
     item = project.items.get(slice_id)
     if item is None or item.type != "slice":
         raise SystemExit(f"no slice {slice_id}")
     if not fields:
-        raise SystemExit("nothing to set — give --branch, --pr or --issue")
+        raise SystemExit("nothing to set — give --branch, --pr, --issue or --owner")
     for key in ("pr", "issue"):
         if key in fields:
             fields[key] = str(fields[key]).lstrip("#")
@@ -4165,6 +4347,8 @@ def merge_check(project: Project, slice_id: str, base: str | None = None) -> lis
                else ("block", f"state is `{item.state}` — run /spry:slice-close first"))
     out.append(("ok", f"closed {closed_on(item)}") if closed_on(item)
                else ("block", "no `closed:` date — set it to the day the slice closed (YYYY-MM-DD)"))
+    out.append(("ok", f"built by {owner_of(item)}") if owner_of(item)
+               else ("block", f"no `owner:` — who built it: `link {item.id} --owner`"))
     out.append(("ok", f"PR #{item.fm['pr']}") if str(item.fm.get("pr", "")).isdigit()
                else ("block", "no `pr:` number in the slice"))
     rows = falsify_table(item)
@@ -4537,6 +4721,16 @@ def main(argv=None) -> int:
     p = sub.add_parser("coverage", help="defined vs done for the whole plan, and what is built but not proven")
     p = sub.add_parser("backlog", help="what is being built, what to build next, and what stands in the way")
     p = sub.add_parser("done", help="finished stories, tasks and bugs, newest first, with the day each closed")
+    p = sub.add_parser("work", help="what one person built in a date range: their closed slices under each story, task or bug")
+    p.add_argument("owner", help="a slice owner: a team.members name or GitHub login")
+    p.add_argument("--since", required=True, help="first day, YYYY-MM-DD")
+    p.add_argument("--until", help="last day, YYYY-MM-DD (default: today)")
+    p.add_argument("--json", action="store_true", help="for /spry:work-report: with each file's path")
+    p = sub.add_parser("owners", help="once: fill slices' missing owner from their pull requests' authors")
+    p.add_argument("--from-prs", required=True, metavar="FILE",
+                   help="`gh pr list --state all --limit 5000 --json number,author`, saved, or - for stdin")
+    p.add_argument("--replace", action="store_true", help="also change an owner the PR's author contradicts")
+    p.add_argument("--dry-run", action="store_true", help="change nothing; say what would change")
     p = sub.add_parser("view", help="write the backlog, coverage and done pages for this working tree to .spry/view/")
     p.add_argument("--since", help="only when the plan or a test changed since this commit (for git hooks)")
     p = sub.add_parser("serve", help="browse the plan and knowledge in a browser, read-only, on this machine")
@@ -4550,14 +4744,16 @@ def main(argv=None) -> int:
     g.add_argument("--restore", metavar="BASE", help="on a branch: put back BASE's copy of every generated block it changed")
     p = sub.add_parser("related", help="conflict-check candidates for a document")
     p.add_argument("file")
-    p = sub.add_parser("link", help="set a slice's branch, pr or issue in its front-matter")
+    p = sub.add_parser("link", help="set a slice's branch, pr, issue or owner in its front-matter")
     p.add_argument("slice")
     p.add_argument("--branch")
     p.add_argument("--pr")
     p.add_argument("--issue")
+    p.add_argument("--owner", nargs="?", const="", help="who is building it: a team.members name or login; "
+                                                        "bare, the person git says is at this clone")
     p = sub.add_parser("claim", help="take a slice before opening it: on the main branch with `mint: main`, then cut its branch")
     p.add_argument("slice")
-    p.add_argument("--owner", help="who is building it (team.members)")
+    p.add_argument("--owner", help="who is building it: a team.members name or login (default: the person at this clone)")
     p.add_argument("--no-switch", action="store_true", help="make the branch without switching to it (for a worktree)")
     p = sub.add_parser("release", help="give back a claimed slice nobody is building: planned again, branch cleared")
     p.add_argument("slice")
@@ -4709,6 +4905,28 @@ def main(argv=None) -> int:
     if args.command == "done":
         print(done_block(project, os.path.join(project.spry, "DONE.md")))
         return 0
+    if args.command == "work":
+        report = work(project, args.owner, args.since, args.until or date.today().isoformat())
+        print(json.dumps(report, indent=2, ensure_ascii=False) if args.json else work_text(report))
+        return 0
+    if args.command == "owners":
+        try:
+            prs = json.loads(sys.stdin.read() if args.from_prs == "-" else read(args.from_prs))
+        except (OSError, ValueError) as e:
+            print(f"cannot read {args.from_prs}: {e}", file=sys.stderr)
+            return 2
+        said = fill_owners(project, prs, args.replace, args.dry_run)
+        heads = (("filled", "would fill" if args.dry_run else "filled"),
+                 ("replaced", "would replace" if args.dry_run else "replaced"),
+                 ("differs", "kept — the PR's author differs; --replace changes it"),
+                 ("unknown", "left — the PR's author is not in team.members"),
+                 ("no_pr", "left — no pull request to read"))
+        for key, head in heads:
+            if said[key]:
+                print(f"{head}:\n" + "\n".join("  " + line for line in said[key]))
+        if not any(said.values()):
+            print("every open and closed slice has its owner")
+        return 0
     if args.command == "view":
         written = view(project, args.since)
         if written:
@@ -4741,6 +4959,8 @@ def main(argv=None) -> int:
         return 0
     if args.command == "link":
         fields = {k: getattr(args, k) for k in ("branch", "pr", "issue") if getattr(args, k) is not None}
+        if args.owner is not None:
+            fields["owner"] = resolve_owner(project, args.owner)
         print(project.rel(link_slice(project, args.slice, fields)))
         return 0
     if args.command == "next":
@@ -4771,7 +4991,10 @@ def main(argv=None) -> int:
         print("\n".join(project.rel(p) for p in paths))
         return 0
     if args.command == "claim":
-        branch = claim(project, args.slice, args.owner, switch=not args.no_switch)
+        # Only `mint: main` writes the claim; with `local`, slice-open's `link --owner` sets it.
+        owner = None if mint_mode(project) != "main" else \
+            resolve_owner(project, args.owner) if args.owner else whoami(project)
+        branch = claim(project, args.slice, owner, switch=not args.no_switch)
         print(f"{args.slice} claimed" + (f" on {main_branch(project)}" if mint_mode(project) == "main" else "")
               + f"; branch `{branch}`" + ("" if args.no_switch else ", checked out"))
         return 0

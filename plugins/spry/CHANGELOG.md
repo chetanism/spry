@@ -697,3 +697,32 @@ Entry format:
   - *Totals* is unchanged.
 - **Adapt:** nothing
 - **Migrate:** nothing — CI's next `spry index` rewrites `spry/COVERAGE.md`.
+
+## CH-40 · A work report for one person, and slice owners who built them
+
+- **Date:** 2026-10-27 · **Version:** 0.29.0
+- **Touches:** `skills/work-report` (new), `tool/spry.py` (`work`, `owners`; `link --owner`; `claim`
+  and `merge-check` take the owner), `process/slicing.md` (*What a slice is*, *Open* steps 0 and 5)
+- **Why:** nothing said what one person built in a week or a month. A slice's `owner:` could say it,
+  but it was the planner's name, the template's `<name>`, or empty: no skill set it at open, and
+  `claim --owner` wrote it only with `mint: main`.
+  - A slice's `owner` is who builds it. `slice-open` sets it (`link SL-<n> --owner`, bare: the
+    person git says is at this clone — their `team.members` name by git's `user.name` or email, or
+    solo, git's `user.name`); `claim` sets it too with `mint: main`. `check` warns on an open slice
+    without one; `merge-check` blocks a slice without one.
+  - `spry.py work <person> --since <day> [--until <day>]` lists the person's slices closed in the
+    range under the story, task or bug each builds, newest first, with what else closed there and
+    by whom, their slices being built now, and closed slices it could not count. Files only, never
+    git; `--json` for the skill.
+  - `/spry:work-report <person> <range>` writes the report from it: 2–3 lines on each item, from
+    the slices' close summaries, then the slices by ID and title. Report only.
+- **Adapt:** nothing
+- **Migrate:** slices opened before this have no owner, or the planner's. Once, on the main branch:
+  `gh pr list --state all --limit 5000 --json number,author > .spry/prs.json`, then
+  `python3 spry/tool/spry.py owners --from-prs .spry/prs.json --dry-run`. It fills each open or
+  closed slice's missing owner from its pull request's author — a member's name by their
+  `github` login; solo, the author's GitHub name. Show the person what it would fill, what it keeps
+  because the PR's author differs (`--replace` changes those), and what it cannot fill — an author
+  not in `team.members`, or no PR — which they fill by hand or leave. Solo, check the names match
+  git's `user.name`, which later slices get: two spellings count as two people. Then run it without
+  `--dry-run`, `spry.py check`, and commit `docs(plan): slice owners from their pull requests`.

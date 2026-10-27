@@ -636,6 +636,159 @@ class Done(Base):
         self.assertIn(("block", "no `closed:` date — set it to the day the slice closed (YYYY-MM-DD)"), lines)
 
 
+TEAM = {**CONFIG, "team": {"members": [{"name": "Asha", "github": "asha-k"}, {"name": "Ravi", "github": "ravi-dev"}]}}
+
+
+def owned(text, owner):
+    return text.replace("owner: A\n", f"owner: {owner}\n" if owner else "")
+
+
+class Work(Base):
+    """What one person built: their closed slices in a range, under the item each builds."""
+    T, S2 = f"{F}/tasks/T-1-t", f"{F}/S-2-x"
+
+    def key(self, path):
+        return path.replace("/", "__")
+
+    def team_tree(self, **changes):
+        return self.tree(**{"spry__spry.config.json": json.dumps(TEAM), **changes})
+
+    def test_groups_closed_slices_newest_first_with_what_others_did_and_what_is_open(self):
+        t = self.team_tree(**{
+            self.key(f"{S}/SL-1-a.md"): owned(slice_("SL-1", closed="2026-10-02"), "Ravi"),
+            self.key(f"{S}/SL-2-b.md"): owned(slice_("SL-2", closed="2026-10-04"), "Asha"),
+            self.key(f"{S}/SL-6-f.md"): owned(slice_("SL-6", closed="2026-10-05"), ""),
+            self.key(f"{self.T}/README.md"): item("T-1"),
+            self.key(f"{self.T}/SL-3-c.md"): owned(slice_("SL-3", covers="[]", closed="2026-10-09"), "ravi"),
+            self.key(f"{self.T}/SL-4-d.md"): owned(slice_("SL-4", covers="[]", closed="2026-09-20"), "Ravi"),
+            self.key(f"{self.T}/SL-5-e.md"): owned(slice_("SL-5", covers="[]", closed=""), "Ravi"),
+            self.key(f"{self.S2}/README.md"): story("S-2"),
+            self.key(f"{self.S2}/SL-7-g.md"): owned(slice_("SL-7", state="open"), "Ravi")})
+        report = spry.work(t.project(), "ravi-dev", "2026-10-01", "2026-10-31")
+        self.assertEqual(report["owner"], "Ravi")
+        self.assertEqual([(i["id"], [s["id"] for s in i["slices"]]) for i in report["items"]],
+                         [("T-1", ["SL-3"]), ("S-1", ["SL-1"])])
+        self.assertEqual(report["items"][1]["others"], {"": 1, "Asha": 1})
+        self.assertEqual(report["items"][1]["part_of"], ["M-1 Title of M-1", "E-1 Title of E-1", "F-1 Title of F-1"])
+        self.assertEqual([(s["id"], s["state"]) for s in report["in_progress"]], [("SL-7", "open")])
+        self.assertEqual((report["unowned"], report["undated"]), (["SL-6"], ["SL-5"]))
+        text = spry.work_text(report)
+        self.assertIn("# Work by Ravi · 2026-10-01 to 2026-10-31\n\n2 slices closed, under 2 items.", text)
+        self.assertIn("## S-1 Title of S-1\n\nstory · ", text)
+        self.assertIn("- SL-1 Slice SL-1 — closed 2026-10-02\n- also closed here: 1 with no owner, 1 by Asha", text)
+        self.assertIn("## In progress now\n\n- SL-7 Slice SL-7 — open · S-2 Title of S-2", text)
+        self.assertIn("1 slice closed in this range names no owner, so may be missing here: SL-6", text)
+        self.assertIn("1 of Ravi's closed slices has no `closed:` date and is left out: SL-5", text)
+
+    def test_work_under_a_dropped_story_still_counts_and_a_claim_is_in_progress(self):
+        t = self.team_tree(**{
+            self.key(f"{S}/README.md"): story("S-1").replace("state: ready", "state: dropped"),
+            self.key(f"{S}/SL-1-a.md"): owned(slice_("SL-1", closed="2026-10-02"), "Ravi"),
+            self.key(f"{S}/SL-2-b.md"): owned(slice_("SL-2", state="dropped"), "Ravi"),
+            self.key(f"{S}/SL-3-c.md"): owned(slice_("SL-3", state="closed", closed="2026-10-03"), "asha-k"),
+            self.key(f"{self.S2}/README.md"): story("S-2"),
+            self.key(f"{self.S2}/SL-4-d.md"): owned(slice_("SL-4", state="planned"), "Ravi").replace(
+                "pr: 1\n", "pr: 1\nbranch: sl-4-d\n")})
+        report = spry.work(t.project(), "Ravi", "2026-10-01", "2026-10-31")
+        self.assertEqual([[s["id"] for s in i["slices"]] for i in report["items"]], [["SL-1"]])
+        self.assertEqual(report["items"][0]["others"], {"Asha": 1})
+        self.assertEqual([(s["id"], s["state"]) for s in report["in_progress"]], [("SL-4", "claimed")])
+
+    def test_nobody_by_that_name_and_dates_that_are_not_dates(self):
+        t = self.tree()
+        self.assertIn("No slice names Bob as its owner. Owners: A.",
+                      spry.work_text(spry.work(t.project(), "Bob", "2026-10-01", "2026-10-31")))
+        for since, until in (("last week", "2026-10-31"), ("2026-02-31", "2026-10-31"), ("2026-10-31", "2026-10-01")):
+            with self.assertRaises(SystemExit):
+                spry.work(t.project(), "A", since, until)
+
+    def test_cli_prints_text_or_json(self):
+        t = self.tree()
+        for extra, expect in (([], "## S-1 Title of S-1"), (["--json"], '"owner": "A"')):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(spry.main(["--root", t.root, "work", "A", "--since", "2026-10-01", *extra]), 0)
+            self.assertIn(expect, out.getvalue())
+
+
+class Owner(Base):
+    """A slice's owner is who built it: set at open, required at merge, filled once from PRs for old slices."""
+
+    def key(self, path):
+        return path.replace("/", "__")
+
+    def head(self, t, name="SL-1-a.md"):
+        with open(os.path.join(t.root, S, name)) as handle:
+            return handle.read().split("\n---\n")[0]
+
+    def test_link_takes_a_member_by_name_or_login_and_refuses_anyone_else(self):
+        t = self.tree(**{"spry__spry.config.json": json.dumps(TEAM),
+                         self.key(f"{S}/SL-1-a.md"): owned(slice_("SL-1", state="open"), "")})
+        with contextlib.redirect_stdout(io.StringIO()):
+            spry.main(["--root", t.root, "link", "SL-1", "--owner", "RAVI-DEV"])
+        self.assertIn("owner: Ravi", self.head(t))
+        with self.assertRaises(SystemExit) as caught:
+            spry.main(["--root", t.root, "link", "SL-1", "--owner", "Bob"])
+        self.assertIn("Bob is not in team.members — one of: Asha, Ravi", str(caught.exception.code))
+
+    def test_bare_owner_is_the_person_git_names_here(self):
+        t = self.tree(**{"spry__spry.config.json": json.dumps(TEAM),
+                         self.key(f"{S}/SL-1-a.md"): owned(slice_("SL-1", state="open"), "")})
+        run = git_repo(t.root)
+        run("config", "user.name", "Someone Else")
+        run("config", "user.email", "asha-k@example.com")
+        with contextlib.redirect_stdout(io.StringIO()):
+            spry.main(["--root", t.root, "link", "SL-1", "--owner"])
+        self.assertIn("owner: Asha", self.head(t))
+        run("config", "user.email", "x@example.com")
+        with self.assertRaises(SystemExit) as caught:
+            spry.main(["--root", t.root, "link", "SL-1", "--owner"])
+        self.assertIn("match no one in team.members", str(caught.exception.code))
+        solo = self.tree(**{self.key(f"{S}/SL-1-a.md"): owned(slice_("SL-1", state="open"), "")})
+        git_repo(solo.root)("config", "user.name", "Chetan")
+        self.assertEqual(spry.whoami(solo.project()), "Chetan")
+
+    def test_check_warns_on_an_open_slice_and_merge_check_blocks_a_closed_one_without_an_owner(self):
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): owned(slice_("SL-1", state="open"), "<name>")})
+        warnings = [str(p) for p in spry.check(t.project()) if p.level == "warning"]
+        self.assertProblem(warnings, "open without an `owner:`")
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): owned(slice_("SL-1"), "")})
+        self.assertIn(("block", "no `owner:` — who built it: `link SL-1 --owner`"), spry.merge_check(t.project(), "SL-1"))
+        self.assertIn(("ok", "built by A"), spry.merge_check(self.tree().project(), "SL-1"))
+
+    def test_fill_owners_from_pull_requests(self):
+        def pr(number, login, name=""):
+            return {"number": number, "author": {"login": login, "name": name}}
+
+        def slice_with(ident, owner, pr_number, state="closed"):
+            return owned(slice_(ident, state=state), owner).replace("pr: 1\n", f"pr: {pr_number}\n")
+
+        files = {"spry__spry.config.json": json.dumps(TEAM),
+                 self.key(f"{S}/SL-1-a.md"): slice_with("SL-1", "", 11),
+                 self.key(f"{S}/SL-2-b.md"): slice_with("SL-2", "<name>", 12, state="open"),
+                 self.key(f"{S}/SL-3-c.md"): slice_with("SL-3", "Asha", 13),
+                 self.key(f"{S}/SL-4-d.md"): slice_with("SL-4", "", 14),
+                 self.key(f"{S}/SL-5-e.md"): slice_with("SL-5", "", "<number, once opened>"),
+                 self.key(f"{S}/SL-6-f.md"): slice_with("SL-6", "", 16, state="planned")}
+        prs = [pr(11, "ravi-dev"), pr(12, "Asha-K"), pr(13, "ravi-dev"), pr(14, "stranger"), pr(16, "ravi-dev")]
+        t = self.tree(**files)
+        said = spry.fill_owners(t.project(), prs, dry=True)
+        self.assertEqual(said, {"filled": ["SL-1: Ravi", "SL-2: Asha"], "replaced": [],
+                                "differs": ["SL-3: Asha, PR #13 by Ravi"], "unknown": ["SL-4 (PR #14 by stranger)"],
+                                "no_pr": ["SL-5"]})
+        self.assertNotIn("owner: Ravi", self.head(t))
+        said = spry.fill_owners(t.project(), prs, replace=True)
+        self.assertEqual(said["replaced"], ["SL-3: Ravi (was Asha)"])
+        self.assertIn("owner: Ravi", self.head(t))
+        self.assertIn("owner: Asha", self.head(t, "SL-2-b.md"))
+        self.assertIn("owner: Ravi", self.head(t, "SL-3-c.md"))
+        self.assertNotIn("owner:", self.head(t, "SL-6-f.md"))
+        self.assertEqual(spry.fill_owners(t.project(), prs)["filled"], [])
+        solo = self.tree(**{self.key(f"{S}/SL-1-a.md"): slice_with("SL-1", "", 11)})
+        spry.fill_owners(solo.project(), [pr(11, "chetan", "Chetan Verma")])
+        self.assertIn("owner: Chetan Verma", self.head(solo))
+
+
 class Branch(Base):
     """Generated blocks on a branch: only the main branch gets them."""
 

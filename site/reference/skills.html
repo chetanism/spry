@@ -44,7 +44,7 @@ your project. This page lists all 25, grouped by when you reach for them.</p>
     <tr><td>QA and testing</td><td><a href="#sprytest-scenarios"><code>test-scenarios</code></a>, <a href="#sprytest-all"><code>test-all</code></a>, <a href="#spryexplore"><code>explore</code></a>, <a href="#sprysecurity-audit"><code>security-audit</code></a>, <a href="#spryprelaunch"><code>prelaunch</code></a></td></tr>
     <tr><td>Knowledge</td><td><a href="#spryrecord"><code>record</code></a>, <a href="#sprycompact"><code>compact</code></a></td></tr>
     <tr><td>Keeping spry current</td><td><a href="#spryprocess-change"><code>process-change</code></a>, <a href="#spryupdate"><code>update</code></a>, <a href="#sprycontribute"><code>contribute</code></a></td></tr>
-    <tr><td>Status and tone</td><td><a href="#sprystatus"><code>status</code></a>, <a href="#sprytone"><code>tone</code></a></td></tr>
+    <tr><td>Status and tone</td><td><a href="#sprystatus"><code>status</code></a>, <a href="#sprywork-report"><code>work-report</code></a>, <a href="#sprytone"><code>tone</code></a></td></tr>
   </tbody>
 </table>
 
@@ -362,6 +362,18 @@ invents progress.</p>
   <li><strong>Audience:</strong> yours. At tone 1–4 it is a few plain bullets per milestone; at 5–10, the tree as printed plus what stands out.</li>
   <li><strong>Writes:</strong> nothing. It reads <code>status</code>, and <code>coverage</code> or <code>backlog</code> when you ask what is proven or what to do next.</li>
   <li><strong>Guide:</strong> <a href="../design/pages.html">Generated pages</a>.</li>
+</ul>
+
+<h3 id="sprywork-report">/spry:work-report</h3>
+<p>What one person built between two dates: each story, task and bug they worked on, with two or three
+lines on their part, and the slices under it by ID and title — then what they are building now. A slice
+counts for its <code>owner:</code>, the person who built it, and its <code>closed:</code> date, never
+git. The summaries are written from the slices' close summaries, not from the code.</p>
+<ul>
+  <li><strong>Arguments:</strong> <code>&lt;person&gt; [from] [to]</code> — a team member's name or GitHub login, and a range as dates or in words ("last week"). No range → the last 7 days.</li>
+  <li><strong>Audience:</strong> yours.</li>
+  <li><strong>Writes:</strong> nothing, unless you ask for a file — then <code>.spry/reports/</code>, never committed. It reads <code>spry.py work</code>.</li>
+  <li><strong>Guide:</strong> <a href="../guides/team.html#who-built-what">Work as a team</a>.</li>
 </ul>
 
 <h3 id="sprytone">/spry:tone</h3>
