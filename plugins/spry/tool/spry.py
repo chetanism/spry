@@ -34,7 +34,7 @@
     python3 spry/tool/spry.py link <slice> [--branch B] [--pr N] [--issue N] [--owner [NAME]]   # set them in the slice's front-matter
     python3 spry/tool/spry.py issue-body <slice> [--close]   # the slice's issue (slices.issue): work order, or close summary
     python3 spry/tool/spry.py merge-message <slice> [--ci-local REASON]   # the squash commit: subject, summary, trailers
-    python3 spry/tool/spry.py gate [--force] [--fast]   # check, fast checks, affected tests (--fast: no tests, no stamp); skipped while no code changed
+    python3 spry/tool/spry.py gate [--force] [--fast] [--full]   # check, fast checks, affected tests — or only the changed ones when the branch adds only tests (--full: affected anyway) — then tests.always (--fast: no tests, no stamp); skipped while no code changed
     python3 spry/tool/spry.py changed --base <ref>   # for CI: code=true when anything but docs changed
     python3 spry/tool/spry.py review-check <payload.json> --diff <file|-> [--own]   # would GitHub take this review?
     python3 <plugin>/tool/spry.py install --agent <generic|claude|cursor|gemini> [--root <project>]
@@ -74,12 +74,15 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.29.0"
+VERSION = "0.30.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
                "slice": "SL", "task": "T", "bug": "B", "decision": "D"}
 DEFAULT_TEST_MATCH = ["**/*.test.*", "**/*.spec.*", "**/*_test.*", "**/test_*.py", "**/tests/**"]
+# A test file by its name alone. Anything else `tests.match` takes — a conftest, a Go `_test.go`
+# helper its package shares unnamed — may feed tests that never mention it.
+TEST_FILE_NAME = re.compile(r"^(test_.+\.py|.+_test\.py|.+\.(test|spec)\.[^./]+)$")
 SKIP_DIRS = {".git", "node_modules", ".spry", "dist", "build", "__pycache__", ".venv", "venv",
              ".idea", ".turbo", "coverage", ".next", "target"}
 CONTAINERS = {"tasks": "task", "bugs": "bug"}
@@ -2674,12 +2677,17 @@ def load_plan(project: Project, path: str) -> list:
     return plan
 
 
-def run_tests(project: Project, runner: dict, cwd: str, files: list, timeout: int, root: str | None = None):
-    """('pass' | 'fail' | 'timeout', last lines of output). `root` is the tree the files live in."""
+def runner_command(project: Project, runner: dict, cwd: str, files: list, root: str | None = None) -> str:
+    """The runner's command for these test files, each relative to `cwd`."""
     base = root or project.root
     # `/` on every platform: test runners take it on Windows, and a `\` would need quoting
     rels = [os.path.relpath(os.path.join(base, f), cwd).replace(os.sep, "/") for f in files]
-    command = runner["command"].replace("{files}", " ".join(shell_quote(r) for r in rels))
+    return runner["command"].replace("{files}", " ".join(shell_quote(r) for r in rels))
+
+
+def run_tests(project: Project, runner: dict, cwd: str, files: list, timeout: int, root: str | None = None):
+    """('pass' | 'fail' | 'timeout', last lines of output). `root` is the tree the files live in."""
+    command = runner_command(project, runner, cwd, files, root)
     # Its own process group, so a timeout or Ctrl-C stops the runner's children too (pnpm → vitest
     # workers) — none may keep running against a mutated file.
     proc = subprocess.Popen(command, shell=True, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
@@ -4494,28 +4502,46 @@ def code_fingerprint(project: Project, base: str | None = None):
     return digest.hexdigest()
 
 
-def gate_steps(project: Project, fast: bool = False) -> list:
-    """[(name, command)] — fast checks cheapest first, then the affected tests unless `fast`."""
-    steps = []
-    for n, entry in enumerate(project.config.get("checks", {}).get("fast") or [], 1):
+def named_commands(entries, key: str, prefix: str = "") -> list:
+    """[(name, command, key)] from a config list of commands, each a string or {"name", "run"}."""
+    out = []
+    for n, entry in enumerate(entries or [], 1):
         name, command = (entry.get("name"), entry.get("run")) if isinstance(entry, dict) else (None, entry)
         command = str(command or "")
-        steps.append((name or (command.split()[0] if command.split() else f"check {n}"), command))
+        out.append((prefix + (name or (command.split()[0] if command.split() else f"check {n}")), command, key))
+    return out
+
+
+def gate_steps(project: Project, fast: bool = False, changed_tests: list | None = None) -> list:
+    """[(name, command, cwd)] — fast checks cheapest first, then, unless `fast`, the affected tests —
+    or, given `changed_tests`, those files through their falsify runners — then `tests.always`."""
+    tests = project.config.get("tests", {})
+    steps = named_commands(project.config.get("checks", {}).get("fast"), "checks.fast")
+    if not fast and changed_tests is None:
+        steps.append(("affected tests", str(tests.get("affected") or ""), "tests.affected"))
     if not fast:
-        steps.append(("affected tests", str(project.config.get("tests", {}).get("affected") or "")))
-    for name, command in steps:
+        steps += named_commands(tests.get("always"), "tests.always", "always: ")
+    for name, command, key in steps:
         if not command.strip() or re.search(r"<[a-z][a-z ,/-]*>", command):
-            raise SystemExit(f"spry.config.json: `{name}` has no command yet — set "
-                             f"{'tests.affected' if name == 'affected tests' else 'checks.fast'}")
+            raise SystemExit(f"spry.config.json: `{name}` has no command yet — set {key}")
+    steps = [(name, command, project.root) for name, command, _key in steps]
+    if not fast and changed_tests:
+        at = len(steps) - len(tests.get("always") or [])
+        table = runners(project)
+        steps[at:at] = [(f"changed tests{'' if cwd == project.root else ' in ' + os.path.relpath(cwd, project.root).replace(os.sep, '/')}",
+                         runner_command(project, table[index], cwd, files), cwd)
+                        for (index, cwd), files in group_files(project, changed_tests).items()]
     return steps
 
 
 DEFAULT_RETRY_WHEN = r"timed? ?out|timeout|ETIMEDOUT"
 
 
-def gate(project: Project, force: bool = False, say=print, fast: bool = False) -> int:
-    """`spry check`, then the fast checks, then the affected tests — stopping at the first failure.
-    A pass is stamped with the code's fingerprint; while the code is unchanged, only `check` runs again.
+def gate(project: Project, force: bool = False, say=print, fast: bool = False, full: bool = False) -> int:
+    """`spry check`, then the fast checks, then the affected tests, then `tests.always` — stopping at
+    the first failure. A branch that changed only test files runs those files instead of the affected
+    tests, unless `full`: a test file breaks no other package's tests. A pass is stamped with the
+    code's fingerprint; while the code is unchanged, only `check` runs again.
     `fast` leaves out the tests, for each change while building, and stamps nothing."""
     started = time.time()
     errors = [p for p in check(project) if p.level == "error"]
@@ -4531,19 +4557,32 @@ def gate(project: Project, force: bool = False, say=print, fast: bool = False) -
         stamp = json.loads(read(stamp_path))
     except (OSError, ValueError):
         stamp = {}
-    if fingerprint and stamp.get("code") == fingerprint and not force:
-        say(f"– {', '.join(n for n, _ in steps)} skipped: no code changed since they passed at {stamp.get('at', '?')}")
+    # A tests-only pass does not vouch for the affected tests `--full` asks for.
+    if fingerprint and stamp.get("code") == fingerprint and not force and not (full and stamp.get("mode")):
+        done = f"the {stamp['mode']} gate" if stamp.get("mode") else ", ".join(n for n, *_ in steps)
+        say(f"– {done} skipped: no code changed since it passed at {stamp.get('at', '?')}")
         return 0
-    main = documents_only_since_main(project)
-    if main and not force:
-        say(f"– {', '.join(n for n, _ in steps)} skipped: only documents changed since {main}")
+    changes = branch_changes(project)
+    if changes and documents_only(project, changes[1]) and not force:
+        say(f"– {', '.join(n for n, *_ in steps)} skipped: only documents changed since {changes[0]}")
         return 0
+    mode = None
+    if changes and not fast and not full:
+        files, why_not = tests_only(project, changes[1])
+        if files is not None and why_not:
+            say(f"– the branch changes only test files, but {why_not} — running the affected tests")
+        elif files is not None:
+            mode = "tests-only"
+            steps = gate_steps(project, fast, changed_tests=files)
+            say(f"– tests-only: the branch changes only test files since {changes[0]} — "
+                + (f"running {len(files)} of them" if files else "it only removed them, so none to run")
+                + ", not the affected tests (`gate --full` runs those)")
     tests = project.config.get("tests", {})
     retry = str(tests.get("retry") or "").strip()
     retry_when = re.compile(tests.get("retry_when") or DEFAULT_RETRY_WHEN, re.I)
-    for name, command in steps:
+    for name, command, cwd in steps:
         started = time.time()
-        done = subprocess.run(command, shell=True, cwd=project.root, capture_output=True, text=True)
+        done = subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True)
         say(f"{'✓' if done.returncode == 0 else '✗'} {name} · {time.time() - started:.1f}s")
         if done.returncode != 0 and name == "affected tests" and retry and retry_when.search(done.stdout + done.stderr):
             # A test that times out under load and passes on a quiet machine is load, not code.
@@ -4561,8 +4600,9 @@ def gate(project: Project, force: bool = False, say=print, fast: bool = False) -
         return 0
     if fingerprint:
         os.makedirs(native(os.path.dirname(stamp_path)), exist_ok=True)
-        write(stamp_path, json.dumps({"code": fingerprint, "at": time.strftime("%Y-%m-%d %H:%M")}) + "\n")
-        say("green — stamped; until the code changes, the gate runs only `spry check`")
+        write(stamp_path, json.dumps({"code": fingerprint, "at": time.strftime("%Y-%m-%d %H:%M"),
+                                      **({"mode": mode} if mode else {})}) + "\n")
+        say(f"green{' (' + mode + ')' if mode else ''} — stamped; until the code changes, the gate runs only `spry check`")
     return 0
 
 
@@ -4577,22 +4617,55 @@ def code_changed_since(project: Project, base: str) -> bool:
     return any(not any(g.match(path) for g in docs) for path in done.stdout.split("\n") if path)
 
 
-def documents_only_since_main(project: Project) -> str | None:
-    """`origin/<main>` when the branch, working tree and untracked files included, changed only `checks.docs`
-    since it left it; None when code changed or when unsure. From the fork point, so what a rebase
-    brought in, or what the main branch did since, is not the branch's."""
+def branch_changes(project: Project):
+    """(`origin/<main>`, [paths]) — every file the branch changed since it left the main branch, working
+    tree, deletions and untracked files included; None when unsure. From the fork point, so what a
+    rebase brought in, or what the main branch did since, is not the branch's."""
     main = f"{REMOTE}/{main_branch(project)}"
     fork = git(project.root, "merge-base", main, "HEAD")
-    if fork.returncode != 0 or not fork.stdout.strip() or code_changed_since(project, fork.stdout.strip()):
+    if fork.returncode != 0 or not fork.stdout.strip():
         return None
+    done = git(project.root, "diff", "--relative", "--name-only", "--no-renames", fork.stdout.strip(), "--", ".")
     new = git(project.root, "ls-files", "-o", "--exclude-standard", "--", ".")
-    if new.returncode != 0:
+    if done.returncode != 0 or new.returncode != 0:
         return None
+    paths = set(filter(None, done.stdout.split("\n")))
+    paths |= {p for p in filter(None, new.stdout.split("\n")) if not SKIP_DIRS.intersection(p.split("/")[:-1])}
+    return main, sorted(paths)
+
+
+def documents_only(project: Project, paths: list) -> bool:
     docs = [glob_regex(g) for g in project.config.get("checks", {}).get("docs") or DEFAULT_DOCS]
-    for path in filter(None, new.stdout.split("\n")):
-        if not SKIP_DIRS.intersection(path.split("/")[:-1]) and not any(g.match(path) for g in docs):
-            return None
-    return main
+    return all(any(g.match(path) for g in docs) for path in paths)
+
+
+def tests_only(project: Project, paths: list):
+    """([test files to run], why not) — the branch changed test files and nothing else outside
+    `checks.docs`. `why not` names what sends it to the affected tests after all: a test file another
+    file mentions (a shared helper its importers would need), or one no falsify runner takes.
+    (None, None) when the branch changed anything else."""
+    docs = [glob_regex(g) for g in project.config.get("checks", {}).get("docs") or DEFAULT_DOCS]
+    code = [p for p in paths if not any(g.match(p) for g in docs)]
+    tests = project._test_globs()
+    if not code or not all(any(g.match(p) for g in tests) for p in code):
+        return None, None
+    for path in code:
+        if not TEST_FILE_NAME.match(os.path.basename(path)):
+            return code, f"{path} is not named as a test file, so tests that never name it may use it"
+        # A mention is enough: it may be an import. Wrong only in sending the gate the long way.
+        stem = os.path.splitext(os.path.basename(path))[0]
+        done = git(project.root, "grep", "-l", "-F", "--untracked", "-e", stem, "--", ".")
+        if done.returncode not in (0, 1):
+            return code, f"`git grep` failed on {path}"
+        for other in filter(None, done.stdout.split("\n")):
+            if other not in code and not any(g.match(other) for g in docs):
+                return code, f"{other} mentions {path}"
+    present = [p for p in code if os.path.isfile(native(os.path.join(project.root, p)))]
+    try:
+        group_files(project, present)
+    except PlanError as e:
+        return code, str(e)
+    return present, None
 
 
 # ---------------------------------------------------------------- review-check
@@ -4810,6 +4883,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("gate", help="spry check, fast checks, affected tests — skipped while no code changed since green")
     p.add_argument("--force", action="store_true", help="run everything even if the code is unchanged")
     p.add_argument("--fast", action="store_true", help="spry check and the fast checks only, no tests; stamps nothing")
+    p.add_argument("--full", action="store_true", help="the affected tests even when the branch changes only test files")
     p = sub.add_parser("changed", help="for CI: prints code=true when files outside checks.docs changed since --base")
     p.add_argument("--base", required=True, help="git ref to compare with")
     p = sub.add_parser("falsify", help="prove a slice's tests notice its safeguards")
@@ -5039,7 +5113,7 @@ def main(argv=None) -> int:
         print("ready to merge" if not blocks else f"{blocks} thing{'s block' if blocks != 1 else ' blocks'} the merge")
         return 1 if blocks else 0
     if args.command == "gate":
-        return gate(project, args.force, fast=args.fast)
+        return gate(project, args.force, fast=args.fast, full=args.full)
     if args.command == "changed":
         print(f"code={'true' if code_changed_since(project, args.base) else 'false'}")
         return 0

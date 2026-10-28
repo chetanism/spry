@@ -165,6 +165,7 @@ the fast checks run before any test.</p>
     <tr><td><code>tests.match</code></td><td>Globs that find test files — where <code>check</code> looks for criterion citations like <code>S-1/AC-2</code> in test names.</td></tr>
     <tr><td><code>tests.affected</code></td><td>A command that runs only the tests affected by the working tree. Used by <code>gate</code> — once at close, or whenever a test's answer is needed (<code>gate --fast</code>, run while building, runs no tests).</td></tr>
     <tr><td><code>tests.retry</code></td><td>The affected tests again with no parallelism, run once when the first run failed on a timeout. Empty: never retry.</td></tr>
+    <tr><td><code>tests.always</code></td><td>Optional. Commands <code>gate</code> and CI run after the tests whenever code changed, whatever changed — tests that read the whole code tree, such as a banned-words or licence check. Each a string or <code>{"name", "run"}</code>.</td></tr>
     <tr><td><code>tests.retry_when</code></td><td>Optional. A pattern in the output that marks a failure as a timeout. Default <code>timed out|timeout|ETIMEDOUT</code>.</td></tr>
     <tr><td><code>tests.all</code></td><td>Every test, in parallel where the runner allows. CI runs it on the main branch and nightly; the agent never runs it as a routine step.</td></tr>
     <tr><td><code>tests.junit</code></td><td>Where the runner writes JUnit XML, for <code>spry tests --slowest</code>.</td></tr>

@@ -1,7 +1,7 @@
 # Written by /spry:init. Cheapest first, and tests only when code changed:
 # spry check → fast checks (format, lint, types) → tests. A change to documents alone
 # (checks.docs in spry.config.json) runs spry check and nothing else.
-# Pull requests: affected tests; check --base refuses generated blocks the branch changed. It runs on
+# Pull requests: affected tests, then tests.always; check --base refuses generated blocks the branch changed. It runs on
 # the PR merged into the main branch, so an ID both took shows as a duplicate.
 # Main branch: every test, then spry index commits the progress tables. Nightly: every test.
 name: spry
@@ -48,6 +48,7 @@ jobs:
           fetch-depth: 0
       # <setup steps for the stack — stacks/<stack>.md>
       - run: <affected tests command, against origin/${{ github.base_ref }}>
+      - run: <each command in tests.always, one step each; none when it is empty>
   all-tests:
     needs: [check, fast]
     if: >-

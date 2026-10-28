@@ -2024,19 +2024,135 @@ class Falsify(unittest.TestCase):
         os.remove(os.path.join(self.root, ".spry", "green"))
         self.git("mv", "tests/test_overdue.py", "tests/test_overdue.md")
         self.gate()
-        self.assertEqual(self.ran(log), ["f", "t"] * 2, "code renamed to a document is code removed")
+        self.assertEqual(self.ran(log), ["f", "t", "f"], "a test renamed to a document is a test removed: tests-only")
         self.git("mv", "tests/test_overdue.md", "tests/test_overdue.py")
         self.write({"src/new.py": "x = 1\n"})
         self.gate()
-        self.assertEqual(self.ran(log), ["f", "t"] * 3, "an untracked code file runs everything")
+        self.assertEqual(self.ran(log), ["f", "t", "f"] + ["f", "t"], "an untracked code file runs everything")
         os.remove(os.path.join(self.root, "src/new.py"))
         self.write({"src/loans.py": LOANS_AFTER + "# dirty\n"})
         self.gate()
-        self.assertEqual(self.ran(log), ["f", "t"] * 4, "a dirty code file runs everything")
+        self.assertEqual(self.ran(log), ["f", "t", "f"] + ["f", "t"] * 2, "a dirty code file runs everything")
         self.commit("code on the branch")
         os.remove(os.path.join(self.root, ".spry", "green"))
         self.gate()
-        self.assertEqual(self.ran(log), ["f", "t"] * 5, "a committed code change runs everything")
+        self.assertEqual(self.ran(log), ["f", "t", "f"] + ["f", "t"] * 3, "a committed code change runs everything")
+
+    def origin_main(self):
+        remote = os.path.join(tempfile.mkdtemp(), "remote.git")
+        self.addCleanup(shutil.rmtree, os.path.dirname(remote))
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", remote], check=True)
+        self.git("remote", "add", "origin", remote)
+        self.git("push", "-q", "origin", "HEAD:main")
+        self.git("fetch", "-q", "origin")
+
+    def config_tests_only(self, log):
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["tests"]["always"] = [{"name": "words", "run": f"echo a >> {log}"}]
+        config["falsify"]["runners"][0]["command"] += f" && echo c >> {log}"
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+
+    def test_gate_runs_only_the_changed_tests_when_the_branch_changed_only_tests(self):
+        log = self.gate_config("echo f >> LOG")
+        self.config_tests_only(log)
+        self.commit("config")
+        self.origin_main()
+        self.git("checkout", "-q", "-b", "steadier")
+        self.write({"tests/test_limit.py": TEST_LIMIT + "# steadier\n"})
+        self.commit("a steadier test")
+        code, said = self.gate()
+        self.assertEqual((code, self.ran(log)), (0, ["f", "c", "a"]), said)
+        self.assertTrue(any("tests-only: the branch changes only test files since origin/main" in x for x in said), said)
+        with open(os.path.join(self.root, ".spry", "green")) as handle:
+            self.assertEqual(json.load(handle)["mode"], "tests-only", "the stamp says what it vouches for")
+        self.gate()
+        self.assertEqual(self.ran(log), ["f", "c", "a"], "stamped: nothing runs again")
+        said = []
+        self.assertEqual(spry.gate(spry.Project(self.root), say=said.append, full=True), 0)
+        self.assertEqual(self.ran(log), ["f", "c", "a", "f", "t", "a"], "--full runs the affected tests past a tests-only stamp")
+        self.assertFalse(any("tests-only" in x for x in said), said)
+        self.git("rm", "-q", "tests/test_overdue.py")
+        self.git("commit", "-q", "-m", "a test removed")
+        self.gate()
+        self.assertEqual(self.ran(log)[6:], ["f", "c", "a"], "a removed test file is not run; the changed one still is")
+        self.write({"src/loans.py": LOANS_AFTER + "# changed\n"})
+        self.gate()
+        self.assertEqual(self.ran(log)[9:], ["f", "t", "a"], "a source change runs the affected tests")
+
+    def test_gate_takes_the_long_way_when_another_file_mentions_a_changed_test(self):
+        log = self.gate_config("echo f >> LOG")
+        self.config_tests_only(log)
+        self.write({"tests/shared.py": "from test_limit import lend\n"})
+        self.commit("a helper that imports a test file")
+        self.origin_main()
+        self.git("checkout", "-q", "-b", "steadier")
+        self.write({"tests/test_limit.py": TEST_LIMIT + "# steadier\n"})
+        code, said = self.gate()
+        self.assertEqual((code, self.ran(log)), (0, ["f", "t", "a"]), said)
+        self.assertTrue(any("tests/shared.py mentions tests/test_limit.py" in x for x in said), said)
+        with open(os.path.join(self.root, ".spry", "green")) as handle:
+            self.assertNotIn("mode", json.load(handle))
+
+    def test_gate_takes_the_long_way_when_no_runner_takes_a_changed_test(self):
+        log = self.gate_config("echo f >> LOG")
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["falsify"]["runners"][0]["match"] = ["other/**"]
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        self.commit("config")
+        self.origin_main()
+        self.git("checkout", "-q", "-b", "steadier")
+        self.write({"tests/test_limit.py": TEST_LIMIT + "# steadier\n"})
+        code, said = self.gate()
+        self.assertEqual((code, self.ran(log)), (0, ["f", "t"]), said)
+        self.assertTrue(any("no falsify runner matches tests/test_limit.py" in x for x in said), said)
+
+    def test_gate_takes_the_long_way_for_a_test_file_not_named_as_one(self):
+        log = self.gate_config("echo f >> LOG")
+        self.config_tests_only(log)
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["tests"]["match"] = ["tests/**"]
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        self.commit("config")
+        self.origin_main()
+        self.git("checkout", "-q", "-b", "fixture")
+        self.write({"tests/conftest.py": "LIMIT = 3\n"})
+        code, said = self.gate()
+        self.assertEqual((code, self.ran(log)), (0, ["f", "t", "a"]), said)
+        self.assertTrue(any("tests/conftest.py is not named as a test file" in x for x in said), said)
+
+    def test_gate_tests_only_takes_an_uncommitted_test_and_always_waits_for_tests(self):
+        log = self.gate_config("echo f >> LOG")
+        self.config_tests_only(log)
+        self.commit("config")
+        self.origin_main()
+        self.git("checkout", "-q", "-b", "new-test")
+        self.write({"tests/test_more.py": TEST_LIMIT})
+        spry.gate(spry.Project(self.root), say=lambda *_: None, fast=True)
+        self.assertEqual(self.ran(log), ["f"], "--fast runs no tests, so not tests.always either")
+        code, said = self.gate()
+        self.assertEqual((code, self.ran(log)), (0, ["f", "f", "c", "a"]), said)
+        self.write({"tests/test_more.py": TEST_LIMIT + "# again\n"})
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["tests"]["always"] = ["exit 4"]
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        self.assertEqual(self.gate()[0], 1, "a failing tests.always fails the gate")
+        config["tests"]["always"] = ["<banned words>"]
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        with self.assertRaises(SystemExit):
+            self.gate()
 
     def test_gate_runs_everything_when_it_cannot_find_the_main_branch(self):
         log = self.gate_config("echo f >> LOG")

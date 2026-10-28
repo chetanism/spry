@@ -726,3 +726,35 @@ Entry format:
   not in `team.members`, or no PR — which they fill by hand or leave. Solo, check the names match
   git's `user.name`, which later slices get: two spellings count as two people. Then run it without
   `--dry-run`, `spry.py check`, and commit `docs(plan): slice owners from their pull requests`.
+
+## CH-41 · A gate for a slice that changed only tests
+
+- **Date:** 2026-10-28 · **Version:** 0.30.0
+- **Touches:** `tool/spry.py` (`gate`, `--full`; `tests.always`), `process/slicing.md` (*Close* 7),
+  `process/merging.md` (step 1), `process/templates/spry.config.json`,
+  `process/templates/ci-github.yml` (`affected-tests`), `stacks/generic.md`
+- **Why:** a slice that changed only test files still ran the affected tests — a test file under a
+  package's `src/` counts as a change to that package, so every dependent's tests ran, about 7
+  minutes in one slice, though a test file cannot break another package's tests. `gate --fast`
+  saved the time but stamped nothing, so the merge could not count it in place of CI. And a test
+  that reads the whole tree ran only when its own package changed, so a banned word in another
+  package passed the gate and turned the main branch red. From issue #11.
+  - When the branch, working tree included, changed only test files (`tests.match`) and documents
+    since it left the main branch, `gate` runs those files through their falsify runners instead
+    of the affected tests, says so on its first line, and stamps green marked `tests-only` — a
+    stamp `merging.md` step 1 counts like any other.
+  - It runs the affected tests after all, and says why, when a changed file is not named as a test
+    (`test_*.py`, `*_test.py`, `*.test.*`, `*.spec.*` — a conftest or a Go `_test.go` helper feeds
+    tests that never name it), when any other file mentions one (a shared helper its importers
+    would need), or when no falsify runner takes one. `gate --full` always does, past a tests-only
+    stamp too.
+  - `tests.always` — commands, each a string or `{"name", "run"}`, run after the tests on every
+    gate that runs tests (not `--fast`, not a documents-only branch), and after the affected tests
+    in CI's pull-request job.
+  - A changed integration test runs too, so its services must be up.
+- **Adapt:** `tests.always` — the checks that read the whole code tree (vocabulary, licences); a
+  filter that adds one to `tests.affected` moves here. Empty when there are none. The CI workflow's
+  `affected-tests` job gets one step for each.
+- **Migrate:** a local process change that ran a tests-only gate by hand, and merged with
+  `--ci-local "…; tests-only gate"`, is now the tool's: drop it from `slicing.md`, `merging.md` and
+  `knowledge/process-changes.md`.

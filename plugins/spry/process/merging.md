@@ -22,8 +22,8 @@ from the argument (`SL-n` or a PR number), or from the current branch's `open` /
      red.
    - Then **the gate stands in for CI**, on the PR's head: the branch checked out, the working tree
      clean, `git rev-parse HEAD` equal to `headRefOid`. Run `spry.py check --base origin/<main>`, then
-     `spry.py gate` — a green stamp for this exact code counts, so a gate that just passed is not run
-     again. Red → stop, as for red CI. Green → carry `CI did not run (<reason>); gate green locally`
+     `spry.py gate` — a green stamp for this exact code counts, a tests-only one included, so a gate
+     that just passed is not run again. Red → stop, as for red CI. Green → carry `CI did not run (<reason>); gate green locally`
      to step 6, and pass `--ci-local "<reason>"` to `merge-message` at step 7.
    - Never from memory: each merge looks at its own checks. CI that was down yesterday may be up.
 2. **The slice is ready:** on the PR's branch,

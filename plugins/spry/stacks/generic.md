@@ -12,6 +12,8 @@ Ask the developer for, and record in config:
   run the test files beside the changed source files, and say so in `AGENTS.md`;
 - `tests.retry` — the affected tests again with no parallelism, run once by `gate` when the first run
   failed on a timeout (`tests.retry_when`, default `timed out|timeout|ETIMEDOUT`); empty to never retry;
+- `tests.always` — commands `gate` and CI run after the tests whenever code changed, whatever
+  changed: tests that read the whole code tree (banned words, licences); empty when there are none;
 - `tests.all` — every test, in parallel where the runner allows;
 - `checks.fast` — format, lint and type checks, cheapest first; they run before any test;
 - `checks.docs` — globs for files whose change never needs a test run (default `spry/**`, `**/*.md`);

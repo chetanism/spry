@@ -164,7 +164,9 @@ that merges.
      have proved, and a test added for a survivor changes code a gate already passed. It runs its
      own baseline, so it needs no gate first.
 7. **Gate:** working tree committed, falsify's new tests included; `spry.py gate` passes. Otherwise
-   fix what fails and run it again — it repeats only what the fix could change.
+   fix what fails and run it again — it repeats only what the fix could change. A branch that
+   changed only test files runs just those, then `tests.always`, and says so on its first line;
+   it stamps green like any pass. A changed integration test runs too, so start its services first.
 8. Set `state: closed` and `closed: <today, YYYY-MM-DD>` — the Done page dates the item by it, and
    `merge-check` blocks without it; `spry.py gate` (only `check` runs — nothing but documents changed); commit
    `docs(slice): SL-<n> close summary` with the trailer `Slice: SL-<n>` in the body; push; replace

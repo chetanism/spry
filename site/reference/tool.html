@@ -67,18 +67,23 @@ written rules into rules that are actually enforced.</p>
 <h3 id="gate">gate</h3>
 <p>The one command that says "this code is good to go": <code>spry check</code>, then the fast checks
 (format, lint, types — cheapest first), then the affected tests, stopping at the first failure.</p>
-<pre><code>spry gate [--force] [--fast]</code></pre>
+<pre><code>spry gate [--force] [--fast] [--full]</code></pre>
 <ul>
   <li>A pass is stamped in <code>.spry/green</code> against a fingerprint of the code. While the code
   matches, the gate runs <code>check</code> alone — so fixing a document after the tests passed never
   re-runs the tests.</li>
   <li>It also runs <code>check</code> alone when the branch changed only documents since its merge
   base with the main branch.</li>
+  <li>When the branch changed only test files, it runs those files — through the falsify runners —
+  instead of the affected tests, says so, and stamps green marked <code>tests-only</code>. A changed
+  file not named as a test, or one another file mentions, sends it the long way.</li>
+  <li><code>tests.always</code> runs after the tests whenever the gate runs tests, whatever changed.</li>
   <li>With <code>tests.retry</code> set, affected tests that fail on a timeout run once more with no
   parallelism. A real failure fails both runs.</li>
   <li><code>--fast</code> — <code>check</code> and the fast checks only, no tests; stamps nothing. Used
   for each change while building.</li>
   <li><code>--force</code> — run everything even if the code is unchanged.</li>
+  <li><code>--full</code> — the affected tests even when the branch changed only test files.</li>
 </ul>
 <p>More: <a href="../design/gate.html">The gate and test speed</a>.</p>
 

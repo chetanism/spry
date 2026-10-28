@@ -308,6 +308,16 @@ first so a slow one never runs only to be thrown away by a lint error.
   affected tests fail on a timeout (`tests.retry_when`) and `tests.retry` is set, the gate runs that
   once — the same tests with no parallelism — so load on a busy machine is not a red gate; a real
   failure fails both runs.
+- **A branch that changed only test files** (and documents) runs those files through their falsify
+  runners instead of the affected tests — a test file cannot break another package's tests — and
+  stamps green, marked `tests-only`, so it stands in for CI at a merge like any pass. It takes the
+  long way when a changed file is not named as a test (`test_*.py`, `*_test.py`, `*.test.*`,
+  `*.spec.*` — a conftest or a Go `_test.go` helper feeds tests that never name it), when any other
+  file mentions one (a shared helper's importers), or when no runner takes one; `gate --full`
+  always does. The changed tests get no quiet retry.
+- **`tests.always`** — commands that run after the tests on every gate that runs tests, whatever code
+  changed, and after the affected tests in CI: checks that read the whole code tree (banned words,
+  licences), which the affected run picks up only when their own package changes.
 - **`gate --fast`** runs `check` and `checks.fast` only, and stamps nothing — for each change while
   building, and for review fixes at close. The full gate runs once per slice, at close.
 - **CI** follows the same order: `check` (which also prints `changed --base` → `code=true|false`),
@@ -382,7 +392,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `link <slice> [--branch] [--pr] [--issue] [--owner [name]]` | set them in the slice's front-matter; a bare `--owner` is the person at this clone |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
-| `gate [--force] [--fast]` | §15 |
+| `gate [--force] [--fast] [--full]` | §15 |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
@@ -593,3 +603,8 @@ in `spry/history/writ.md`, then retires `canon/`.
   story, task or bug each builds, with what they are building now. A slice's `owner` is who builds
   it — set at open (`link --owner`, `claim`), blocked at merge without one; `owners --from-prs` fills
   old slices once from their PRs (CH-40, 0.29.0).
+- 2026-10-28 — a branch that changed only test files runs those files at the gate, through the
+  falsify runners, not the affected tests, and stamps green marked `tests-only`; a test file another
+  file mentions, one not named as a test, or one no runner takes, sends it the long way, and
+  `--full` always does. The tool decides, not a flag: it already knows. `tests.always` runs
+  whole-tree checks whenever tests run (CH-41, 0.30.0, from issue #11).

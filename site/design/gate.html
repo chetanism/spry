@@ -50,6 +50,26 @@ documents since it forked from <code>origin/&lt;main&gt;</code>, stamp or no sta
 other people's code, or a fresh worktree, then doesn't re-run tests on code the branch never touched.
 When the gate is unsure, it runs them.</p>
 
+<h3>A branch that changed only tests</h3>
+<p>A slice that only adds or fixes tests — a flaky test made steady, a criterion given its proof —
+changes no code another test could notice. The affected run would still test every package that
+depends on the one holding the test file, which in a monorepo can take minutes. So when the branch
+changed nothing but test files (and documents), the gate runs <em>those files</em>, through the same
+runners falsify uses, says so on its first line, and stamps green, marked <code>tests-only</code>. That
+stamp stands in for CI at a merge like any other.</p>
+<p>It takes the long way when it can't be sure: when a changed file isn't named as a test
+(<code>test_*.py</code>, <code>*_test.py</code>, <code>*.test.*</code>, <code>*.spec.*</code>) — a
+<code>conftest.py</code>, or a Go <code>_test.go</code> helper, feeds tests that never name it — when
+any other file mentions a changed test file, as a shared helper's importers would, or when no falsify
+runner takes one. <code>gate --full</code> always runs the affected tests. A changed integration test
+runs too, so its services must be up.</p>
+
+<h3>Checks that read the whole tree</h3>
+<p>Some tests read every file — a banned-words check, a licence check. The affected run picks one up
+only when its own package changes, so a banned word in another package passes the gate and turns the
+main branch red. List them in <code>tests.always</code>: whenever the gate runs tests, it runs these
+after them, whatever code changed — and so does CI on a pull request.</p>
+
 <h3>Timeouts on a busy machine</h3>
 <p>With <code>tests.retry</code> set, affected tests that fail on a timeout (<code>tests.retry_when</code>,
 by default matching "timed out", "timeout" or "ETIMEDOUT") run once more, quietly, with no

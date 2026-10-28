@@ -224,7 +224,7 @@ and spry checks you stick to it.</p>
   <dt>Gate</dt>
   <dd><code>spry gate</code>: <code>spry check</code>, then the fast checks, then the affected tests,
   stopping at the first failure. A pass is stamped against the code, so it does not re-run while only
-  documents change. <code>gate --fast</code> skips the tests. <a href="../design/gate.html">The gate and test speed</a>.</dd>
+  documents change. A branch that changed only test files runs just those. <code>gate --fast</code> skips the tests. <a href="../design/gate.html">The gate and test speed</a>.</dd>
 
   <dt>Generated block</dt>
   <dd>The part of a page between <code>&lt;!-- spry:… --&gt;</code> and <code>&lt;!-- /spry:… --&gt;</code>
