@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>spry, Spec Kit and Kiro · spry</title>
+<meta name="description" content="An honest comparison of three spec-driven development tools — GitHub Spec Kit, Amazon Kiro and spry — with what each does well, where each falls short, and who should pick which.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>spry, Spec Kit and Kiro</h1>
+<p class="lead">All three tools follow the same idea: write down what you want before an agent builds
+it, and keep that writing as the source of truth. They differ in how far past "write it down" they
+go, where they run, and what they ask of you. This page was written by spry's authors, so we have
+tried to say plainly where the other two are better.</p>
+
+<div class="callout note">
+  <span class="callout-title">Versions compared</span>
+  <p><strong>GitHub Spec Kit 1.2.5</strong> (released 28 October 2026) · <strong>Kiro IDE
+  1.4.26</strong> (22 October 2026) and <strong>Kiro CLI 2.34.0</strong> (23 October 2026) ·
+  <strong>spry 0.34.0</strong> (29 October 2026). All three change every week, so check their own
+  pages before you rely on a detail here. Sources are at the end.</p>
+</div>
+
+<h2>At a glance</h2>
+
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>Spec Kit</th><th>Kiro</th><th>spry</th></tr></thead>
+<tbody>
+<tr><td><strong>What it is</strong></td><td>A Python CLI (<code>specify</code>) that installs slash commands and templates into the agent you already use</td><td>An agentic IDE, plus a CLI, a web agent and more, from AWS</td><td>A Claude Code plugin and one Python tool, also installable for other agents</td></tr>
+<tr><td><strong>Agents</strong></td><td>About 38 integrations, plus a generic one</td><td>Kiro's own agent</td><td>Claude Code first; Cursor, Gemini and any agent that reads <code>AGENTS.md</code></td></tr>
+<tr><td><strong>Licence and cost</strong></td><td>MIT, free; you pay for the agent you use</td><td>Closed source. Free tier of 50 credits a month; paid plans from $20 a month, model use included</td><td>MIT, free; you pay for the agent you use</td></tr>
+<tr><td><strong>Workflow</strong></td><td>constitution → specify → (clarify) → plan → (checklist) → tasks → (analyze) → implement → converge</td><td>requirements (EARS) or design first → design → tasks → run tasks, or Quick Spec in one pass</td><td>milestone → epic → feature → story → slice → review → merge</td></tr>
+<tr><td><strong>Scope of one spec</strong></td><td>One feature, on its own branch</td><td>One feature or one bug fix</td><td>A whole plan, kept as a folder tree, one story at a time</td></tr>
+<tr><td><strong>Is it really done?</strong></td><td>Tasks ticked; <code>converge</code> has the agent compare code with the spec</td><td>Optional property-based tests, each linked to the requirement it checks</td><td>Computed: a criterion counts only when a test names it, or QA records a pass</td></tr>
+<tr><td><strong>Review and merge</strong></td><td>Not built in</td><td>The web agent opens pull requests; no merge gate found</td><td>A fresh-agent review, <code>merge-check</code>, and a hook that refuses a blocked merge</td></tr>
+<tr><td><strong>Teams</strong></td><td>Shared presets and private catalogues; no roles</td><td>Team billing, SSO and governance; no roles in the plan</td><td>Roles, owners and review routing in config; <code>CODEOWNERS</code></td></tr>
+<tr><td><strong>Adoption</strong></td><td>About 144k GitHub stars</td><td>Large: AWS is moving Amazon Q Developer users to it</td><td>A handful of pilot projects</td></tr>
+</tbody>
+</table></div>
+
+<h2>GitHub Spec Kit</h2>
+
+<p>Spec Kit is the lightest way in. You run <code>specify init</code>, and your agent gains commands
+that turn an idea into <code>spec.md</code>, <code>plan.md</code> and <code>tasks.md</code>, guided by a
+<em>constitution</em> of project principles. Optional steps catch problems early:
+<code>clarify</code> asks about gaps, <code>checklist</code> writes "unit tests for the requirements"
+that block <code>implement</code> until a person ticks them, and <code>analyze</code> looks for
+contradictions between spec, plan and tasks. The newer <code>converge</code> step compares the code
+with all three and adds the tasks that are still missing. Presets, extensions, hooks and workflows
+let a team shape all of it.</p>
+
+<h3>Strengths</h3>
+<ul>
+  <li>Works with nearly any agent, and costs nothing.</li>
+  <li>Quick to learn: a few commands, readable Markdown, no new editor.</li>
+  <li>By far the largest community, with a catalogue of extensions to build on.</li>
+  <li>Good tools for finding gaps in a spec before any code is written.</li>
+</ul>
+
+<h3>Weaknesses</h3>
+<ul>
+  <li>Proof stays with the agent. Tests are not traced back to requirements, and
+  <code>converge</code> is one agent comparing text with code.</li>
+  <li>The process ends at <code>implement</code>. Review, merging and progress across features are
+  up to you.</li>
+  <li>A spec belongs to its branch and is left to age. Keeping specs alive as the product changes
+  is up to the team.</li>
+  <li>Reviewers have noted a lot of Markdown to read for small changes, and an agent that still
+  ignores notes or duplicates existing code.</li>
+</ul>
+
+<h2>Amazon Kiro</h2>
+
+<p>Kiro builds the same idea into an editor. A spec is three files: requirements written in EARS form
+(<em>WHEN … THE SYSTEM SHALL …</em>), a design, and tasks. Kiro then runs the tasks, several at once
+where they don't depend on each other. Around that sit <em>steering</em> files for project
+conventions, <em>hooks</em> that run on editor events, <em>powers</em>, custom agents, checkpoints and
+an opt-in memory. Its most distinctive feature turns requirements into <strong>property-based
+tests</strong>, each linked to the requirement it checks.</p>
+
+<h3>Strengths</h3>
+<ul>
+  <li>The most polished experience of the three. Specs, tasks and code sit in one window, and
+  progress shows live.</li>
+  <li>EARS requirements are precise enough to test, and property tests check them over many inputs,
+  not one example.</li>
+  <li>Automation is built in: hooks, parallel tasks, a CLI and a web agent.</li>
+  <li>Backed by AWS, with team plans, SSO and enterprise governance.</li>
+</ul>
+
+<h3>Weaknesses</h3>
+<ul>
+  <li>Closed source and tied to one vendor. You pay in credits, and the bill grows with use.</li>
+  <li>Plans one feature at a time. There is no roadmap above that, and no roles or ownership in the
+  plan.</li>
+  <li>Property tests are optional, and Kiro's own docs say they are not formal verification. No
+  merge gate holds the work to them.</li>
+  <li>Heavy for small fixes. One reviewer got four user stories and sixteen criteria for a small
+  bug.</li>
+</ul>
+
+<h2>spry</h2>
+
+<p>spry treats the spec as a whole plan, not a feature: milestones, epics, features and stories,
+written for non-technical readers, with acceptance criteria a person agrees. Developers split stories
+into small <em>slices</em>, each with a work order. Then spry makes "done" something the tool works
+out, not something anyone types: a criterion counts only when a test names it or QA records a pass.
+<em>Falsify</em> breaks each new safeguard to show a test notices. A fresh agent reviews every slice,
+and <code>merge-check</code> plus the <a href="../design/hooks.html">agent hooks</a> hold the merge to
+all of it.</p>
+
+<h3>Strengths</h3>
+<ul>
+  <li>The only one of the three that refuses a merge until each criterion has a test that can fail,
+  or a pass from QA. Criteria are tied to tests by name, falsify checks the tests notice a broken
+  safeguard, and progress is computed. That is strong evidence, not a proof: a test can still check
+  the wrong thing.</li>
+  <li>Covers the whole lifecycle: planning above features, review, merge, QA checks, bugs, tasks,
+  a record of decisions, reports on who built what and where the time went.</li>
+  <li>Made for teams with non-technical members: each document is written for its reader, and the
+  plan is browsable on GitHub with nothing to install.</li>
+  <li>Free and open, with no dependencies beyond Python; you pay only for the agent.</li>
+</ul>
+
+<h3>Weaknesses</h3>
+<ul>
+  <li>Young. One author, a few pilot projects, no full milestone run through it yet, and it changes
+  weekly.</li>
+  <li>Heavy. Interviews, conflict checks, falsify and review at every slice cost time, and for small
+  work that is too much.</li>
+  <li>Steep to learn: many skills, many rules, a large config.</li>
+  <li>At its best only in Claude Code. Other agents get the skills and checks but not the hooks, and
+  the process assumes GitHub.</li>
+</ul>
+
+<h2>How they rate</h2>
+
+<p>Scores out of 10, from spry's authors. Read them as one honest opinion, not a benchmark.</p>
+
+<div class="table-wrap"><table>
+<thead><tr><th></th><th>Spec Kit</th><th>Kiro</th><th>spry</th></tr></thead>
+<tbody>
+<tr><td>Getting started</td><td>9</td><td>8</td><td>4</td></tr>
+<tr><td>Writing a good spec</td><td>8</td><td>9</td><td>8</td></tr>
+<tr><td>Evidence that it works</td><td>5</td><td>7</td><td>9</td></tr>
+<tr><td>Review, merge and progress</td><td>3</td><td>5</td><td>9</td></tr>
+<tr><td>Teams and non-technical readers</td><td>5</td><td>6</td><td>8</td></tr>
+<tr><td>Freedom of agent and vendor</td><td>10</td><td>3</td><td>7</td></tr>
+<tr><td>Maturity and community</td><td>8</td><td>8</td><td>3</td></tr>
+<tr><td><strong>Overall</strong></td><td><strong>7</strong></td><td><strong>7</strong></td><td><strong>7</strong></td></tr>
+</tbody>
+</table></div>
+
+<p>They tie overall for different reasons. Spec Kit is easy and open but stops at the code. Kiro is
+polished and checks requirements best, but it locks you in. spry has the most complete process on
+paper, but it is the least proven and the hardest to start with.</p>
+
+<h2>Which to pick</h2>
+
+<ul>
+  <li><strong>Spec Kit</strong> if you want structure in the agent you already use, today, for free,
+  and you will handle review and progress yourself.</li>
+  <li><strong>Kiro</strong> if you want one polished tool, your team is happy in an AWS editor, and
+  requirements checked by property tests matter more to you than freedom of tool.</li>
+  <li><strong>spry</strong> if you need to know what was built and that it works, with people who
+  don't code following along, and you will accept the overhead and an early tool to get that.</li>
+  <li><strong>None of them</strong> for a one-off script or a spike. All three cost more than they give
+  back on small, throwaway work.</li>
+</ul>
+
+<div class="callout tip">
+  <span class="callout-title">Not decided?</span>
+  <p><a href="fit.html">Is spry for you?</a> goes through what spry asks of you in more detail.</p>
+</div>
+
+<h2>Sources</h2>
+<p>Read on 29 October 2026.</p>
+<ul>
+  <li>Spec Kit: <a href="https://github.com/github/spec-kit">repository</a>,
+  <a href="https://github.com/github/spec-kit/releases">releases</a>,
+  <a href="https://github.github.com/spec-kit/quickstart.html">quick start</a>,
+  <a href="https://github.github.com/spec-kit/guides/existing-projects.html">existing projects</a></li>
+  <li>Kiro: <a href="https://kiro.dev/docs/specs/">specs</a>,
+  <a href="https://kiro.dev/docs/specs/correctness/">correctness</a>,
+  <a href="https://kiro.dev/changelog/">changelog</a>,
+  <a href="https://kiro.dev/pricing/">pricing</a>,
+  <a href="https://kiro.dev/license/">licence</a>,
+  <a href="https://aws.amazon.com/blogs/devops/amazon-q-developer-end-of-support-announcement/">Amazon Q Developer end of support</a></li>
+  <li>Both: Birgitta Böckeler,
+  <a href="https://martinfowler.com/articles/exploring-gen-ai/sdd-3-tools.html">Understanding
+  spec-driven development: Kiro, spec-kit, and Tessl</a> (October 2025, before the versions
+  above)</li>
+</ul>
+
+</article>
+</main>
+</body>
+</html>

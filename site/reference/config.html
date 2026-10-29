@@ -97,6 +97,11 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
        "command": "&lt;runner with fail-fast flag&gt; {files}"}
     ]
   },
+  "pace": { "away": 30, "logs": [], "flags": { … } },
+  "hooks": {
+    "session": true, "link_fields": true, "cited_criteria": true,
+    "check_edit": true, "merge": true, "check_stop": true
+  },
   "slices": { "issue": false, "pick": "offer" },
   "main_branch": "main",
   "mint": "local"
@@ -231,6 +236,26 @@ which stops and asks.</p>
     <tr><td><code>pace.away</code></td><td>Minutes. A gap longer than this that is not a tool running counts as away and is left out of every number.</td><td><code>30</code></td></tr>
     <tr><td><code>pace.logs</code></td><td>Extra folders of Claude Code session logs to read (globs), for a worktree outside the clone. The clone's own folder and its <code>.claude/worktrees/</code> are read already.</td><td><code>[]</code></td></tr>
     <tr><td><code>pace.flags</code></td><td>When a slice is flagged: <code>falsify_share</code>, <code>session_share</code> (waiting on another session) and <code>merge_wait_share</code> (waiting on you during the merge) as fractions, <code>review_agents</code> as a count.</td><td><code>0.2</code>, <code>0.2</code>, <code>0.5</code>, <code>3</code></td></tr>
+  </tbody>
+</table>
+
+<h2>Agent hooks</h2>
+
+<p>Claude Code hooks that say at the moment of a mistake what <code>check</code> or
+<code>merge-check</code> would say later. Each is <code>true</code> or <code>false</code>; a missing key is
+off, so a project set up before 0.34.0 has none until it takes them. New projects start with all on.
+<code>SPRY_HOOKS=off</code> in the environment turns every one off for a session. See
+<a href="../design/hooks.html">Agent hooks</a> for what each does and how to add your own.</p>
+
+<table>
+  <thead><tr><th>Key</th><th>Means</th></tr></thead>
+  <tbody>
+    <tr><td><code>hooks.session</code></td><td>At session start, resume, clear and compaction: tells the agent where the config and tool are, the slice this branch builds, your tone, and which hooks are on.</td></tr>
+    <tr><td><code>hooks.link_fields</code></td><td>Refuses a hand edit of a slice's <code>branch</code>, <code>pr</code>, <code>issue</code> or <code>owner</code> and names the <code>link</code> command that sets it.</td></tr>
+    <tr><td><code>hooks.cited_criteria</code></td><td>Asks you before a story's criterion changes or is dropped when a test already cites it.</td></tr>
+    <tr><td><code>hooks.check_edit</code></td><td>After an edit of a document, checks that one file and sends its errors back to the agent.</td></tr>
+    <tr><td><code>hooks.merge</code></td><td>Runs <code>merge-check</code> before <code>gh pr merge</code> of a slice's pull request, made from its branch, and refuses the merge if anything blocks it.</td></tr>
+    <tr><td><code>hooks.check_stop</code></td><td>Before the agent finishes with documents changed, runs <code>check</code>; on errors it goes back once to fix them, and the same documents are not checked again.</td></tr>
   </tbody>
 </table>
 

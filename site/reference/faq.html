@@ -70,6 +70,12 @@ them portable: <a href="config.html#checks-and-tests">Checks and tests</a>.</p>
 changes came from them — but none has run a full milestone through it yet. Expect it to change; <code>/spry:update</code> offers each change rather than
 forcing it.</p>
 
+<h3>How is it different from Spec Kit or Kiro?</h3>
+<p>All three write the spec before the code. Spec Kit is the lightest and works in almost any agent. Kiro
+is a polished editor that checks requirements with property-based tests. spry goes furthest past the
+code, into proof, review and merge, and costs the most effort. <a href="../start/compare.html">spry,
+Spec Kit and Kiro</a> compares them honestly.</p>
+
 <h2>Trust</h2>
 
 <h3>What if my agent ignores a rule?</h3>
@@ -77,7 +83,8 @@ forcing it.</p>
 only in prose — and <code>check</code> runs in the gate, in CI on every pull request, and inside
 <code>merge-check</code>. A skipped conflict check, a safeguard no test notices with no reason
 given, a criterion quietly reworded to fit the code: each one blocks the merge, whatever the agent
-remembered to do. A criterion with no test is put to you at the merge, as a manual check QA owes. <a href="../design/principles.html">Principles</a>.</p>
+remembered to do. A criterion with no test is put to you at the merge, as a manual check QA owes. <a href="../design/principles.html">Principles</a>.
+In Claude Code, <a href="../design/hooks.html">agent hooks</a> also catch many of these at the moment they happen, instead of at the merge.</p>
 
 <h3>How do I know "done" really means done?</h3>
 <p>Nobody types it. A story is done when its slices are merged <em>and</em> every acceptance criterion

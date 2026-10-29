@@ -1,0 +1,137 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent hooks · spry</title>
+<meta name="description" content="Six Claude Code hooks that say at the moment of a mistake what spry's checks would say later — each switched on by itself, and how to add your own.">
+<link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap">
+<link rel="stylesheet" href="../assets/style.css">
+<script src="../assets/theme.js"></script>
+<script src="../assets/site.js" defer></script>
+</head>
+<body>
+<main>
+<article>
+
+<h1>Agent hooks</h1>
+<p class="lead">spry's rules live in <code>spry check</code>, <code>merge-check</code> and CI, which
+every agent runs. But they run late: at close, at the merge, after the push. A Claude Code
+<strong>hook</strong> runs at the moment the agent acts, so it can say the same thing sooner, while
+the mistake is one edit old. spry ships six, and you turn each one on or off by itself.</p>
+
+<h2>Why they exist</h2>
+
+<p>On the pilot projects, some rules held only while the agent remembered them:</p>
+<ul>
+  <li>Nothing but the agent's memory made <code>merge-check</code> run before a merge.</li>
+  <li>A slice's pull-request number was set with <code>sed</code>, around the <code>link</code> command
+  that checks it.</li>
+  <li>The agent looked for the config at the repository root three times.</li>
+  <li>Problems in documents surfaced only at close: one slice ran the full gate three times, about
+  22 minutes.</li>
+  <li>A criterion that tests already cited was edited, and nobody saw it until the merge checks.</li>
+</ul>
+<p>Each hook below answers one of these.</p>
+
+<h2>The six hooks</h2>
+
+<div class="table-wrap"><table>
+<thead><tr><th>Key</th><th>When it runs</th><th>What it does</th></tr></thead>
+<tbody>
+<tr><td><code>session</code></td><td>A session starts, resumes, is cleared or compacted</td><td>Tells the agent where the config and the tool are, which slice this branch builds, your tone, and which hooks are on.</td></tr>
+<tr><td><code>link_fields</code></td><td>An edit of a slice file, or a <code>sed -i</code> / <code>perl -i</code> that names one</td><td>Refuses a change to <code>branch</code>, <code>pr</code>, <code>issue</code> or <code>owner</code>, and names the <code>link</code> command that sets it. The rest of the file stays editable.</td></tr>
+<tr><td><code>cited_criteria</code></td><td>An edit of a story</td><td>When a criterion that a test cites changes or is dropped, <strong>asks you</strong> first. The story's owner decides a criterion. If code changes on the same branch, the slice still needs their approval before <code>merge-check</code> passes.</td></tr>
+<tr><td><code>check_edit</code></td><td>After an edit of a document <code>check</code> reads</td><td>Checks that one file: front-matter, budget, leftover placeholders, links, banned words. Any errors go straight back to the agent.</td></tr>
+<tr><td><code>merge</code></td><td><code>gh pr merge</code>, from the slice's branch</td><td>Runs <code>merge-check</code> for the slice whose pull request or branch it names, and refuses the merge if anything blocks it. It does not look at CI: <code>/spry:merge</code> still checks that first. Run from another branch, it says nothing, because the files there hold another copy of the slice.</td></tr>
+<tr><td><code>check_stop</code></td><td>The agent is about to finish</td><td>If documents changed (uncommitted, or on the branch), runs <code>check</code>. On errors the agent goes back once to fix them or say why they stay. The same documents are not checked twice, whether they passed or not.</td></tr>
+</tbody>
+</table></div>
+
+<h2>Turning them on</h2>
+
+<p>Each hook has a key under <code>hooks</code> in <code>spry/spry.config.json</code>. New projects
+start with all six on; setup names each and asks which to turn off. A missing key is off, so a
+project set up before 0.34.0 sees nothing until <code>/spry:update</code> offers them.</p>
+<pre><code>"hooks": {
+  "session": true, "link_fields": true, "cited_criteria": true,
+  "check_edit": true, "merge": true, "check_stop": false
+}</code></pre>
+<p>To turn every hook off for one session, start Claude Code with <code>SPRY_HOOKS=off</code> in its
+environment.</p>
+
+<h2>What they cost</h2>
+
+<ul>
+  <li><strong>Nothing for calls they are not about.</strong> Each hook is filtered by tool and by a rule
+  such as <code>Bash(gh pr merge *)</code> or <code>Edit(**/spry/plan/**)</code>. A test run or an edit
+  of code starts no process. The session-start and stop hooks can't be filtered that way, so once
+  the plugin is installed they start Python in every repository (a fraction of a second), and leave
+  at once outside a spry project.</li>
+  <li><strong>Little for the rest.</strong> <code>check_edit</code> reads one file and the glossary, not
+  the plan. <code>link_fields</code> and <code>cited_criteria</code> read the file being edited.
+  <code>merge</code> and <code>check_stop</code> load the plan, but they run what you would run at that
+  point anyway. On a slow disk (one pilot has a virus scanner that adds about 11 ms to every file
+  open), that matters.</li>
+  <li><strong>They never stand in the way by accident.</strong> If a hook fails, times out or finds no
+  Python, the call goes through. A hook only says something sooner: the rule itself stays in the
+  checks, which CI and every other agent still run.</li>
+</ul>
+
+<div class="callout note">
+  <span class="callout-title">Claude Code with the plugin</span>
+  <p>The hooks come with the Claude Code plugin and need Claude Code 2.1.295 or later. Cursor, Gemini
+  and other agents don't run them. Nothing is lost there: those agents run the same checks, just
+  later. A project installed with <code>install --agent claude</code> instead of the plugin can copy
+  the entries from the plugin's <code>hooks/hooks.json</code> into its own
+  <code>.claude/settings.json</code>, with <code>spry/tool/spry.py</code> as the tool.</p>
+</div>
+
+<h2>The project's rules, not the plugin's</h2>
+
+<p>The plugin's copy of the tool answers each hook. If your project's copy, the one vendored into
+<code>spry/tool/</code>, is a different version, your copy answers instead. So a hook follows the rules
+your project took, even when the plugin is newer.</p>
+
+<h2>Adding your own hooks</h2>
+
+<p>spry's six cover spry's own rules. Your project may want more: run the formatter after an edit,
+refuse a push to the main branch, remind the agent of a rule it keeps breaking. Those belong to your
+project, not to spry.</p>
+<ol>
+  <li><strong>Write it in your project's <code>.claude/settings.json</code></strong>, which is committed, so
+  everyone gets it. Use the same shape as spry's <code>hooks/hooks.json</code>: an event, a
+  <code>matcher</code> for the tool, an <code>if</code> rule so it only runs when it can matter, and
+  the command.
+<pre><code>{
+  "hooks": {
+    "PostToolUse": [{
+      "matcher": "Edit|Write",
+      "hooks": [{
+        "type": "command",
+        "if": "Edit(**/*.ts)",
+        "command": "pnpm exec prettier --write \"$(jq -r .tool_input.file_path)\"",
+        "timeout": 30
+      }]
+    }]
+  }
+}</code></pre></li>
+  <li><strong>Keep it cheap and quiet.</strong> A hook reads the call as JSON on stdin. It exits 0 with
+  nothing to say, or prints a JSON answer: refuse a call, ask you, or send the agent back. Don't load
+  more than the call needs. If the check matters for every agent, put it in CI or <code>check</code>
+  too: the hook only says it sooner.</li>
+  <li><strong>Record it</strong> with <code>/spry:process-change</code>, so
+  <code>/spry:update</code> keeps it and the next person knows why it is there.</li>
+  <li><strong>If every spry project would want it</strong>, offer it to spry with
+  <code>/spry:contribute</code>. It becomes a seventh key under <code>hooks</code>.</li>
+</ol>
+<p>Claude Code's <a href="https://code.claude.com/docs/en/hooks">hooks reference</a> lists every
+event, the payload each one gets, and the answers it takes.</p>
+
+</article>
+</main>
+</body>
+</html>

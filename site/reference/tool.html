@@ -215,6 +215,14 @@ search is <code>find</code>; the <a href="#pace">pace</a> page is at <code>/-/pa
 <p>Installs git hooks, per clone, that refresh <code>.spry/view/</code> after a checkout or pull
 that changed the plan or a test.</p>
 <pre><code>spry hooks [--remove]</code></pre>
+<p>These are git hooks. The Claude Code hooks are a different thing, run by <code>agent-hook</code>.</p>
+
+<h3 id="agent-hook">agent-hook</h3>
+<p>Answers one Claude Code hook call: the plugin's <code>hooks/hooks.json</code> runs it, with the
+hook's payload on stdin. It prints the hook's answer as JSON, or nothing when the hook is off, the
+call is not about it, or there is nothing to say. It always exits 0. You don't run it by hand,
+except to try a hook out. See <a href="../design/hooks.html">Agent hooks</a>.</p>
+<pre><code>spry agent-hook &lt;session|link_fields|cited_criteria|check_edit|merge|check_stop&gt; &lt; payload.json</code></pre>
 
 <h2>Creating and linking items</h2>
 
