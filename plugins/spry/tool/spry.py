@@ -36,6 +36,7 @@
     python3 spry/tool/spry.py merge-message <slice> [--ci-local REASON]   # the squash commit: subject, summary, trailers
     python3 spry/tool/spry.py gate [--force] [--fast] [--full]   # check, fast checks, affected tests — or only the changed ones when the branch adds only tests (--full: affected anyway) — then tests.always (--fast: no tests, no stamp); skipped while no code changed
     python3 spry/tool/spry.py changed --base <ref>   # for CI: code=true when anything but docs changed
+    python3 spry/tool/spry.py agent-hook <name> < payload.json   # one Claude Code hook call (hooks/hooks.json); `hooks` in the config turns each on
     python3 spry/tool/spry.py review-check <payload.json> --diff <file|-> [--own]   # would GitHub take this review?
     python3 <plugin>/tool/spry.py install --agent <generic|claude|cursor|gemini> [--root <project>]
 
@@ -76,7 +77,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.33.0"
+VERSION = "0.34.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -5818,6 +5819,317 @@ def pace_on_merge_check(project: Project, slice_id: str) -> None:
         pass
 
 
+# ---------------------------------------------------------------- agent hooks
+
+# Claude Code runs these from the plugin's hooks/hooks.json, each filtered so that no process starts
+# for a tool call it cannot be about. Each acts only when its key under `hooks` in the config is true;
+# `SPRY_HOOKS=off` turns all of them off. A hook's own failure lets the call through: `check`, CI and
+# `merge-check` stay the authority, and a hook only says it sooner.
+AGENT_HOOKS = ("session", "link_fields", "cited_criteria", "check_edit", "merge", "check_stop")
+HOOKS_SINCE = (0, 34, 0)
+LINK_FIELDS = ("branch", "pr", "issue", "owner")
+IN_PLACE = re.compile(r"\b(?:g?sed|perl)\b[^|;&\n]*\s-[a-zA-Z]*i")
+LINK_KEY = re.compile(r"\b(?:branch|pr|issue|owner):")
+GH_VALUE_FLAGS = {"-t", "--subject", "-b", "--body", "-F", "--body-file", "-A", "--author-email",
+                  "--match-head-commit", "-R", "--repo"}
+
+
+def version_tuple(text: str) -> tuple:
+    return tuple(int(n) for n in re.findall(r"\d+", text)[:3])
+
+
+def vendored_version(path: str) -> tuple | None:
+    """The `VERSION` of a copy of this tool, read from its head without running it."""
+    try:
+        with open(native(path), encoding="utf-8") as handle:
+            m = re.search(r'^VERSION = "([^"]+)"', handle.read(32768), re.M)
+    except OSError:
+        return None
+    return version_tuple(m.group(1)) if m else None
+
+
+def edited_text(payload: dict, before: str | None) -> str | None:
+    """The file as an Edit or Write in the payload would leave it — None when it cannot be known."""
+    given = payload.get("tool_input") or {}
+    if payload.get("tool_name") == "Write":
+        return given.get("content")
+    old, new = given.get("old_string"), given.get("new_string")
+    if before is None or not isinstance(old, str) or not isinstance(new, str) or old not in before:
+        return None
+    return before.replace(old, new) if given.get("replace_all") else before.replace(old, new, 1)
+
+
+def hook_file(project: Project, payload: dict) -> tuple:
+    """(absolute path, path from the root, current text or None) of the file an Edit or Write names."""
+    path = (payload.get("tool_input") or {}).get("file_path") or ""
+    if not path:
+        return "", "", None
+    path = os.path.abspath(os.path.join(payload.get("cwd") or project.root, path))
+    text = read(path) if os.path.isfile(native(path)) else None
+    return path, project.rel(path), text
+
+
+def deny(reason: str) -> dict:
+    return {"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                   "permissionDecisionReason": reason}}
+
+
+def current_branch(project: Project) -> str:
+    done = git(project.root, "rev-parse", "--abbrev-ref", "HEAD")
+    return done.stdout.strip() if done.returncode == 0 else ""
+
+
+def hook_session(project: Project, payload: dict) -> dict | None:
+    """What a new or compacted session would otherwise look for: the config, the tool, this branch's slice."""
+    lines = ["spry project: the config is spry/spry.config.json; run the tool as "
+             "`python3 spry/tool/spry.py <command>`; the rules are in spry/process/."]
+    branch, main = current_branch(project), main_branch(project)
+    if branch and branch not in (main, "HEAD"):
+        names = Names(project)
+        docs = sorted((ident, d) for ident, places in names.located().items() for kind, d, _ in places if kind == "slice")
+        # By file name first, as slice-open names branches; only then each slice's `branch:`.
+        named = [(i, d) for i, d in docs if os.path.basename(d)[:-3].lower() == branch.lower()] or \
+            [(i, d) for i, d in docs if (parse_front_matter(names.read(d) or "")[0] or {}).get("branch") == branch]
+        if named:
+            ident, doc = named[0]
+            fm = parse_front_matter(names.read(doc) or "")[0] or {}
+            owner = f", owner {fm['owner']}" if fm.get("owner") else ""
+            lines.append(f"This branch builds {ident} {fm.get('title', '')} — {fm.get('state', '?')}{owner}: "
+                         f"{doc}. Its work order is the plan; spry/process/slicing.md says what comes next.")
+        else:
+            lines.append(f"This branch, `{branch}`, is no slice's branch.")
+    elif branch and branch != "HEAD":
+        lines.append(f"On `{main}`, the main branch.")
+    tone = os.path.join(project.root, ".spry", "tone")
+    if os.path.isfile(native(tone)) and read(tone).strip():
+        lines.append(f"The person set their tone to {read(tone).strip()} (spry/process/chat.md *Audience*).")
+    on = [n for n in AGENT_HOOKS if (project.config.get("hooks") or {}).get(n)]
+    lines.append("spry hooks on: " + ", ".join(on) + " (`hooks` in the config; SPRY_HOOKS=off turns them off).")
+    return {"hookSpecificOutput": {"hookEventName": "SessionStart", "additionalContext": "\n".join(lines)}}
+
+
+def hook_link_fields(project: Project, payload: dict) -> dict | None:
+    """A slice's `branch`, `pr`, `issue` and `owner` are set by `link`, which checks them, not by hand."""
+    given = payload.get("tool_input") or {}
+    if payload.get("tool_name") == "Bash":
+        command = given.get("command") or ""
+        slice_doc = re.search(r"\b" + re.escape(project.ids["slice"]) + r"-\d+[\w-]*\.md\b", command)
+        if IN_PLACE.search(command) and slice_doc and LINK_KEY.search(command):
+            return deny("A slice's `branch`, `pr`, `issue` and `owner` are set with `python3 spry/tool/spry.py "
+                        "link SL-<n> --branch <b> --pr <n> --issue <n> --owner [<name>]`, which checks each one — "
+                        "not with an in-place edit.")
+        return None
+    path, rel, before = hook_file(project, payload)
+    if before is None or not rel.startswith("spry/plan/") or not project.slice_file.match(os.path.basename(path)):
+        return None
+    after = edited_text(payload, before)
+    old, new = parse_front_matter(before)[0], parse_front_matter(after or "")[0]
+    if old is None or new is None:
+        return None  # `check` names a broken front-matter
+    changed = [k for k in LINK_FIELDS if str(old.get(k) or "") != str(new.get(k) or "")]
+    if not changed:
+        return None
+    flags = " ".join(f"--{k} {shlex.quote(str(new[k]))}" if new.get(k) else "--owner" if k == "owner" else f"--{k} <{k}>"
+                     for k in changed)
+    return deny(f"`{'`, `'.join(changed)}` in {old.get('id', rel)} {'is' if len(changed) == 1 else 'are'} set by the "
+                f"tool, which checks {'it' if len(changed) == 1 else 'them'}: `python3 spry/tool/spry.py link "
+                f"{old.get('id', 'SL-<n>')} {flags}`. Make the rest of the edit without changing "
+                f"{'that line' if len(changed) == 1 else 'those lines'}.")
+
+
+def hook_cited_criteria(project: Project, payload: dict) -> dict | None:
+    """Changing a criterion that tests already cite is the story owner's call: ask the person now,
+    not at `merge-check`."""
+    path, rel, before = hook_file(project, payload)
+    if before is None or not rel.startswith("spry/plan/") or os.path.basename(path) != "README.md":
+        return None
+    fm = parse_front_matter(before)[0] or {}
+    story = str(fm.get("id", ""))
+    if not story.startswith(project.ids["story"] + "-"):
+        return None
+    old, new = ac_texts(before, struck=True), ac_texts(edited_text(payload, before) or before, struck=True)
+    cited = {}
+    for ac in [a for a in old if new.get(a) != old[a]]:
+        done = git(project.root, "grep", "-l", "-E", "--untracked", "-e", f"{re.escape(story)}/{ac}([^0-9]|$)", "--", ".",
+                   ":(exclude)spry", ":(exclude)*.md")
+        if done.returncode == 0 and done.stdout.strip():
+            cited[ac] = done.stdout.split()
+    if not cited:
+        return None
+    where = "; ".join(f"{story}/{ac} by {', '.join(files[:3])}{' …' if len(files) > 3 else ''}"
+                      for ac, files in cited.items())
+    owner = f" ({fm['owner']})" if fm.get("owner") else ""
+    return {"hookSpecificOutput": {
+        "hookEventName": "PreToolUse", "permissionDecision": "ask",
+        "permissionDecisionReason": f"This changes criteria that tests already cite — {where}. The story's owner{owner} "
+                                    f"decides a criterion: with code changed on the same branch, the slice needs "
+                                    f"`criteria_approved_by:` them before merge-check passes."}}
+
+
+def check_file(project: Project, path: str, text: str) -> list:
+    """`check` of one document by its text: front-matter, budget, guides and placeholders, links, glossary."""
+    gloss = os.path.join(project.root, project.config.get("glossary", "spry/knowledge/glossary.md"))
+    terms = glossary_terms(read(gloss)) if os.path.isfile(native(gloss)) else []
+    project.problems = []
+    fm = {}
+    if project.rel(path) != "AGENTS.md":
+        fm, _start, errors = parse_front_matter(text)
+        for line, message in errors:
+            project.problem(path, line, message)
+    check_text(project, path, text, fm or {}, banned_patterns(terms), budget_patterns(project), gloss)
+    return project.problems
+
+
+def hook_check_edit(project: Project, payload: dict) -> dict | None:
+    """After an edit to a document `check` reads, the errors in that one file — not the whole plan."""
+    path, rel, text = hook_file(project, payload)
+    skipped = ("spry/process/", "spry/tool/", "spry/skills/", "spry/history/")
+    if text is None or not rel.endswith(".md") or rel.startswith(skipped) or \
+            not (rel.startswith("spry/") or rel == "AGENTS.md"):
+        return None
+    errors = [p for p in check_file(project, path, text) if p.level == "error"]
+    if not errors:
+        return None
+    return {"decision": "block", "reason": f"spry check of {rel}: {len(errors)} error{'s' if len(errors) != 1 else ''} "
+                                           f"— fix {'it' if len(errors) == 1 else 'them'} now:\n" +
+                                           "\n".join(str(p) for p in errors[:15])}
+
+
+def merge_target(command: str):
+    """What a `gh pr merge` in the command names — a PR number, a branch, or "" for the current
+    branch; False when the command merges no pull request."""
+    lexer = shlex.shlex(command.replace("\n", " ; "), posix=True, punctuation_chars=";&|")
+    lexer.whitespace_split = True
+    try:
+        tokens = list(lexer)
+    except ValueError:
+        return False
+    parts, part = [], []
+    for token in tokens:
+        if token and set(token) <= set(";&|"):
+            parts.append(part)
+            part = []
+        else:
+            part.append(token)
+    for words in parts + [part]:
+        if words[:3] != ["gh", "pr", "merge"]:
+            continue
+        rest, i, found = words[3:], 0, ""
+        while i < len(rest):
+            word = rest[i]
+            if word in ("-R", "--repo") or word.startswith("--repo="):
+                return False  # another repository's pull request
+            if word in GH_VALUE_FLAGS:
+                i += 2
+                continue
+            if not word.startswith("-") and not found:
+                m = re.search(r"/pull/(\d+)", word)
+                found = m.group(1) if m else word.lstrip("#")
+            i += 1
+        return found
+    return False
+
+
+def hook_merge(project: Project, payload: dict) -> dict | None:
+    """`merge-check` before `gh pr merge` of a slice's pull request — it holds even when CI never ran."""
+    target = merge_target((payload.get("tool_input") or {}).get("command") or "")
+    if target is False:
+        return None
+    full = Project(project.root)
+    slices = full.of_type("slice")
+    if target.isdigit():
+        found = [s for s in slices if str(s.fm.get("pr", "")).lstrip("#") == target]
+    else:
+        branch = target or current_branch(full)
+        found = [s for s in slices if branch and branch in (branch_of(s), slice_branch(s))]
+    if len(found) != 1:
+        return None  # not a slice's pull request: a plan PR, or one spry does not track
+    if current_branch(full) not in (branch_of(found[0]), slice_branch(found[0])):
+        return None  # this tree holds another branch's copy of the slice; merging.md runs merge-check on the PR's
+    lines = merge_check(full, found[0].id, f"origin/{main_branch(full)}")
+    blocks = [text for level, text in lines if level == "block"]
+    if not blocks:
+        return None
+    return deny(f"merge-check {found[0].id}: {len(blocks)} thing{'s block' if len(blocks) != 1 else ' blocks'} the "
+                f"merge —\n" + "\n".join("✗ " + b for b in blocks) + "\n/spry:merge says what to do with each.")
+
+
+def hook_check_stop(project: Project, payload: dict) -> dict | None:
+    """Before the agent stops with documents changed, `check` — once for each state of them."""
+    if payload.get("stop_hook_active"):
+        return None  # it already went back once this turn: let the person see what is left
+    status = git(project.root, "status", "--porcelain", "-z", "--untracked-files=all", "--", "spry", "AGENTS.md")
+    if status.returncode != 0:
+        return None
+    main = main_branch(project)
+    fork = git(project.root, "merge-base", f"origin/{main}", "HEAD").stdout.strip() or \
+        git(project.root, "merge-base", main, "HEAD").stdout.strip()
+    branch = git(project.root, "diff", "--name-only", f"{fork}..HEAD", "--", "spry", "AGENTS.md").stdout if fork else ""
+    if not status.stdout.strip() and not branch.strip():
+        return None
+    top = git(project.root, "rev-parse", "--show-toplevel").stdout.strip() or project.root
+    seen = [git(project.root, "rev-parse", "HEAD").stdout.strip(), status.stdout]
+    entries = status.stdout.split("\0")
+    for i, entry in enumerate(entries):
+        if len(entry) < 4 or (i and entries[i - 1][:1] in ("R", "C")):
+            continue  # the old name of a rename or copy
+        path = os.path.join(top, entry[3:])
+        if os.path.isfile(native(path)):
+            info = os.stat(native(path))
+            seen.append(f"{entry[3:]}:{info.st_size}:{info.st_mtime_ns}")
+    mark = hashlib.sha1("\n".join(seen).encode()).hexdigest()
+    stamp = os.path.join(project.root, ".spry", "hooks", "check-stop")
+    if os.path.isfile(native(stamp)) and read(stamp).strip() == mark:
+        return None
+    errors = [p for p in check(Project(project.root)) if p.level == "error"]
+    os.makedirs(native(os.path.dirname(stamp)), exist_ok=True)
+    write(stamp, mark + "\n")  # failing too: the agent goes back once for this state, not at every turn
+    if not errors:
+        return None
+    return {"decision": "block", "reason": f"spry check: {len(errors)} error{'s' if len(errors) != 1 else ''} in the "
+                                           f"documents — fix them before you finish, or say why they stay:\n" +
+                                           "\n".join(str(p) for p in errors[:15])}
+
+
+AGENT_HOOK_RUN = {"session": hook_session, "link_fields": hook_link_fields, "cited_criteria": hook_cited_criteria,
+                  "check_edit": hook_check_edit, "merge": hook_merge, "check_stop": hook_check_stop}
+
+
+def agent_hook(name: str, stdin: str, root: str | None = None) -> tuple:
+    """(exit code, JSON to print or None) for one hook call. The project's own copy of the tool runs
+    it when that copy is another version, so a hook follows the rules the project took."""
+    if os.environ.get("SPRY_HOOKS", "").lower() in ("off", "0", "false", "no"):
+        return 0, None
+    try:
+        payload = json.loads(stdin or "{}")
+    except ValueError:
+        return 0, None
+    root = root or find_root(payload.get("cwd") or os.getcwd())
+    if not root:
+        return 0, None
+    try:
+        config = json.loads(read(os.path.join(root, "spry", "spry.config.json")))
+    except (OSError, ValueError):
+        return 0, None
+    if not isinstance(config, dict) or not (config.get("hooks") or {}).get(name):
+        return 0, None
+    own = os.path.join(root, "spry", "tool", "spry.py")
+    if os.path.isfile(native(own)) and os.path.realpath(own) != os.path.realpath(__file__):
+        version = vendored_version(own)
+        if version != version_tuple(VERSION):
+            if version is None or version < HOOKS_SINCE:
+                return 0, None
+            done = subprocess.run([sys.executable, own, "agent-hook", name], input=stdin.encode("utf-8"),
+                                  capture_output=True, cwd=root)
+            out = done.stdout.decode("utf-8", "replace").strip()
+            return 0, (json.loads(out) if out.startswith("{") else None)
+    try:
+        return 0, AGENT_HOOK_RUN[name](Project(root, load=False, config=config), payload)
+    except (Exception, SystemExit) as e:  # noqa: BLE001 — a hook's own failure lets the call through
+        print(f"spry hook {name}: {e}", file=sys.stderr)
+        return 0, None
+
+
 def find_root(start: str):
     here = os.path.abspath(start)
     while True:
@@ -5954,6 +6266,8 @@ def main(argv=None) -> int:
                    "rows of controls not run stay")
     q.add_argument("--replace", action="store_true", help="with --record: drop the rows this run did not write")
     q.add_argument("--jobs", type=int, help="worktrees to run in parallel (default: falsify.parallel; 1 = serial)")
+    p = sub.add_parser("agent-hook", help="for Claude Code's hooks: one hook call, its payload on stdin (hooks/hooks.json)")
+    p.add_argument("name", choices=AGENT_HOOKS)
     p = sub.add_parser("review-check", help="would GitHub take this review as it stands? exit 1 if not")
     p.add_argument("payload", help="the review's JSON: commit_id, event, body, comments")
     p.add_argument("--diff", required=True, help="the pull request's diff (`gh pr diff <n>`), or - for stdin")
@@ -5975,6 +6289,12 @@ def main(argv=None) -> int:
               else f"{len(problems)} problem{'s' if len(problems) != 1 else ''} — fix them before posting")
         return 1 if problems else 0
 
+    if args.command == "agent-hook":
+        # Bytes in, ASCII out: Windows' console code page would garble both.
+        code, reply = agent_hook(args.name, sys.stdin.buffer.read().decode("utf-8", "replace"), args.root)
+        if reply:
+            print(json.dumps(reply))
+        return code
     if args.command == "install":
         for path in install(args.install_root or args.root or os.getcwd(), args.agent):
             print("wrote: " + path)

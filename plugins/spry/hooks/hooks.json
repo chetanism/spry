@@ -1,0 +1,91 @@
+{
+  "description": "spry's agent hooks. Each acts only when its key under `hooks` in spry/spry.config.json is true; SPRY_HOOKS=off turns them all off.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py=\"$(command -v python3 || command -v python)\" && \"$py\" \"${CLAUDE_PLUGIN_ROOT}/tool/spry.py\" agent-hook session",
+            "timeout": 20,
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Bash(gh pr merge *)",
+            "command": "py=\"$(command -v python3 || command -v python)\" && \"$py\" \"${CLAUDE_PLUGIN_ROOT}/tool/spry.py\" agent-hook merge",
+            "timeout": 120,
+            "onFailure": "continue"
+          },
+          {
+            "type": "command",
+            "if": "Bash(sed *)",
+            "command": "py=\"$(command -v python3 || command -v python)\" && \"$py\" \"${CLAUDE_PLUGIN_ROOT}/tool/spry.py\" agent-hook link_fields",
+            "timeout": 10,
+            "onFailure": "continue"
+          },
+          {
+            "type": "command",
+            "if": "Bash(perl *)",
+            "command": "py=\"$(command -v python3 || command -v python)\" && \"$py\" \"${CLAUDE_PLUGIN_ROOT}/tool/spry.py\" agent-hook link_fields",
+            "timeout": 10,
+            "onFailure": "continue"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Edit(**/spry/plan/**)",
+            "command": "py=\"$(command -v python3 || command -v python)\" && \"$py\" \"${CLAUDE_PLUGIN_ROOT}/tool/spry.py\" agent-hook link_fields",
+            "timeout": 10,
+            "onFailure": "continue"
+          },
+          {
+            "type": "command",
+            "if": "Edit(**/spry/plan/**/README.md)",
+            "command": "py=\"$(command -v python3 || command -v python)\" && \"$py\" \"${CLAUDE_PLUGIN_ROOT}/tool/spry.py\" agent-hook cited_criteria",
+            "timeout": 20,
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Edit(**/*.md)",
+            "command": "py=\"$(command -v python3 || command -v python)\" && \"$py\" \"${CLAUDE_PLUGIN_ROOT}/tool/spry.py\" agent-hook check_edit",
+            "timeout": 20,
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "py=\"$(command -v python3 || command -v python)\" && \"$py\" \"${CLAUDE_PLUGIN_ROOT}/tool/spry.py\" agent-hook check_stop",
+            "timeout": 180,
+            "onFailure": "continue"
+          }
+        ]
+      }
+    ]
+  }
+}

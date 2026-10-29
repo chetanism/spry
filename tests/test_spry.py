@@ -2568,6 +2568,171 @@ def reply(t, branch="sl-1-a"):
 GATE_OUT = "✓ spry check · 1.0s\n✗ lint · 20.0s\n"
 
 
+class AgentHooks(Base):
+    """Claude Code's hooks: each acts only when the config turns it on, and says what the checks would say later."""
+
+    ON = {**CONFIG, "main_branch": "main", "hooks": {name: True for name in spry.AGENT_HOOKS}}
+
+    def setUp(self):
+        self.t = self.tree(**{"spry__spry.config.json": json.dumps(self.ON)})
+        self.run_git = git_repo(self.t.root)
+        self.slice = os.path.join(self.t.root, S, "SL-1-a.md")
+        self.story = os.path.join(self.t.root, S, "README.md")
+
+    def hook(self, name, **payload):
+        code, reply = spry.agent_hook(name, json.dumps({"cwd": self.t.root, **payload}))
+        self.assertEqual(code, 0)
+        return reply
+
+    def edit(self, name, path, old, new, tool="Edit"):
+        given = {"file_path": path, "old_string": old, "new_string": new}
+        return self.hook(name, tool_name=tool, tool_input=given)
+
+    def decision(self, reply):
+        return (reply or {}).get("hookSpecificOutput", {}).get("permissionDecision")
+
+    def test_off_unless_the_config_turns_it_on(self):
+        self.t = self.tree()
+        git_repo(self.t.root)
+        self.assertIsNone(self.edit("link_fields", os.path.join(self.t.root, S, "SL-1-a.md"), "pr: 1", "pr: 7"))
+        self.assertIsNone(spry.agent_hook("session", json.dumps({"cwd": tempfile.gettempdir()}))[1])
+
+    def test_spry_hooks_off_turns_every_one_off(self):
+        with unittest.mock.patch.dict(os.environ, {"SPRY_HOOKS": "off"}):
+            self.assertIsNone(self.edit("link_fields", self.slice, "pr: 1", "pr: 7"))
+
+    def test_link_fields_are_set_by_the_tool(self):
+        reply = self.edit("link_fields", self.slice, "pr: 1", "pr: 7")
+        self.assertEqual(self.decision(reply), "deny")
+        self.assertIn("link SL-1 --pr 7", reply["hookSpecificOutput"]["permissionDecisionReason"])
+        self.assertIsNone(self.edit("link_fields", self.slice, "### Plan", "### Plan\n\n- More."))
+        self.assertIsNone(self.edit("link_fields", self.story, "owner: A", "owner: B"), "only a slice's fields")
+        sed = {"command": f"sed -i '' 's/^pr: 1/pr: 7/' {S}/SL-1-a.md"}
+        self.assertEqual(self.decision(self.hook("link_fields", tool_name="Bash", tool_input=sed)), "deny")
+        grep = {"command": f"grep -n 'pr:' {S}/SL-1-a.md"}
+        self.assertIsNone(self.hook("link_fields", tool_name="Bash", tool_input=grep))
+
+    def test_a_cited_criterion_asks_the_person(self):
+        reply = self.edit("cited_criteria", self.story, "| AC-1 | x | y | z |", "| AC-1 | x | y | w |")
+        self.assertEqual(self.decision(reply), "ask")
+        self.assertIn("S-1/AC-1 by src/a.test.ts", reply["hookSpecificOutput"]["permissionDecisionReason"])
+        self.assertIsNone(self.edit("cited_criteria", self.story, "| AC-1 | x | y | z |",
+                                    "| AC-1 | x | y | z |\n| AC-2 | a | b | c |"), "a new criterion no test cites")
+        with open(os.path.join(self.t.root, "src", "a.test.ts"), "w") as handle:
+            handle.write('test("S-1/AC-10 another", () => {})\n')
+        self.assertIsNone(self.edit("cited_criteria", self.story, "| AC-1 | x | y | z |", "| AC-1 | x | y | w |"),
+                          "AC-10 is not AC-1")
+
+    def test_check_edit_names_the_errors_in_that_file(self):
+        doc = os.path.join(self.t.root, F, "README.md")
+        with open(doc) as handle:
+            text = handle.read()
+        with open(doc, "w") as handle:
+            handle.write(text + "\nA patron borrows. See [x](nowhere.md).\n")
+        reply = self.hook("check_edit", tool_name="Edit", tool_input={"file_path": doc})
+        self.assertEqual(reply["decision"], "block")
+        self.assertIn("the glossary says `Member`", reply["reason"])
+        self.assertIn("`nowhere.md` does not resolve", reply["reason"])
+        self.assertIsNone(self.hook("check_edit", tool_name="Edit", tool_input={"file_path": self.story}))
+
+    def test_merge_runs_merge_check_for_a_slices_pr(self):
+        self.run_git("switch", "-qc", "sl-1-a")
+        with open(self.slice) as handle:
+            text = handle.read()
+        with open(self.slice, "w") as handle:
+            handle.write(text.replace("state: closed", "state: open"))
+        reply = self.hook("merge", tool_name="Bash", tool_input={"command": "gh pr merge 1 --squash --subject 'x y'"})
+        self.assertEqual(self.decision(reply), "deny")
+        self.assertIn("state is `open`", reply["hookSpecificOutput"]["permissionDecisionReason"])
+        self.assertIsNone(self.hook("merge", tool_name="Bash", tool_input={"command": "gh pr merge 99 --squash"}),
+                          "a pull request no slice names")
+        self.assertIsNone(self.hook("merge", tool_name="Bash", tool_input={"command": "gh pr view 1"}))
+        self.run_git("switch", "-qc", "elsewhere")
+        self.assertIsNone(self.hook("merge", tool_name="Bash", tool_input={"command": "gh pr merge 1"}),
+                          "this tree holds another branch's copy of the slice")
+
+    def test_utf8_in_and_out_whatever_the_console(self):
+        with open(self.slice) as handle:
+            edited = handle.read().replace("pr: 1", "pr: 7") + "\nLends — at the desk.\n"
+        payload = {"cwd": self.t.root, "tool_name": "Write", "tool_input": {"file_path": self.slice, "content": edited}}
+        tool = os.path.join(REPO, "plugins", "spry", "tool", "spry.py")
+        done = subprocess.run([sys.executable, tool, "agent-hook", "link_fields"], capture_output=True,
+                              input=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+                              env={**os.environ, "PYTHONIOENCODING": "cp1252"})
+        self.assertEqual(done.returncode, 0, done.stderr)
+        self.assertEqual(json.loads(done.stdout)["hookSpecificOutput"]["permissionDecision"], "deny")
+
+    def test_merge_target(self):
+        self.assertEqual(spry.merge_target("gh pr merge 12 --squash -t 'a b'"), "12")
+        self.assertEqual(spry.merge_target("git fetch && gh pr merge --subject 9 --squash"), "")
+        self.assertEqual(spry.merge_target("gh pr merge https://github.com/o/r/pull/34"), "34")
+        self.assertEqual(spry.merge_target("gh pr merge sl-3-x"), "sl-3-x")
+        self.assertIs(spry.merge_target("gh pr list"), False)
+        body = 'gh pr merge 12 --squash --subject "feat: a; b" --body "Lends.\n\nSlice: SL-3 | x" --delete-branch'
+        self.assertEqual(spry.merge_target(body), "12", "merging.md step 7, a body over several lines")
+        self.assertEqual(spry.merge_target('gh pr merge 5 --body "$(spry merge-message SL-1 | tail -n +3)"'), "5")
+        self.assertIs(spry.merge_target("gh pr merge 12 --repo other/repo"), False)
+
+    def test_check_stop_once_for_each_state_of_the_documents(self):
+        self.assertIsNone(self.hook("check_stop"), "nothing changed")
+        doc = os.path.join(self.t.root, F, "README.md")
+        with open(doc, "a") as handle:
+            handle.write("\nSee [x](nowhere.md).\n")
+        reply = self.hook("check_stop")
+        self.assertEqual(reply["decision"], "block")
+        self.assertIn("nowhere.md", reply["reason"])
+        self.assertIsNone(self.hook("check_stop", stop_hook_active=True), "it went back once already")
+        self.assertIsNone(self.hook("check_stop"), "once for this state, not at every turn")
+        with open(doc, "w") as handle:
+            handle.write(item("F-1") + "\nFixed.\n")
+        self.assertIsNone(self.hook("check_stop"))
+        with unittest.mock.patch.object(spry, "check", side_effect=AssertionError("ran again")):
+            self.assertIsNone(self.hook("check_stop"), "the same state passed already")
+        new = os.path.join(self.t.root, F, "S-9-new", "README.md")
+        os.makedirs(os.path.dirname(new))
+        with open(new, "w") as handle:
+            handle.write(story("S-9"))
+        self.assertIsNone(self.hook("check_stop"))
+        with open(new, "a") as handle:
+            handle.write("\nSee [x](nowhere.md).\n")
+        self.assertEqual(self.hook("check_stop")["decision"], "block", "a file inside a new folder")
+
+    def test_session_names_this_branchs_slice(self):
+        self.run_git("switch", "-qc", "sl-1-a")
+        os.makedirs(os.path.join(self.t.root, ".spry"), exist_ok=True)
+        with open(os.path.join(self.t.root, ".spry", "tone"), "w") as handle:
+            handle.write("3\n")
+        text = self.hook("session", source="startup")["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("spry/spry.config.json", text)
+        self.assertIn(f"This branch builds SL-1 Slice SL-1 — closed, owner A: {S}/SL-1-a.md", text)
+        self.assertIn("tone to 3", text)
+        self.assertIn("spry hooks on: session, link_fields", text)
+        self.run_git("switch", "-qc", "custom-name")
+        with open(self.slice) as handle:
+            text = handle.read()
+        with open(self.slice, "w") as handle:
+            handle.write(text.replace("pr: 1", "pr: 1\nbranch: custom-name"))
+        self.assertIn("This branch builds SL-1", self.hook("session")["hookSpecificOutput"]["additionalContext"])
+
+    def test_another_version_of_the_tool_runs_the_hook_itself(self):
+        own = os.path.join(self.t.root, "spry", "tool", "spry.py")
+        os.makedirs(os.path.dirname(own))
+        with open(own, "w") as handle:
+            handle.write('VERSION = "0.33.0"\n')
+        self.assertIsNone(self.edit("link_fields", self.slice, "pr: 1", "pr: 7"), "a copy from before hooks")
+        with open(own, "w") as handle:
+            handle.write('import json, sys\nVERSION = "9.0.0"\nprint(json.dumps({"from": sys.argv[1:]}))\n')
+        self.assertEqual(self.edit("link_fields", self.slice, "pr: 1", "pr: 7"), {"from": ["agent-hook", "link_fields"]})
+
+    def test_hooks_file_names_only_hooks_the_tool_has(self):
+        with open(os.path.join(REPO, "plugins", "spry", "hooks", "hooks.json")) as handle:
+            text = handle.read()
+        named = set(re.findall(r"agent-hook (\w+)", text))
+        self.assertEqual(named, set(spry.AGENT_HOOKS))
+        with open(os.path.join(REPO, "plugins", "spry", "process", "templates", "spry.config.json")) as handle:
+            self.assertEqual(set(json.load(handle)["hooks"]), set(spry.AGENT_HOOKS))
+
+
 class Pace(Base):
     """`spry pace` (DESIGN.md §17): what a session log says, and what the page makes of it."""
 

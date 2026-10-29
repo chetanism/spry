@@ -25,6 +25,7 @@
 plugins/spry/                     # the process plugin
   .claude-plugin/plugin.json
   skills/<name>/SKILL.md          # thin entry points
+  hooks/hooks.json                # Claude Code hooks, each switched on in a project's config (§18)
   process/                        # rules every agent follows; vendored into each project
     chat.md  writing.md  conflicts.md  interview.md  planning.md  slicing.md  setup.md
     from-writ.md  merging.md  reviewing.md  qa.md  testing.md  recording.md  audits.md  changing.md
@@ -128,7 +129,7 @@ spry/
   `closed` | `dropped`. **`done` is never written** — it is derived (§6).
 - A slice's `owner` is **who builds it**, not who planned it: set at open from the person git says
   is at the clone (their `team.members` name; solo, git's `user.name`), and required by
-  `merge-check`. Work is counted by it (`work`, §18); slices older than CH-40 get theirs once from
+  `merge-check`. Work is counted by it (`work`, §19); slices older than CH-40 get theirs once from
   their pull request's author (`owners --from-prs`).
 - Slices add `covers: [AC-1, AC-2]`, `branch`, `pr` — and `issue` with `slices.issue` on: a GitHub
   issue made at open from the work order, frozen and saying so; the close summary is a comment on
@@ -523,7 +524,49 @@ changes anything.
   - 49 and 76 calls ran to the 10-minute limit.
   - Falsify took about 1 min a slice, and a review agent about 3 min.
 
-## 18. Tool — `spry.py`
+## 18. Agent hooks
+
+> **Status:** built in CH-45 (0.34.0). Claude Code only; every other agent keeps `check`, CI and
+> `merge-check`, which stay the authority.
+
+Purpose: say at the moment of the mistake what `check`, `merge-check` or a reviewer would say later.
+Each hook answers something a pilot did: a slice's `pr:` was set with `sed` (SL-162, CH-19), the
+agent looked for the config at the root three times (CH-19), problems in documents surfaced only at
+close (SL-195, CH-31), and a criterion tests cited was edited unseen until `check --base` (pulse #2,
+CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merge-check` before
+`gh pr merge`. `merge` does not check CI; step 1 still does.
+
+| Key under `hooks` | When | Does |
+|---|---|---|
+| `session` | session start, resume, clear, compaction | tells the agent where the config and tool are, the slice this branch builds, the person's tone, which hooks are on |
+| `link_fields` | an Edit or Write of a slice file; a `sed -i` or `perl -i` naming one | refuses a change to `branch`, `pr`, `issue` or `owner`, naming the `link` command that sets it |
+| `cited_criteria` | an Edit or Write of a story | asks the person when a criterion that a test cites (`git grep`) changes or is dropped |
+| `check_edit` | after an Edit or Write of a document `check` reads | `check` of that one file by its text — front-matter, budget, placeholders, links, glossary — errors sent back to the agent |
+| `merge` | `gh pr merge`, from the slice's branch | runs `merge-check` against `origin/<main>` for the slice whose `pr` or branch it names; refuses the merge on a block. From another branch the tree holds another copy of the slice, so it says nothing |
+| `check_stop` | the agent is about to stop | with documents changed (uncommitted, or on the branch), `check`; errors send it back once; each state checked is stamped in `.spry/hooks/` and not checked again, passing or not |
+
+- **One switch each**, `hooks.<key>` in `spry.config.json`, off when missing — a project that has
+  not taken CH-45 sees nothing. `SPRY_HOOKS=off` turns all of them off for one session.
+- **No process for a call it cannot be about.** §22 (2026-10-29) rejected hooks for pace because
+  they start a process on every tool call. These are filtered in `hooks/hooks.json` by tool and by
+  an `if` rule (`Bash(gh pr merge *)`, `Edit(**/spry/plan/**)`, `Edit(**/*.md)`), so a Bash call
+  or an edit of code starts nothing. A filtered hook still reads its switch first and exits.
+  `SessionStart` and `Stop` take no `if`: once the plugin is installed they start Python in every
+  repository (0.2–0.5 s), which leaves at once outside a spry project.
+- **Cheap where the disk is slow.** None loads the plan but `merge` and `check_stop`, which run what
+  the person would run anyway: `check_edit` reads one file and the glossary; `link_fields` and
+  `cited_criteria` read the file being edited (and `git grep`); `session` walks file names once.
+- **The project's rules, not the plugin's.** The plugin's copy of the tool answers the hook. When the
+  project's vendored copy is another version, that copy answers instead, and a copy from before
+  CH-45 answers nothing.
+- **Fails open.** A hook's own error, a missing Python, a timeout: the call goes through
+  (`onFailure: continue`). A hook only says something sooner; it is not where a rule lives.
+- **A person still decides.** `cited_criteria` asks rather than refuses: changing a built criterion
+  is the story owner's call (§6), and on a code branch the slice still needs `criteria_approved_by`.
+- **More hooks** belong to the project: its own `.claude/settings.json`, recorded with
+  `/spry:process-change`. One every project would want goes to spry through `/spry:contribute`.
+
+## 19. Tool — `spry.py`
 
 | Command | Does |
 |---|---|
@@ -540,7 +583,7 @@ changes anything.
 | `index --restore <base>` | on a branch: put back the base's copy of each generated block it changed |
 | `related <file>` | conflict-check candidates (§10) |
 | `next <type>` | next free ID |
-| `new <type> --parent --title…` · `new --batch <file>` | create items from their templates, next IDs, right folders — several in one call, all or none; with `mint: main` the IDs are taken on the main branch in one push (§21) |
+| `new <type> --parent --title…` · `new --batch <file>` | create items from their templates, next IDs, right folders — several in one call, all or none; with `mint: main` the IDs are taken on the main branch in one push (§22) |
 | `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it, with its `owner` — and cut its branch; give it back |
 | `link <slice> [--branch] [--pr] [--issue] [--owner [name]]` | set them in the slice's front-matter; a bare `--owner` is the person at this clone |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
@@ -558,8 +601,9 @@ changes anything.
 | `codeowners` | §14 |
 | `draw` | seeded, replayable choices for `/spry:explore` |
 | `pace [<slice>] [--since] [--last] [--compare]` | where slices' time went (§17): the page in `.spry/view/pace.md`, or one slice in detail |
+| `agent-hook <name>` | one Claude Code hook call, its payload on stdin (§18); run by `hooks/hooks.json`, not by hand |
 
-## 19. Skills (`spry` plugin)
+## 20. Skills (`spry` plugin)
 
 | Skill | Audience | Does |
 |---|---|---|
@@ -592,7 +636,7 @@ changes anything.
 `milestone` / `epic` / `feature` / `story` share one procedure (`process/planning.md`); each skill
 only names its template and level.
 
-## 20. From writ
+## 21. From writ
 
 | Kept | Changed | Dropped |
 |---|---|---|
@@ -608,14 +652,14 @@ requirement details (a file with several jobs is a feature) and test scenarios s
 built story one closed `Built under writ` slice, rewrites test citations to `S-n/AC-m` from the trail
 in `spry/history/writ.md`, then retires `canon/`.
 
-## 21. Settled
+## 22. Settled
 
 - 2026-10-08 — a person decides three things: the criteria, the merge, and anything hard to undo.
   Everything between runs without stopping, because the checks — the gate, falsify of every
   control the diff adds, citations only in test names, `merge-check` — stand in for a person
   watching each step. Slices of stories on different files run side by side in worktrees.
 - 2026-10-08 — generated blocks: CI on `main` only. Slice size: agent judges against the written
-  rule in §19. Story edits: allowed, warned when a cited AC changes. Falsify: serial first.
+  rule in §20. Story edits: allowed, warned when a cited AC changes. Falsify: serial first.
 - 2026-10-08 — `adopt` is built alongside `init`, not after the pilot.
 - 2026-10-08 — a slice file's parts are named `Work order` and `Close summary`; the PR body is copied
   from the file by the skills.
@@ -652,8 +696,13 @@ in `spry/history/writ.md`, then retires `canon/`.
   view waits until it is needed. Named
   `pace`, not *metering*, which reads as billing. A prototype ran on two pilots' logs before the
   design was written.
+- 2026-10-29 — agent hooks (§18) say early what the checks say late; they never replace them. So a
+  hook fails open, `cited_criteria` asks instead of refusing, and the rules stay in `check` and
+  `merge-check`, which every agent and CI run. Each is filtered to the calls it is about, answering
+  the objection to hooks for pace above; one switch per hook, because a team may want the merge
+  guard and not a stop that sends the agent back.
 
-## 22. Built
+## 23. Built
 
 - 2026-10-08 — tool: `check`, `status`, `index`, `related`, `next`, `new`, `pr-body`, `vendor`.
 - 2026-10-08 — `find`, `install --agent`, `codeowners`, `tests --slowest`, `check --base`.
@@ -661,7 +710,7 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-08 — `falsify suggest` / `falsify run`, serial first; worktrees came in the entry above.
 - 2026-10-08 — skills: `init`, `adopt`, `milestone`, `epic`, `feature`, `story`, `slice`,
   `slice-open`, `slice-close`, `status`, `tone`, `update`, `contribute`.
-- 2026-10-08 — the rest of §19: `bug`, `task`, `test-scenarios`, `record`, `security-audit`,
+- 2026-10-08 — the rest of §20: `bug`, `task`, `test-scenarios`, `record`, `security-audit`,
   `prelaunch`, `process-change`; their procedures `qa.md`, `recording.md`, `audits.md`,
   `changing.md`, and *Bugs and tasks* in `planning.md`. Audit reports live in
   `spry/knowledge/audits/` (index → item); `new` also makes `checks`, `convention`, `external`, `audit`.
@@ -782,3 +831,6 @@ in `spry/history/writ.md`, then retires `canon/`.
   after the fact. The page shows before and after each dated change, and a passing `merge-check`
   keeps the slice's numbers. The `/spry:pace` skill waits until the numbers have been checked on
   real slices.
+- 2026-10-29 — agent hooks (CH-45, 0.34.0): `session`, `link_fields`, `cited_criteria`, `check_edit`,
+  `merge` and `check_stop`, each switched on under `hooks` in the config, in the plugin's
+  `hooks/hooks.json`, answered by `spry agent-hook` (§18). From the pilots' incidents named there.

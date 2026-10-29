@@ -1,6 +1,6 @@
 {
-  "spry": "0.33.0",
-  "spry_baseline": "CH-44",
+  "spry": "0.34.0",
+  "spry_baseline": "CH-45",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -68,6 +68,14 @@
     "away": 30,
     "logs": [],
     "flags": {"falsify_share": 0.2, "session_share": 0.2, "merge_wait_share": 0.5, "review_agents": 3}
+  },
+  "hooks": {
+    "session": true,
+    "link_fields": true,
+    "cited_criteria": true,
+    "check_edit": true,
+    "merge": true,
+    "check_stop": true
   },
   "slices": {
     "issue": false,

@@ -853,3 +853,35 @@ Entry format:
   `pace.flags` thresholds — all optional.
 - **Migrate:** nothing. The first `spry pace` reads every session log Claude Code still holds for the
   clone, which can take a minute on a long project.
+
+## CH-45 · Agent hooks — the checks said at the moment of the mistake
+
+- **Date:** 2026-10-29 · **Version:** 0.34.0
+- **Touches:** `hooks/hooks.json` (new), `tool/spry.py` (`agent-hook`), `process/setup.md` (§4),
+  `process/templates/spry.config.json` (`hooks`)
+- **Why:** on the pilots, rules held only while the agent remembered them:
+  - nothing but the agent's memory of `merging.md` ran `merge-check` before `gh pr merge`;
+  - SL-162's `pr:` was set with `sed` (CH-19);
+  - the agent looked for the config at the repository root three times (CH-19);
+  - SL-195 met its document problems only at close — three gates, about 22 minutes (CH-31);
+  - a criterion tests cited changed unseen until `check --base` (pulse's #2, CH-26).
+  - Six Claude Code hooks now say it at the moment, each switched on by itself:
+    - `session` — at start, resume, clear and compaction: where the config and the tool are, the
+      slice this branch builds, the person's tone, which hooks are on;
+    - `link_fields` — refuses a hand edit (Edit, Write, `sed -i`, `perl -i`) of a slice's `branch`,
+      `pr`, `issue` or `owner`, naming the `link` command;
+    - `cited_criteria` — asks the person before a criterion a test cites changes or is dropped;
+    - `check_edit` — after an edit of a document, `check` of that one file, errors sent back;
+    - `merge` — `merge-check` before `gh pr merge` of a slice's pull request, from its branch,
+      refused on a block; CI is still step 1's to check;
+    - `check_stop` — before the agent stops with documents changed, `check`; back once for each
+      state of the documents with errors.
+  - Filtered by tool and an `if` rule, so a call they cannot be about starts no process. They fail
+    open: `check`, CI and `merge-check` stay the authority, for every agent.
+  - When the project's own copy of the tool is another version, that copy answers the hook.
+- **Adapt:** `hooks.<name>`, `true` or `false` for each — missing is off. `SPRY_HOOKS=off` turns all
+  of them off for one session. Needs Claude Code 2.1.295 or later (the `if` filter and
+  `onFailure`), and the plugin: a project on `install --agent claude` copies the entries into its
+  own `.claude/settings.json`, with `spry/tool/spry.py` for the tool.
+- **Migrate:** nothing. A project that kept a local hook or a rule in `AGENTS.md` for one of these
+  (no merge without `merge-check`, `link` for a slice's fields) may drop it once the hook is on.
