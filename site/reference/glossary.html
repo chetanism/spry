@@ -274,9 +274,18 @@ and spry checks you stick to it.</p>
 
 <h2>O–R</h2>
 <dl class="terms">
+  <dt>Owner (slice)</dt>
+  <dd>Who built the slice — set when it is opened, required at merge. <code>spry work</code> and
+  <code>/spry:work-report</code> list a person's slices by it. <a href="../guides/team.html">Work as a team</a>.</dd>
+
   <dt>Open</dt>
   <dd>The state of a slice being built: it has a work order, a conflict check, a branch and a draft pull
   request. <a href="../guides/building.html">Build a slice</a>.</dd>
+
+  <dt>Pace</dt>
+  <dd><code>spry pace</code>'s page: where slices' time went — the agent, checks, background tasks, another
+  session, or you — and whether a process change helped. Local to your clone, never committed.
+  <a href="../guides/maintaining.html">Keep spry yours</a>.</dd>
 
   <dt>Planned</dt>
   <dd>The state of a slice that exists but has not been opened: a summary, what it covers, and what it
@@ -371,7 +380,7 @@ and spry checks you stick to it.</p>
   run — because a squash keeps nothing else. <a href="../guides/closing.html">Close and merge a slice</a>.</dd>
 
   <dt>Unreliable</dt>
-  <dd>A falsify result when the tests could not give an answer: the baseline was red, or a run timed out.
+  <dd>A falsify result when the tests could not give an answer: the baseline was red, a run timed out, or a run broke before any test failed.
   Fix that first. <a href="../design/falsify.html">Falsify</a>.</dd>
 
   <dt>Vendor</dt>
