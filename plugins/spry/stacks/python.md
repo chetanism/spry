@@ -21,6 +21,7 @@ audience: 8
 - **Integration tests** on a shared database: separate runner, `-p no:xdist`, and
   `"parallel": false` so falsify never runs two of them at once.
 - **Parallel falsify** shares `.venv` / `venv` into each worktree; a virtualenv elsewhere goes in
-  `falsify.share`.
+  `falsify.share`. Integration tests can run in parallel too: `falsify.setup` creates and migrates
+  slot `$SPRY_FALSIFY_SLOT`'s database, and the tests read its name from it.
 - **Deploy exclusion:** `spry/` in `.dockerignore`; exclude it from the package in `pyproject.toml`.
 - **CI setup steps:** `actions/setup-python`; install with the project's tool and its cache.

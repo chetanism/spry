@@ -27,8 +27,11 @@ audience: 8
 - **Integration tests** on a shared database: their own runner entry, matched by
   `**/*.integration.test.ts`, run serially (`--pool=forks --poolOptions.forks.singleFork`), with
   `"parallel": false` so falsify never runs two of them at once.
-- **Parallel falsify** shares `node_modules` into each worktree. Generated code outside it (a
-  Prisma client in `src/generated`, a build output tests import) goes in `falsify.share`.
+- **Parallel falsify** shares `node_modules` into each worktree, and turns pnpm's
+  `verify-deps-before-run` off there. Generated code outside it (a Prisma client in
+  `src/generated`, a build output tests import) goes in `falsify.share`. Integration tests can run
+  in parallel too: `falsify.setup` creates and migrates slot `$SPRY_FALSIFY_SLOT`'s database, and
+  the tests read the slot's database name and port from it.
 - **Deploy exclusion:** add `spry/` to `.dockerignore`; with a bundler, nothing reads `spry/` anyway.
 - **CI setup steps:** `actions/setup-node` with the `.nvmrc` version; `pnpm install --frozen-lockfile`
   (or the project's manager) with its cache.

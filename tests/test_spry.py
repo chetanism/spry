@@ -1516,7 +1516,9 @@ class Kit(unittest.TestCase):
 LOANS_BEFORE = 'def lend(count, overdue):\n    return "ok"\n'
 LOANS_AFTER = ('def lend(count, overdue):\n    if count >= 3:\n        return "limit"\n'
                '    if overdue:\n        return "overdue"\n    return "ok"\n')
-RUNNER = "import runpy, sys\nfor f in sys.argv[1:]:\n    runpy.run_path(f)\n"
+# Reports a failed assertion as pytest does; anything else breaks the run, as a missing database would.
+RUNNER = ("import runpy, sys\nfor f in sys.argv[1:]:\n    try:\n        runpy.run_path(f)\n"
+          "    except AssertionError:\n        print('1 failed')\n        sys.exit(1)\n")
 TEST_LIMIT = ('"""S-1/AC-1 refuses a fourth book"""\nimport sys; sys.path.insert(0, "src")\nfrom loans import lend\n'
               'assert lend(3, False) == "limit"\nassert lend(2, False) == "ok"\n')
 TEST_OVERDUE = ('"""S-1/AC-2 refuses an overdue member, but never checks it"""\nimport sys; sys.path.insert(0, "src")\n'
@@ -1550,6 +1552,7 @@ class Falsify(unittest.TestCase):
             "## Close summary\n\n### Falsify\n\n| Control | Mutation | Expect | Result |\n|---|---|---|---|\n")})
         self.commit("slice")
         self.slice_doc = os.path.join(self.root, story, "SL-1-refuse.md")
+        self.addCleanup(shutil.rmtree, spry.falsify_home(spry.Project(self.root)), True)
 
     def write(self, files):
         for rel, text in files.items():
@@ -1601,6 +1604,48 @@ class Falsify(unittest.TestCase):
         self.commit("red")
         results = self.run_plan([self.guard("    if overdue:", ["S-1/AC-2"])])
         self.assertEqual(results[0][1], "unreliable")
+
+    def test_a_run_that_breaks_before_a_test_fails_is_unreliable_not_caught(self):
+        broken = dict(self.guard("    if count >= 3:", ["S-1/AC-1"]), **{"with": "    if count >= 3"})
+        result, note = self.run_plan([broken])[0][1:]
+        self.assertEqual(result, "unreliable", "a syntax error stops the run before any test fails")
+        self.assertIn("failed, but no test did: SyntaxError", note)
+        self.configure(runners=[{"match": ["tests/**"], "cwd": "root", "command": "python3 run.py {files}",
+                                 "failed": "^(1 failed|SyntaxError)"}])
+        self.assertEqual(self.run_plan([broken])[0][1], "caught", "a runner's own `failed` replaces the built-in ones")
+        self.configure(runners=[{"match": ["tests/**"], "cwd": "root", "command": "python3 run.py {files}", "failed": "(1 failed"}])
+        with self.assertRaises(spry.PlanError) as caught:
+            self.run_plan([broken])
+        self.assertIn("`failed` is not a pattern", str(caught.exception))
+
+    def test_failed_patterns(self):
+        cases = {
+            " Test Files  1 failed (1)\n      Tests  1 failed | 2 passed (3)": True,
+            " Test Files  1 failed (1)\n      Tests  no tests\nError: connect ECONNREFUSED": False,
+            "\x1b[1m      Tests \x1b[22m \x1b[1m\x1b[31m1 failed\x1b[39m\x1b[22m": True,
+            "Tests:       1 failed, 4 passed, 5 total": True,
+            "Test Suites: 1 failed, 1 total\nTests:       0 total": False,
+            "========= 1 failed, 3 passed in 0.12s =========": True,
+            "1 failed, 3 passed in 0.12s": True,
+            "ERROR tests/test_a.py - ModuleNotFoundError\n!!! Interrupted: 1 error during collection !!!": False,
+            "--- FAIL: TestLimit (0.00s)\nFAIL": True,
+            "FAIL\texample.com/loans [build failed]": False,
+            "  2 passing\n  1 failing": True,
+            "test result: FAILED. 1 passed; 1 failed": True,
+            "FAILED (failures=1)": True,
+            "FAILED (errors=1)": True,
+            "ERROR: test_a (unittest.loader._FailedTest.test_a)\nImportError: Failed to import test module: test_a\nFAILED (errors=1)": False,
+            '  1 failing\n  1) Loans\n       "before all" hook for "lends":\n     Error: connect ECONNREFUSED': False,
+            "api:test:       Tests  1 failed | 2 passed (3)": True,
+            "api-1  | ========= 1 failed in 0.12s =========": True,
+            "Error: 3 failed attempts to reach the database": False,
+            "3 examples, 1 failure": True,
+            "3 examples, 0 failures": False,
+            "ℹ fail 1": True,
+            "ERR_PNPM_VERIFY_DEPS_BEFORE_RUN  Cannot run scripts because node_modules is out of date": False,
+        }
+        for output, failed in cases.items():
+            self.assertEqual(spry.test_failed({}, output), failed, output)
 
     def test_refusals(self):
         cases = {
@@ -1813,13 +1858,90 @@ class Falsify(unittest.TestCase):
         return [l for l in self.git("worktree", "list").splitlines() if l.strip()]
 
     def test_parallel_matches_serial_and_never_touches_this_tree(self):
+        self.configure(keep_worktrees=False)
+        self.commit("worktrees not kept")
+        self.run_plan(self.both_guards(), jobs=2)
+        self.assertEqual(len(self.worktrees()), 1, "every worktree removed")
+        self.configure(keep_worktrees=True)
+        self.commit("worktrees kept")
         before = os.stat(os.path.join(self.root, "src", "loans.py")).st_mtime_ns
         said = []
         results = spry.falsify_run(spry.Project(self.root), self.plan(self.both_guards()), say=said.append, jobs=2)
         self.assertEqual([r for _, r, _ in results], ["caught", "survived"])
         self.assertTrue(any(s.startswith("2 worktrees") for s in said), said)
         self.assertEqual(os.stat(os.path.join(self.root, "src", "loans.py")).st_mtime_ns, before)
-        self.assertEqual(len(self.worktrees()), 1, "every worktree removed")
+        self.assertEqual(len(self.worktrees()), 3, "both worktrees kept for the next run")
+
+    def test_kept_worktrees_are_reset_like_fresh_ones(self):
+        said = []
+        spry.falsify_run(spry.Project(self.root), self.plan(self.both_guards()), say=said.append, jobs=2)
+        stray = os.path.join(spry.falsify_home(spry.Project(self.root)), "w1", "dist", "old.js")
+        os.makedirs(os.path.dirname(stray))
+        with open(stray, "w") as handle:
+            handle.write("built from an older commit\n")
+        self.write({"tests/test_limit.py": TEST_LIMIT + "# newer\n"})
+        self.commit("a newer commit")
+        said = []
+        results = spry.falsify_run(spry.Project(self.root), self.plan(self.both_guards()), say=said.append, jobs=2)
+        self.assertEqual([r for _, r, _ in results], ["caught", "survived"])
+        self.assertTrue(any(s.startswith("2 worktrees · 2 kept from the last run") for s in said), said)
+        self.assertFalse(os.path.exists(stray), "an ignored or untracked file never outlives its run")
+        with open(os.path.join(os.path.dirname(os.path.dirname(stray)), "tests", "test_limit.py")) as handle:
+            self.assertTrue(handle.read().endswith("# newer\n"), "checked out at the new commit")
+        home = spry.falsify_home(spry.Project(self.root))
+        held = spry.take_home(home)
+        said = []
+        spry.falsify_run(spry.Project(self.root), self.plan(self.both_guards()), say=said.append, jobs=2)
+        held.close()
+        self.assertIn("another run holds the kept worktrees — fresh ones for this run", said)
+        self.assertEqual(len(self.worktrees()), 3, "the fresh ones are removed, the kept ones stay")
+
+    def test_a_kept_worktree_a_cleaner_deleted_is_made_again(self):
+        # The temporary folder inside a repository, as a project-local tmp in CI would be.
+        home = os.path.join(self.root, "tmp", "kept")
+        original = spry.falsify_home
+        spry.falsify_home = lambda _project: home
+        self.addCleanup(setattr, spry, "falsify_home", original)
+        self.run_plan(self.both_guards(), jobs=2)
+        shutil.rmtree(os.path.join(home, "w1"))
+        os.remove(os.path.join(home, "w2", ".git"))
+        results = self.run_plan(self.both_guards(), jobs=2)
+        self.assertEqual([r for _, r, _ in results], ["caught", "survived"])
+        self.assertEqual(self.git("branch", "--show-current").strip(), "sl-1", "the repository above was never checked out")
+        self.assertTrue(os.path.isfile(os.path.join(home, "w2", ".git")))
+
+    def slot_config(self, setup):
+        """A test that needs its slot prepared — its own database, say — and a setup that logs what it sees."""
+        log = os.path.join(self.root, ".git", "slots.log")
+        self.write({"tests/test_limit.py": "import os\nif not os.path.exists('.slot-' + os.environ['SPRY_FALSIFY_SLOT']):\n"
+                    "    raise SystemExit('no database for this slot')\n" + TEST_LIMIT, ".gitignore": ".slot-*\n__pycache__/\n"})
+        self.configure(setup=setup.replace("LOG", log))
+        self.commit("a test that needs its slot prepared")
+        return log
+
+    def test_each_slot_is_set_up_before_its_first_test(self):
+        log = self.slot_config("python3 -c \"import os; e = os.environ; open('.slot-' + e['SPRY_FALSIFY_SLOT'], 'w'); "
+                               "open('LOG', 'a').write(e['SPRY_FALSIFY_SLOT'] + '/' + e['SPRY_FALSIFY_SLOTS'] + ' ' "
+                               "+ e.get('npm_config_verify_deps_before_run', '-') + '\\n')\"")
+        for jobs, seen in ((1, ["1/1 -"]), (2, ["1/2 false", "2/2 false"])):
+            open(log, "w").close()
+            results = self.run_plan(self.both_guards(), jobs=jobs)
+            self.assertEqual([r for _, r, _ in results], ["caught", "survived"], jobs)
+            with open(log) as handle:
+                self.assertEqual(handle.read().split("\n")[:-1], seen)
+        self.configure(setup="")
+        os.remove(os.path.join(self.root, ".slot-1"))
+        results = self.run_plan(self.both_guards())
+        self.assertEqual([r for _, r, _ in results], ["unreliable", "unreliable"], "no slot set up: a red baseline")
+
+    def test_a_failed_setup_stops_the_run(self):
+        self.slot_config("python3 -c \"import sys; sys.exit('no database server')\"")
+        for jobs in (1, 2):
+            with self.assertRaises(spry.PlanError) as caught:
+                self.run_plan(self.both_guards(), jobs=jobs)
+            self.assertIn("falsify.setup failed in slot 1 (exit 1: no database server) — no control was run",
+                          str(caught.exception))
+            self.assertEqual(self.source(), LOANS_AFTER)
 
     def test_parallel_falls_back_to_serial_with_uncommitted_changes(self):
         self.write({"run.py": RUNNER + "# edited\n"})

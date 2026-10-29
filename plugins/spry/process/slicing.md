@@ -159,7 +159,8 @@ that merges.
      key, so its old row stays: run the whole plan with `--record SL-<n> --replace` to drop it. Only when no test should catch it,
      write the reason after `survived` in that row (`survived — logged only; no rule depends on it`):
      a person accepts it at the merge. A bare `survived` blocks the merge.
-     `unreliable` → the baseline was red or timed out: fix that first.
+     `unreliable` → the baseline was red or timed out, or the run broke before any test failed
+     (its note says `failed, but no test did`): fix that first.
    - Falsify comes after the review and before the gate: a review fix changes code falsify would
      have proved, and a test added for a survivor changes code a gate already passed. It runs its
      own baseline, so it needs no gate first.

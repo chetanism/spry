@@ -90,6 +90,8 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
     "parallel": false,
     "timeout": 600,
     "share": [],
+    "keep_worktrees": true,
+    "setup": "",
     "runners": [
       {"match": ["&lt;glob of test files&gt;"], "cwd": "package",
        "command": "&lt;runner with fail-fast flag&gt; {files}"}
@@ -207,7 +209,9 @@ which stops and asks.</p>
     <tr><td><code>falsify.parallel</code></td><td><code>false</code>, <code>true</code>, or a number of git worktrees to run controls in at once. Never touches your working tree.</td><td><code>false</code></td></tr>
     <tr><td><code>falsify.timeout</code></td><td>Seconds before a test run is stopped, with its whole process group. A timeout makes the control <code>unreliable</code>.</td><td><code>600</code></td></tr>
     <tr><td><code>falsify.share</code></td><td>Extra folders to link into each worktree beside the installed dependencies (<code>node_modules</code>, <code>.venv</code>, <code>venv</code> are linked already) — generated code tests import, for example.</td><td><code>[]</code></td></tr>
-    <tr><td><code>falsify.runners</code></td><td>How to run a list of test files. Each: <code>match</code> (test globs), <code>command</code> with <code>{files}</code> and the runner's fail-fast flag, optional <code>cwd: "package"</code> to run in the nearest package folder (a monorepo), and <code>"parallel": false</code> for tests that cannot run side by side (a shared database, fixed ports).</td><td>—</td></tr>
+    <tr><td><code>falsify.keep_worktrees</code></td><td>Keep the worktrees between runs, reset to <code>HEAD</code> with every untracked and ignored file removed at the start of each. A fresh worktree is cold — a virus scanner reads every file on its first run.</td><td><code>true</code></td></tr>
+    <tr><td><code>falsify.setup</code></td><td>A command run once in each slot — each worktree, or your tree when serial — before the baseline, with <code>SPRY_FALSIFY_SLOT</code> (1, 2, …) and <code>SPRY_FALSIFY_SLOTS</code> set: create and migrate that slot's database, say. Every test run sees the same two. A setup that fails stops the run.</td><td><code>""</code></td></tr>
+    <tr><td><code>falsify.runners</code></td><td>How to run a list of test files. Each: <code>match</code> (test globs), <code>command</code> with <code>{files}</code> and the runner's fail-fast flag, optional <code>cwd: "package"</code> to run in the nearest package folder (a monorepo), <code>"parallel": false</code> for tests that cannot run side by side (a shared database, fixed ports), and <code>failed</code> — a pattern for the line the runner prints when a test failed, needed only when it is not pytest, vitest, jest, mocha, go, cargo, unittest, rspec or <code>node --test</code>, or a tool other than turbo or docker compose puts a prefix on each line. A run that fails without that line is <code>unreliable</code>, not <code>caught</code>.</td><td>—</td></tr>
   </tbody>
 </table>
 

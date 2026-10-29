@@ -758,3 +758,45 @@ Entry format:
 - **Migrate:** a local process change that ran a tests-only gate by hand, and merged with
   `--ci-local "…; tests-only gate"`, is now the tool's: drop it from `slicing.md`, `merging.md` and
   `knowledge/process-changes.md`.
+
+## CH-42 · Falsify you can trust in parallel
+
+- **Date:** 2026-10-29 · **Version:** 0.31.0
+- **Touches:** `tool/spry.py` (`falsify run`), `process/slicing.md` (*Close* 6),
+  `process/templates/spry.config.json`, `stacks/{generic,python,typescript-node}.md`
+- **Why:** from issues #7, #8 and #9, met in a pilot's parallel falsify runs.
+  - A control was `caught` whenever the test command exited non-zero, for any reason. One run in
+    ten of a 68-control plan read a mutation no test notices as `caught`, because the run broke
+    first (a database not made yet, a port in use). A false `caught` hides a missing test.
+  - pnpm 11 judged a worktree's borrowed `node_modules` stale and refused to run, so every baseline
+    was red and every control `unreliable`. And each run made new worktrees, which a virus scanner
+    reads cold: 16 s against 3 s for the same test file.
+  - Every slot shared one database, Redis and port unless the project wrote its own runner to keep
+    them apart.
+  - Now:
+    - `caught` only when the output shows a test failed: a summary line from pytest, vitest, jest,
+      mocha, go, cargo, unittest, rspec or `node --test` (behind a turbo or docker compose prefix
+      too), or a runner's own `failed` pattern. A run that fails without one — or with a unittest
+      module that would not import, or a mocha hook that failed — is `unreliable`, noted
+      `failed, but no test did: <last line>`. jest's failed `beforeAll` and a `node --test` file
+      that throws as it loads still read as a failed test: `falsify.setup` is what keeps a slot
+      that is not ready out of the tests.
+    - Commands in a worktree run with `npm_config_verify_deps_before_run` and
+      `pnpm_config_verify_deps_before_run` set to `false`.
+    - Worktrees are kept between runs (`falsify.keep_worktrees`, default `true`) in the system's
+      temporary folder, one set per checkout, and reset at the start of each run: checked out at
+      `HEAD`, every untracked and ignored file removed. They show in `git worktree list`.
+    - Every command falsify runs sees `SPRY_FALSIFY_SLOT` (1, 2, …) and `SPRY_FALSIFY_SLOTS`; serial is
+      slot 1 of 1. `falsify.setup`, if set, runs once in each slot before the baseline; a setup that
+      fails stops the run with no control run.
+- **Adapt:**
+  - A falsify runner whose output is none of those runners' (a script of your own, a wrapper that
+    swallows the summary, nx or `pnpm -r` prefixing each line) gets `failed`: a pattern for the line it prints when a test failed. Check
+    with one control you know is caught.
+  - `falsify.setup` — with `falsify.parallel` and integration tests on a database: a command that
+    creates and migrates slot `$SPRY_FALSIFY_SLOT`'s database; the tests read its name and port from
+    the same variable. Empty otherwise.
+  - `falsify.keep_worktrees: false` only if the temporary folder cannot hold a copy of the code per slot.
+- **Migrate:** a project runner that gave each slot its own database, or passed
+  `--config.verify-deps-before-run=false`, can hand both to spry: its slot setup moves to
+  `falsify.setup`, keyed on `SPRY_FALSIFY_SLOT`. Rows already recorded stay as they are.

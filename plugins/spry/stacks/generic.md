@@ -23,7 +23,11 @@ Ask the developer for, and record in config:
 - `stack` — commands that check, start and stop the local services (database, queues), if any;
 - `explore` — how to run a second, isolated instance for `/spry:explore`; may be left `<…>`
   until the first exploratory run, which stops and asks;
-- falsify runner — runs a list of test files (`{files}`), stopping at the first failure;
+- falsify runner — runs a list of test files (`{files}`), stopping at the first failure; when
+  its output is not pytest's, vitest's, jest's, mocha's, go's, cargo's, unittest's, rspec's or
+  `node --test`'s, `failed` — a pattern for the line it prints when a test failed;
+- `falsify.setup` — with `falsify.parallel` and a database or fixed port in the tests: a command
+  that readies one slot (`SPRY_FALSIFY_SLOT`) — its own database, migrated — or empty;
 - deploy exclusion — how `spry/` is kept out of the build.
 
 A criterion is cited by putting `S-1/AC-1` in the string that names the test — its title, or a

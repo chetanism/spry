@@ -74,7 +74,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.30.0"
+VERSION = "0.31.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -2602,6 +2602,10 @@ def runners(project: Project) -> list:
             raise PlanError("a falsify runner's command needs `{files}`: " + json.dumps(runner))
         if re.search(r"<[a-z][a-z ,/-]*>", command):
             raise PlanError("a falsify runner is still the template's placeholder: " + command)
+        try:
+            re.compile(str(runner.get("failed") or ""))
+        except re.error as e:
+            raise PlanError(f"a falsify runner's `failed` is not a pattern ({e}): " + json.dumps(runner))
     return table
 
 
@@ -2685,22 +2689,66 @@ def runner_command(project: Project, runner: dict, cwd: str, files: list, root: 
     return runner["command"].replace("{files}", " ".join(shell_quote(r) for r in rels))
 
 
-def run_tests(project: Project, runner: dict, cwd: str, files: list, timeout: int, root: str | None = None):
-    """('pass' | 'fail' | 'timeout', last lines of output). `root` is the tree the files live in."""
-    command = runner_command(project, runner, cwd, files, root)
-    # Its own process group, so a timeout or Ctrl-C stops the runner's children too (pnpm → vitest
-    # workers) — none may keep running against a mutated file.
+# What a runner prints when a test failed — not when it broke before any test could (no database,
+# a port in use, an import error, pnpm refusing to run). A runner's `failed` replaces these.
+# A line may carry turbo's `api:test: ` or docker compose's `api-1  | ` in front.
+LINE_PREFIX = r"^(?:[\w@./-]+:[\w:-]+: |[\w.-]+\s+\| )?"
+FAILED_PATTERNS = tuple(LINE_PREFIX + p for p in (
+    r"\s*Tests\s+\d+ failed",               # vitest
+    r"Tests:\s+\d+ failed",                 # jest
+    r"(=+ )?\d+ failed\b",                  # pytest
+    r"\s*\d+ failing\b",                    # mocha
+    r"\s*--- FAIL: ",                       # go test
+    r"test result: FAILED\.",               # cargo test
+    r"FAILED \((failures|errors)=",         # unittest: an exception other than an assert is an error
+    r"\d+ examples?, [1-9]\d* failures?",   # rspec
+    r"(# |ℹ )fail [1-9]",                   # node --test
+))
+# Output that says the run broke, whatever else it reports: a test module that would not import
+# (unittest counts it as an error), a mocha hook that failed before its tests.
+BROKEN_PATTERNS = (r"unittest\.loader\._FailedTest", r"Failed to import test module",
+                   r'"before (all|each)" hook')
+ANSI = re.compile(r"\x1b\[[0-9;?]*[A-Za-z]")
+
+
+def test_failed(runner: dict, output: str) -> bool:
+    """Did a test fail, by the runner's own report? A non-zero exit alone says only that something did."""
+    text = ANSI.sub("", output)
+    if runner.get("failed"):
+        return bool(re.search(runner["failed"], text, re.MULTILINE))
+    if any(re.search(p, text, re.MULTILINE) for p in BROKEN_PATTERNS):
+        return False
+    return any(re.search(p, text, re.MULTILINE) for p in FAILED_PATTERNS)
+
+
+def run_command(command: str, cwd: str, timeout: int, env: dict | None = None):
+    """(exit code, or None on a timeout; output). Its own process group, so a timeout or Ctrl-C
+    stops the command's children too (pnpm → vitest workers) — none may keep running against a
+    mutated file."""
     proc = subprocess.Popen(command, shell=True, cwd=cwd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                            text=True, start_new_session=True)
+                            text=True, encoding="utf-8", errors="replace", start_new_session=True,
+                            env={**os.environ, **env} if env else None)
     try:
         output, _ = proc.communicate(timeout=timeout)
     except BaseException as e:
         stop_group(proc)
         if isinstance(e, subprocess.TimeoutExpired):
-            return "timeout", ""
+            return None, ""
         raise
-    tail = "\n".join((output or "").strip().split("\n")[-5:])
-    return ("pass" if proc.returncode == 0 else "fail"), tail
+    return proc.returncode, output or ""
+
+
+def run_tests(project: Project, runner: dict, cwd: str, files: list, timeout: int, root: str | None = None,
+              env: dict | None = None):
+    """('pass' | 'fail' | 'broken' | 'timeout', last lines of output). `root` is the tree the files
+    live in. `broken` is a non-zero exit with no failed test in the output."""
+    code, output = run_command(runner_command(project, runner, cwd, files, root), cwd, timeout, env)
+    if code is None:
+        return "timeout", ""
+    tail = "\n".join(ANSI.sub("", output).strip().split("\n")[-5:])
+    if code == 0:
+        return "pass", tail
+    return ("fail" if test_failed(runner, output) else "broken"), tail
 
 
 def stop_group(proc: subprocess.Popen):
@@ -2781,8 +2829,10 @@ def likely_first(project: Project, entry: dict) -> list:
     return [tier for tier in (first, rest) if tier] or [tests]
 
 
-def run_control(project: Project, entry: dict, table: list, timeout: int, red: dict, root: str) -> tuple:
-    """Run the tests one mutated control should fail, in the tree at `root`. Returns (result, note)."""
+def run_control(project: Project, entry: dict, table: list, timeout: int, red: dict, root: str,
+                env: dict | None = None) -> tuple:
+    """Run the tests one mutated control should fail, in the tree at `root`. Returns (result, note).
+    `caught` only when a test failed: a run that broke before any test did proves nothing."""
     outcomes, notes = [], []
     for tier in likely_first(project, entry):
         for key, files in group_files(project, tier).items():
@@ -2790,10 +2840,12 @@ def run_control(project: Project, entry: dict, table: list, timeout: int, red: d
                 outcomes.append("unreliable")
                 notes.append(red[key])
                 continue
-            outcome, _tail = run_tests(project, table[key[0]], in_tree(project, root, key[1]), files, timeout, root)
+            outcome, tail = run_tests(project, table[key[0]], in_tree(project, root, key[1]), files, timeout, root, env)
             outcomes.append({"fail": "caught", "pass": "survived"}.get(outcome, "unreliable"))
             if outcome == "timeout":
                 notes.append("timed out")
+            if outcome == "broken":
+                notes.append("failed, but no test did" + (f": {tail.splitlines()[-1]}" if tail else ""))
             if outcome == "fail":
                 break
         if "caught" in outcomes:
@@ -2805,11 +2857,11 @@ def run_control(project: Project, entry: dict, table: list, timeout: int, red: d
     return "unreliable", "; ".join(notes)
 
 
-def baseline(project: Project, groups: dict, table: list, timeout: int, root: str, say) -> dict:
+def baseline(project: Project, groups: dict, table: list, timeout: int, root: str, say, env: dict | None = None) -> dict:
     """{group key: why it is red} for every group whose tests fail before anything is changed."""
     red = {}
     for key, files in groups.items():
-        outcome, tail = run_tests(project, table[key[0]], in_tree(project, root, key[1]), files, timeout, root)
+        outcome, tail = run_tests(project, table[key[0]], in_tree(project, root, key[1]), files, timeout, root, env)
         if outcome != "pass":
             red[key] = f"baseline {outcome}" + (f": {tail.splitlines()[-1]}" if tail else "")
         say(f"baseline {'green' if outcome == 'pass' else outcome} · {len(files)} test files")
@@ -2957,9 +3009,31 @@ def falsify_run(project: Project, plan_path: str, dry: bool = False, say=print, 
     return results
 
 
+def slot_env(slot: int, slots: int) -> dict:
+    """What every command in a slot sees, so a project can give each slot its own database and port."""
+    return {"SPRY_FALSIFY_SLOT": str(slot), "SPRY_FALSIFY_SLOTS": str(slots)}
+
+
+def prepare_slot(project: Project, cwd: str, env: dict, timeout: int, say):
+    """Run `falsify.setup` once in a slot, before its first test. A failure stops the run: a slot
+    that is not ready would turn every control after it into a result."""
+    command = str(project.config.get("falsify", {}).get("setup") or "")
+    if not command:
+        return
+    code, output = run_command(command, cwd, timeout, env)
+    slot = env["SPRY_FALSIFY_SLOT"]
+    if code != 0:
+        last = ANSI.sub("", output).strip().split("\n")[-1]
+        why = "timed out" if code is None else f"exit {code}" + (f": {last}" if last else "")
+        raise PlanError(f"falsify.setup failed in slot {slot} ({why}) — no control was run")
+    say(f"setup · slot {slot}")
+
+
 def falsify_serial(project: Project, plan: list, table: list, timeout: int, groups: dict, say) -> list:
     """One control at a time, in this tree; every file restored, whatever happens."""
-    red = baseline(project, groups, table, timeout, project.root, say)
+    env = slot_env(1, 1)
+    prepare_slot(project, project.root, env, timeout, say)
+    red = baseline(project, groups, table, timeout, project.root, say, env)
     writer, results, touched = Writer(), [], {}
 
     def restore():
@@ -2975,7 +3049,7 @@ def falsify_serial(project: Project, plan: list, table: list, timeout: int, grou
             touched[target] = original
             writer.put(target, mutate(entry, original))
             try:
-                result, note = run_control(project, entry, table, timeout, red, project.root)
+                result, note = run_control(project, entry, table, timeout, red, project.root, env)
             finally:
                 restore()
             results.append((entry, result, note))
@@ -2985,36 +3059,129 @@ def falsify_serial(project: Project, plan: list, table: list, timeout: int, grou
     return results
 
 
+# A worktree borrows the main tree's installed dependencies, which pnpm 11 judges stale and tries to
+# reinstall before any script — a red baseline for every control. The main tree installed them.
+WORKTREE_ENV = {"npm_config_verify_deps_before_run": "false", "pnpm_config_verify_deps_before_run": "false"}
+
+
+def falsify_home(project: Project) -> str:
+    """Where this checkout's worktrees are kept between runs: outside the repository, one per checkout."""
+    key = hashlib.sha1(os.path.realpath(project.root).encode("utf-8")).hexdigest()[:8]
+    return os.path.join(tempfile.gettempdir(), f"spry-falsify-{key}")
+
+
+def take_home(home: str):
+    """Claim the kept worktrees for this run: an open, locked file, or None while another run of this
+    checkout holds them. The system lets go of the lock when the process ends, however it ends."""
+    os.makedirs(native(home), exist_ok=True)
+    handle = open(native(os.path.join(home, "lock")), "a+")
+    try:
+        if WINDOWS:
+            import msvcrt
+            handle.seek(0)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
+def drop_links(tree: str):
+    """Remove every link and junction in a tree without following one. Windows only needs it: git
+    there walks into a junction as if it were a folder, and would clean the main tree through it."""
+    for dirpath, dirnames, filenames in os.walk(tree):
+        keep = []
+        for name in dirnames:
+            path = os.path.join(dirpath, name)
+            if is_link(path):
+                unborrow(path)
+            elif name != ".git":
+                keep.append(name)
+        dirnames[:] = keep
+        for name in filenames:
+            if is_link(os.path.join(dirpath, name)):
+                unborrow(os.path.join(dirpath, name))
+
+
+def reset_tree(tree: str, commit: str) -> bool:
+    """A kept worktree made exactly like a fresh one at `commit`: tracked files checked out, every
+    untracked and ignored file gone — no build output from an older commit survives into this run.
+    Files that did not change keep their identity, so a virus scanner does not read them again."""
+    # Only a tree that is still its own worktree: without its `.git` file, git would look upward and
+    # reset whatever repository holds the temporary folder.
+    top = git(tree, "rev-parse", "--show-toplevel").stdout.strip()
+    if not os.path.isfile(native(os.path.join(tree, ".git"))) or os.path.realpath(top) != os.path.realpath(tree):
+        return False
+    if WINDOWS:
+        drop_links(tree)
+    return (git(tree, "checkout", "-q", "-f", "--detach", commit).returncode == 0
+            and git(tree, "clean", "-q", "-ffdx").returncode == 0)
+
+
+def registered_worktrees(project: Project) -> set:
+    done = git(project.root, "worktree", "list", "--porcelain")
+    return {os.path.realpath(line[len("worktree "):]) for line in done.stdout.splitlines()
+            if line.startswith("worktree ")}
+
+
 def falsify_parallel(project: Project, plan: list, table: list, timeout: int, groups: dict, jobs: int, say) -> list:
     """Controls spread over `jobs` git worktrees of HEAD. This tree is never written to.
 
     The baseline runs inside a worktree, not here: a worktree missing something the tests need
     (a dependency not shared, a generated file) must show as a red baseline — `unreliable` —
-    never as every control `caught`."""
+    never as every control `caught`.
+
+    The worktrees are kept between runs (`falsify.keep_worktrees`) and reset at the start of each:
+    a fresh one is cold — a virus scanner reads every file it holds on the first run."""
     from concurrent.futures import ThreadPoolExecutor
     import queue
 
-    parent = tempfile.mkdtemp(prefix="spry-falsify-")
-    trees, made, writer, lock = [], [], Writer(), threading.Lock()
+    commit = git(project.root, "rev-parse", "HEAD").stdout.strip()
+    home = falsify_home(project) if project.config.get("falsify", {}).get("keep_worktrees", True) is not False else None
+    held = take_home(home) if home else None
+    if home and not held:
+        say("another run holds the kept worktrees — fresh ones for this run")
+        home = None
+    if home:  # forget kept worktrees a temporary-folder cleaner deleted, or `worktree add` refuses them
+        git(project.root, "worktree", "prune")
+    parent = home or tempfile.mkdtemp(prefix="spry-falsify-")
+    trees, made, writer, lock, envs = [], [], Writer(), threading.Lock(), {}
     share = shared_paths(project)
     prefix = git_prefix(project.root)
     pnpm = os.path.isdir(native(os.path.join(project.root, "node_modules", ".pnpm")))
     try:
+        listed, reused = registered_worktrees(project) if home else set(), 0
         for n in range(jobs):
             tree = os.path.join(parent, f"w{n + 1}")
-            done = git(project.root, "worktree", "add", "--detach", "-q", tree, "HEAD")
-            if done.returncode != 0:
-                raise PlanError(f"git worktree add failed: {done.stderr.strip()}")
+            if home and os.path.realpath(tree) in listed and reset_tree(tree, commit):
+                reused += 1
+            else:
+                if os.path.lexists(native(tree)):  # not a worktree of this checkout, or would not reset
+                    if WINDOWS:
+                        drop_links(tree)
+                    git(project.root, "worktree", "remove", "--force", tree)
+                    shutil.rmtree(native(tree), ignore_errors=True)
+                    git(project.root, "worktree", "prune")
+                done = git(project.root, "worktree", "add", "--detach", "-q", tree, commit)
+                if done.returncode != 0:
+                    raise PlanError(f"git worktree add failed: {done.stderr.strip()}")
             made.append(tree)
             tree = os.path.join(tree, prefix)
             trees.append(tree)
+            envs[tree] = {**slot_env(n + 1, jobs), **WORKTREE_ENV}
             for rel in share:
                 link = os.path.join(tree, rel)
                 if not os.path.exists(native(link)):
                     os.makedirs(native(os.path.dirname(link)), exist_ok=True)
                     borrow(os.path.join(project.root, rel), link, rel, pnpm)
-        say(f"{jobs} worktrees · sharing {', '.join(share) or 'nothing'}")
-        red = baseline(project, groups, table, timeout, trees[0], say)
+        kept = f" · {reused} kept from the last run" if reused else ""
+        say(f"{jobs} worktrees{kept} · sharing {', '.join(share) or 'nothing'}")
+        for tree in trees:
+            prepare_slot(project, tree, envs[tree], timeout, say)
+        red = baseline(project, groups, table, timeout, trees[0], say, envs[trees[0]])
 
         def serial_only(entry):
             keys = group_files(project, entry["_tests"])
@@ -3032,7 +3199,7 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
                     original = handle.read()
                 writer.put(target, mutate(entry, original))
                 try:
-                    return run_control(project, entry, table, timeout, red, tree)
+                    return run_control(project, entry, table, timeout, red, tree, envs[tree])
                 finally:
                     writer.put(target, original)
             finally:
@@ -3058,14 +3225,18 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
         return [results[i] for i in range(len(plan))]
     finally:
         # Take the borrowed links out first: git on Windows walks into a junction as if it were a
-        # folder, and would delete the main tree's dependencies through it.
+        # folder, and would delete the main tree's dependencies through it. A kept tree loses them
+        # too, so nothing that deletes the temporary folder can reach the main tree's.
         for made_tree, tree in zip(made, trees):
-            if all(unborrow(os.path.join(tree, rel)) for rel in share):
+            if all(unborrow(os.path.join(tree, rel)) for rel in share) and not home:
                 git(project.root, "worktree", "remove", "--force", made_tree)
-        for made_tree in made[len(trees):]:
-            git(project.root, "worktree", "remove", "--force", made_tree)
+        if held:
+            held.close()
+        if not home:
+            for made_tree in made[len(trees):]:
+                git(project.root, "worktree", "remove", "--force", made_tree)
+            shutil.rmtree(parent, ignore_errors=True)
         git(project.root, "worktree", "prune")
-        shutil.rmtree(parent, ignore_errors=True)
 
 
 ROW_KEY = re.compile(r"\s*<!--\s*(f:[0-9a-f]{8})\s*-->")

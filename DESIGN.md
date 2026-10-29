@@ -346,6 +346,14 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   fail-fast flag — one failure is enough. Files that name the control's source file run first; the
   rest run only if those miss it. A control cited by more than 20 files is named `wide:` at the run.
 - **Baseline once** for the union of files; a red baseline marks the group `unreliable`.
+- **`caught` only when a test failed**, by the runner's own report — a summary line such as
+  `1 failed` (pytest, vitest, jest, mocha, go, cargo, unittest, rspec, `node --test`), or the
+  runner's `failed` pattern; a turbo or docker compose prefix on the line is fine. A run that exits
+  non-zero with no failed test in its output (no database, a port in use, an import error, pnpm
+  refusing to run) broke before any test could notice: `unreliable`, never `caught`. So is a
+  unittest module that would not import and a mocha hook that failed. The limit: jest marks a
+  test failed when its `beforeAll` throws, and `node --test` a file that throws as it loads — a
+  slot not ready reads as a failed test there. `falsify.setup` readies the slot before any test.
 - **Parallel in git worktrees** (`falsify.parallel`: `false`, `true` or a number; `--jobs N`):
   each worker has a detached worktree of `HEAD` outside the repository, so this tree is never
   written to. Installed dependencies (`node_modules`, `.venv`, `venv`, plus `falsify.share`) are
@@ -354,6 +362,18 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   `unreliable`, never as every control `caught`. Falls back to serial when tracked files have
   uncommitted changes or a cited test file is not committed. A runner with `"parallel": false`
   (integration tests on a shared database, fixed ports) runs its controls one at a time.
+  Commands in a worktree run with pnpm's `verify-deps-before-run` off: pnpm 11 judges borrowed
+  dependencies stale and would reinstall before every run.
+- **Worktrees are kept between runs** (`falsify.keep_worktrees`, default `true`), one set per
+  checkout in the system's temporary folder, and reset at the start of each: checked out at `HEAD`,
+  every untracked and ignored file removed — no build output from an older commit survives. A
+  fresh worktree is cold: a virus scanner reads every file on its first run (16 s against 3 s on a
+  Mac). A second run of the same checkout at once gets fresh ones.
+- **Slots** — each worktree, or this tree when serial — see `SPRY_FALSIFY_SLOT` (1, 2, …) and
+  `SPRY_FALSIFY_SLOTS` in every command, so a test can pick the slot's own database or port.
+  `falsify.setup`, if set, runs once in each slot before the baseline (create the database,
+  migrate); a setup that fails stops the run — a slot that is not ready would turn every control
+  after it into a result.
 - **Refuses** no-op mutations, files with uncommitted changes, and `expect`s with no test.
 - **Always restores**, including on error, Ctrl-C and SIGTERM; checks the files are as committed after.
 - **Every write gets a fresh, increasing mtime.** Two same-size mutations written in one second
@@ -608,3 +628,7 @@ in `spry/history/writ.md`, then retires `canon/`.
   file mentions, one not named as a test, or one no runner takes, sends it the long way, and
   `--full` always does. The tool decides, not a flag: it already knows. `tests.always` runs
   whole-tree checks whenever tests run (CH-41, 0.30.0, from issue #11).
+- 2026-10-29 — falsify counts `caught` only when a test failed, by the runner's report; a run that
+  broke first is `unreliable`. Worktrees are kept between runs and reset, run with pnpm's
+  dependency check off, and each slot has its number and an optional `falsify.setup` (CH-42,
+  0.31.0, from issues #7, #8, #9).

@@ -98,12 +98,21 @@ So:</p>
 <div class="table-wrap"><table>
 <thead><tr><th>Result</th><th>Means</th><th>Then</th></tr></thead>
 <tbody>
-<tr><td><span class="badge green">caught</span></td><td>A test failed with the safeguard removed</td><td>Nothing — this is the goal</td></tr>
+<tr><td><span class="badge green">caught</span></td><td>A test failed with the safeguard removed — the runner's report says so</td><td>Nothing — this is the goal</td></tr>
 <tr><td><span class="badge amber">survived</span></td><td>Every test still passed</td><td>Add a test and run again — or write why no test should catch it. A bare <code>survived</code> blocks the merge.</td></tr>
-<tr><td><span class="badge">unreliable</span></td><td>The tests were red, or timed out, before anything was changed</td><td>Fix the baseline first</td></tr>
+<tr><td><span class="badge">unreliable</span></td><td>The tests were red, or timed out, before anything was changed — or the run broke before any test failed</td><td>Fix the baseline, or what broke the run, first</td></tr>
 <tr><td><span class="badge">skipped</span></td><td>The control can't be run here</td><td>A written reason, accepted by a person at merge</td></tr>
 </tbody></table></div>
 <ul>
+  <li><strong><code>caught</code> only when a test failed.</strong> A non-zero exit says only that
+  <em>something</em> failed: a database not made yet, a port in use, pnpm refusing to run. falsify
+  reads the runner's own summary (<code>1 failed</code>, <code>1 failing</code>, <code>--- FAIL:</code>…);
+  without one, the control is <code>unreliable</code>, noted <code>failed, but no test did</code>.
+  <em>Why:</em> a false <code>caught</code> hides a missing test, and one turned up in ten parallel runs
+  of a pilot's plan. A runner none of the built-in summaries fit gets its own <code>failed</code>
+  pattern. The limit: jest counts a test failed when its <code>beforeAll</code> throws, and
+  <code>node --test</code> a file that throws as it loads, so there a slot that is not ready still looks
+  like a failed test — <code>falsify.setup</code> readies the slot before any test runs.</li>
   <li><strong><code>survived</code> only when every group of its tests ran.</strong> One group red or timed
   out makes it <code>unreliable</code> — never a survivor that might have been caught.</li>
   <li><strong>A reason on a survivor or a skip</strong> (<code>survived — logged only; no rule depends on
@@ -132,6 +141,16 @@ So:</p>
   <li><strong>It falls back to serial</strong> when tracked files have uncommitted changes or a cited test
   file isn't committed. A runner marked <code>"parallel": false</code> (integration tests on a shared
   database, fixed ports) runs its controls one at a time.</li>
+  <li><strong>Worktrees are kept between runs</strong> (<code>falsify.keep_worktrees</code>) and reset at the
+  start of each — checked out at <code>HEAD</code>, every untracked and ignored file removed. <em>Why:</em>
+  a virus scanner reads every file of a fresh worktree on its first run: 16 seconds against 3 for
+  the same test file on a pilot's Mac.</li>
+  <li><strong>pnpm's dependency check is off in a worktree</strong>: pnpm 11 judges the borrowed
+  <code>node_modules</code> stale and would try to reinstall before every run.</li>
+  <li><strong>Each slot can have its own database.</strong> Every command sees <code>SPRY_FALSIFY_SLOT</code>
+  (1, 2, …) and <code>SPRY_FALSIFY_SLOTS</code>; <code>falsify.setup</code>, if set, runs once in each slot
+  before the baseline — create and migrate that slot's database — so integration tests can run in
+  parallel without a runner of your own. A setup that fails stops the run.</li>
 </ul>
 
 <h2>Safety</h2>

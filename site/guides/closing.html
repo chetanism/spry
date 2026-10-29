@@ -122,7 +122,7 @@ replaced that row with <em>caught</em>. <em>What changed</em> in the close summa
   <tbody>
     <tr><td><span class="badge green">caught</span></td><td>A test failed, as it should</td><td>Nothing</td></tr>
     <tr><td><span class="badge amber">survived</span></td><td>Every test still passed with the safeguard gone</td><td>Write a test and run again — or, if no test should catch it, write the reason in the row; a person accepts it at the merge</td></tr>
-    <tr><td><span class="badge">unreliable</span></td><td>The tests were red or timed out before any mutation</td><td>Fix that first</td></tr>
+    <tr><td><span class="badge">unreliable</span></td><td>The tests were red or timed out before any mutation, or the run broke before any test failed</td><td>Fix that first</td></tr>
     <tr><td><span class="badge">skipped</span></td><td>The control can't run here (a clock, a network)</td><td>Write <code>skipped — &lt;reason&gt;</code>; a person accepts it at the merge</td></tr>
   </tbody>
 </table></div>
