@@ -84,7 +84,7 @@ spry/
   history/writ/requirements/      # writ's requirement details, as written; their content is in stories
   process/                        # vendored from the plugin: rules + templates
   tool/spry.py
-.spry/                            # gitignored: search index, personal tone, gate stamp, caches, view/
+.spry/                            # gitignored: search index, personal tone, gate stamp, caches, view/, pace/
 ```
 
 - **The folder tree is the hierarchy.** GitHub shows a folder's `README.md` when you open it, so a
@@ -128,7 +128,7 @@ spry/
   `closed` | `dropped`. **`done` is never written** — it is derived (§6).
 - A slice's `owner` is **who builds it**, not who planned it: set at open from the person git says
   is at the clone (their `team.members` name; solo, git's `user.name`), and required by
-  `merge-check`. Work is counted by it (`work`, §17); slices older than CH-40 get theirs once from
+  `merge-check`. Work is counted by it (`work`, §18); slices older than CH-40 get theirs once from
   their pull request's author (`owners --from-prs`).
 - Slices add `covers: [AC-1, AC-2]`, `branch`, `pr` — and `issue` with `slices.issue` on: a GitHub
   issue made at open from the work order, frozen and saying so; the close summary is a comment on
@@ -392,7 +392,130 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   new test or a written reason before the slice closes; a reason (on a survivor or a skipped
   control) is a `!` in `merge-check`, which a person accepts in the merge's one ask.
 
-## 17. Tool — `spry.py`
+## 17. Pace — where a slice's time goes
+
+> **Status:** designed, not built. Prototype: `docs/spikes/pace.py`.
+
+Purpose: show where each slice's time went — the agent, the checks, waiting on a person — so that
+person can judge what to change: the process, the config, the tests, or spry. Report only; it never
+changes anything.
+
+- **Always on, no switch.** Nothing runs while working that would not run anyway. There are two
+  sources:
+  - **Steps spry runs.** `gate`, `falsify run`, `check`, `merge-check` and `test-all`'s parts each
+    add one JSON line to `.spry/pace/steps.jsonl`: when, the slice, the command, each step's
+    seconds, and the outcome — passed, failed, skipped on the stamp, docs only, tests only, quiet
+    retry. Writing a line costs microseconds. This works for every agent.
+  - **The agent's session log**, read after the slice and never copied. Claude Code writes one:
+    `~/.claude/projects/<dir>/*.jsonl`, with subagents' logs under `<session>/subagents/`. Each
+    record has a timestamp, its `gitBranch`, its `stop_reason`, and who sent a prompt
+    (`origin.kind`: human, peer, task-notification). For an agent with no readable log, the page
+    shows step times alone and says so. The log format is not a stable API: a record the tool
+    cannot read is skipped and counted, never guessed.
+  - Hooks were rejected: a hook on every tool call starts a process each time, hundreds per slice,
+    and that cost is worst on a slow disk.
+- **Which slice:** a log record's branch, matched to a slice's `branch:` or an `sl-<n>-` name. A
+  session that changes branch is split at the change, so worktrees and parallel sessions need
+  nothing more.
+- **Which phase:** the skills and spry commands already in the logs mark the start of each phase.
+  Skills make no extra calls to mark one. The prototype gave all time to the last skill run, which
+  was too coarse: the review that `slice-close` starts filed its gate and falsify under *review*.
+
+  | Phase | Starts at |
+  |---|---|
+  | open | `claim`, or `slice-open` starting |
+  | build | `link --pr`: the draft PR exists |
+  | close | `slice-close` starting |
+  | review | the review agent's log starts; it ends when that log ends |
+  | fixes | the review agent ending |
+  | falsify · gate | `falsify run` · a full `gate`, for as long as each runs |
+  | merge | `merge` starting, or `merge-check` |
+
+- **Every second of active time gets one category:**
+  - The agent, thinking and writing.
+  - A tool, by kind: gate, falsify, tests outside the gate, fast checks outside the gate, spry,
+    git, gh, stack, polling (`until`/`sleep` loops), or other. A chained command takes the costliest
+    kind in it.
+  - Waiting on you: from the end of a turn to the next prompt, or a question asked.
+  - **You, busy in another session:** a wait on you while you typed a prompt in another session.
+    It is still a cost, the cost of running sessions side by side, but not a slow reply.
+  - Waiting on a background task: any wait while a background task or agent it started is still
+    running, whoever ends the wait. Nothing waited on you then, even if you typed first.
+  - Waiting on another session, or on a scheduled wake-up.
+  - **Away:** a gap longer than `pace.away` (default 30 min) that is not a tool running. Away time is
+    left out of every total.
+  - Session start and `/clear` count as the end of a turn. Parallel sessions are summed, and the page
+    also shows real time: the union of the active spans.
+- **When it runs:** `merge-check`, once it passes, writes the slice's summary with no extra call.
+  `spry pace [<slice>] [--since <date>] [--last <n>] [--compare <point>]` runs it on demand. Each slice gets a summary,
+  `.spry/pace/slices/<SL-n>.json`, written once and kept: Claude Code deletes its logs after
+  `cleanupPeriodDays` (30 by default), but the numbers outlive them. Only logs that are new or
+  changed (by size and mtime) are read. The prototype took 1.5–2.5 min to read 750 logs; one
+  slice's logs take under a second.
+- **The page**, `.spry/view/pace.md` (also in `serve`):
+  - **Headline:** slices in the range, the median and slowest quarter of active time, real time
+    against summed time, and each category's share.
+  - **A row per slice:** active time; the agent; tools; full gates (failed) and fast gates;
+    falsify; tests outside the gate; review agents (count, time); you; other sessions; sessions;
+    prompts; questions asked; compactions; lines changed.
+  - **By phase:** each category's share.
+  - **Gate steps:** runs, total, median and max for each step; quiet retries.
+  - The slowest single calls, and the calls that ran to the agent's time limit.
+  - **Before and after each change.** The page marks every change it can date:
+    - an entry in `spry/knowledge/process-changes.md` (written by `/spry:process-change` and
+      `/spry:update`)
+    - a commit that changed `spry.config.json`
+    - a new `spry_baseline`
+
+    For each change, it sets the slices closed after it against the same number closed before. It
+    compares medians of active time, each category's share, gate failures, retries and waits, raw
+    and per 100 changed lines, because slices differ in size. With fewer than 10 slices on a side
+    it says *too few slices to tell* instead of a difference. `spry pace --compare
+    <date|CH-n|commit>` does the same for any point.
+  - **Flags:** each is a rule with its threshold in `pace.flags`, shown with its evidence (slice,
+    number) and what it usually means. Flags describe and never judge. The first set comes from
+    the prototype:
+
+  | Flag | Usually means |
+  |---|---|
+  | the full gate failed at close | fast checks were not run while building |
+  | tests ran through the full gate more than once in a slice | §15 expects one full gate |
+  | tests ran with no code change between them | a stamp missed: a spry bug |
+  | quiet retries | the machine is overloaded by parallel sessions, or a test is flaky |
+  | a call ran to the agent's time limit | a wait that belonged in the background, or a hung test |
+  | waiting on another session above a share | sessions queueing behind each other |
+  | waiting on you during merge above a share | the merge ask waits; merges could be batched |
+  | more than three review agents | the slice is too big, or its work order unclear |
+  | a compaction | the slice is too big for one context |
+  | falsify above a share of the slice | `falsify.parallel` or `falsify.setup` |
+  | the agent ran the whole suite | breaks §15 |
+
+- **`/spry:pace`** (audience 7) does the judging. It runs `spry pace`; a fresh agent reads the page
+  and the flagged slices, and proposes one thing per finding, with its evidence: a process change
+  (`/spry:process-change`), a config change, a bug against spry (`/spry:contribute`) or against
+  the project (`/spry:bug`, `/spry:task`), or nothing. Report only.
+- **Stays on this machine.** `.spry/pace/` holds numbers, kinds and short command heads, never log
+  text, and is never committed. Each clone sees its own sessions; a team view is left until one is
+  needed. When it is, the numbers (never log text) would go into the slice file at close, behind a
+  switch, on a page grouped by phase, not by person. Session logs hold everything the
+  agent saw, so they are read where they are and never copied.
+- **Not measured:** how long a background task ran (only the wait on it shows), and a person's time
+  outside the sessions.
+- **What the prototype found** (2026-10-29, spry-era slices of two pilots; 324 and 243 slices,
+  median 38 and 49 min of active time):
+  - The agent thinking and writing: 15% and 12%.
+  - Waiting on the person: 14% and 12%, and a further 8% and 5% while they were busy in another
+    session. On one pilot, waiting on them took half of the merge phase. Before background tasks
+    and other sessions were split out, these read 31% and 26%.
+  - Waiting on a background task (mostly review agents): 17% and 19%.
+  - Checks (gate, tests, falsify): 26% and 19%.
+  - Waiting on another session: 24% on one pilot, mostly at merge.
+  - The full gate failed 59 and 91 times.
+  - Quiet retries cost 2 h on one pilot.
+  - 49 and 76 calls ran to the 10-minute limit.
+  - Falsify took about 1 min a slice, and a review agent about 3 min.
+
+## 18. Tool — `spry.py`
 
 | Command | Does |
 |---|---|
@@ -409,7 +532,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `index --restore <base>` | on a branch: put back the base's copy of each generated block it changed |
 | `related <file>` | conflict-check candidates (§10) |
 | `next <type>` | next free ID |
-| `new <type> --parent --title…` · `new --batch <file>` | create items from their templates, next IDs, right folders — several in one call, all or none; with `mint: main` the IDs are taken on the main branch in one push (§20) |
+| `new <type> --parent --title…` · `new --batch <file>` | create items from their templates, next IDs, right folders — several in one call, all or none; with `mint: main` the IDs are taken on the main branch in one push (§21) |
 | `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it, with its `owner` — and cut its branch; give it back |
 | `link <slice> [--branch] [--pr] [--issue] [--owner [name]]` | set them in the slice's front-matter; a bare `--owner` is the person at this clone |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
@@ -426,8 +549,9 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `install --agent` | §3 |
 | `codeowners` | §14 |
 | `draw` | seeded, replayable choices for `/spry:explore` |
+| `pace [<slice>] [--since] [--last] [--compare]` | where slices' time went (§17); designed, not built |
 
-## 18. Skills (`spry` plugin)
+## 19. Skills (`spry` plugin)
 
 | Skill | Audience | Does |
 |---|---|---|
@@ -448,6 +572,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 | `test-scenarios` | 4 | Scenarios in a story's `checks.md` from its ACs |
 | `record` | 6–7 | A decision, convention or external behaviour, into the right index |
 | `security-audit`, `prelaunch` | 8 | Standalone reviews |
+| `pace` | 7 | Where slices' time went (§17): a fresh agent reads the page and proposes a process change, config change, bug or nothing per finding. Report only. Designed, not built |
 | `test-all` | 8 | The whole suite on purpose, the local services managed; failures, slow and flaky tests named. Report only |
 | `explore` | 8 | Seeded, replayable exploratory walk over an isolated instance; oracles are the area's ACs. Report only |
 | `compact` | 7 | A file back under budget by moving sections to their owners; a pointer left, no fact lost |
@@ -459,7 +584,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 `milestone` / `epic` / `feature` / `story` share one procedure (`process/planning.md`); each skill
 only names its template and level.
 
-## 19. From writ
+## 20. From writ
 
 | Kept | Changed | Dropped |
 |---|---|---|
@@ -475,14 +600,14 @@ requirement details (a file with several jobs is a feature) and test scenarios s
 built story one closed `Built under writ` slice, rewrites test citations to `S-n/AC-m` from the trail
 in `spry/history/writ.md`, then retires `canon/`.
 
-## 20. Settled
+## 21. Settled
 
 - 2026-10-08 — a person decides three things: the criteria, the merge, and anything hard to undo.
   Everything between runs without stopping, because the checks — the gate, falsify of every
   control the diff adds, citations only in test names, `merge-check` — stand in for a person
   watching each step. Slices of stories on different files run side by side in worktrees.
 - 2026-10-08 — generated blocks: CI on `main` only. Slice size: agent judges against the written
-  rule in §18. Story edits: allowed, warned when a cited AC changes. Falsify: serial first.
+  rule in §19. Story edits: allowed, warned when a cited AC changes. Falsify: serial first.
 - 2026-10-08 — `adopt` is built alongside `init`, not after the pilot.
 - 2026-10-08 — a slice file's parts are named `Work order` and `Close summary`; the PR body is copied
   from the file by the skills.
@@ -512,8 +637,15 @@ in `spry/history/writ.md`, then retires `canon/`.
   the template, the glossary and the file changed are read. The pre-push `check` is of the new
   files' text — what a fresh template can get wrong — not the whole plan, which cost Pulse 20 s a
   run. A batch is all or nothing: one commit, renumbered whole on a race.
+- 2026-10-29 — pace (§17) has no on/off switch, because it adds nothing at run time: spry's commands log
+  their own steps, and the agent's session log is read after the slice. Hooks were rejected because they
+  start a process on every tool call. The timings stay on the person's machine, never in the slice
+  file: a team sees no one's numbers but its own, and there is no new conflict at merge. A team
+  view waits until it is needed. Named
+  `pace`, not *metering*, which reads as billing. A prototype ran on two pilots' logs before the
+  design was written.
 
-## 21. Built
+## 22. Built
 
 - 2026-10-08 — tool: `check`, `status`, `index`, `related`, `next`, `new`, `pr-body`, `vendor`.
 - 2026-10-08 — `find`, `install --agent`, `codeowners`, `tests --slowest`, `check --base`.
@@ -521,7 +653,7 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-08 — `falsify suggest` / `falsify run`, serial first; worktrees came in the entry above.
 - 2026-10-08 — skills: `init`, `adopt`, `milestone`, `epic`, `feature`, `story`, `slice`,
   `slice-open`, `slice-close`, `status`, `tone`, `update`, `contribute`.
-- 2026-10-08 — the rest of §18: `bug`, `task`, `test-scenarios`, `record`, `security-audit`,
+- 2026-10-08 — the rest of §19: `bug`, `task`, `test-scenarios`, `record`, `security-audit`,
   `prelaunch`, `process-change`; their procedures `qa.md`, `recording.md`, `audits.md`,
   `changing.md`, and *Bugs and tasks* in `planning.md`. Audit reports live in
   `spry/knowledge/audits/` (index → item); `new` also makes `checks`, `convention`, `external`, `audit`.
