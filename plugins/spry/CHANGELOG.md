@@ -753,7 +753,8 @@ Entry format:
     in CI's pull-request job.
   - A changed integration test runs too, so its services must be up.
 - **Adapt:** `tests.always` — the checks that read the whole code tree (vocabulary, licences); a
-  filter that adds one to `tests.affected` moves here. Empty when there are none. The CI workflow's
+  filter that adds one to `tests.affected` moves here — and any project script that reads
+  `tests.affected` for it has to look here too. Empty when there are none. The CI workflow's
   `affected-tests` job gets one step for each.
 - **Migrate:** a local process change that ran a tests-only gate by hand, and merged with
   `--ci-local "…; tests-only gate"`, is now the tool's: drop it from `slicing.md`, `merging.md` and

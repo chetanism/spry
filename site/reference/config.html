@@ -175,6 +175,12 @@ the fast checks run before any test.</p>
   </tbody>
 </table>
 
+<p>Every command here runs in the system shell — <code>sh</code> on macOS and Linux, <code>cmd.exe</code> on
+Windows. If anyone on the team works on Windows, keep commands to what both understand: no
+<code>VAR=value command</code> prefix, and run project tools through the package manager
+(<code>pnpm exec turbo</code>, not a bare <code>turbo</code>), which finds them where the shell would not. A
+script in your project that reads these keys has to follow when you move a command between them.</p>
+
 <h2>Local services</h2>
 
 <table>
