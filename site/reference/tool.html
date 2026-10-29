@@ -190,6 +190,27 @@ search is <code>find</code>. Ctrl-C stops it.</p>
   <li><code>--no-open</code> — do not open a browser.</li>
 </ul>
 
+<h3 id="pace">pace</h3>
+<p>Where slices' time went, from the step log that <code>gate</code>, <code>check</code>, <code>falsify run</code> and
+<code>merge-check</code> write and Claude Code's session logs for this clone. It writes
+<code>.spry/view/pace.md</code>, which shows:</p>
+<ul>
+  <li>each category's share of the time</li>
+  <li>before and after each dated change</li>
+  <li>flags</li>
+  <li>a row per slice</li>
+  <li>gate steps</li>
+  <li>the slowest calls</li>
+</ul>
+<p>Never committed.</p>
+<pre><code>spry pace [SLICE] [--since YYYY-MM-DD] [--last N] [--compare POINT]</code></pre>
+<ul>
+  <li><code>SLICE</code> — print one slice in detail instead: each kind of time, each phase, its gates and flags.</li>
+  <li><code>--since</code>, <code>--last N</code> — only slices active since that day, or the last N.</li>
+  <li><code>--compare POINT</code> — before and after a date, a <code>CH-n</code> taken, or a commit, instead of every change.</li>
+</ul>
+<p>Session logs are read once per size and change time. The first run on a long project can take a minute.</p>
+
 <h3 id="hooks">hooks</h3>
 <p>Installs git hooks, per clone, that refresh <code>.spry/view/</code> after a checkout or pull
 that changed the plan or a test.</p>

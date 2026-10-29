@@ -1,6 +1,6 @@
 {
-  "spry": "0.32.0",
-  "spry_baseline": "CH-43",
+  "spry": "0.33.0",
+  "spry_baseline": "CH-44",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -63,6 +63,11 @@
     "runners": [
       {"match": ["<glob of test files>"], "cwd": "package", "command": "<runner with fail-fast flag> {files}"}
     ]
+  },
+  "pace": {
+    "away": 30,
+    "logs": [],
+    "flags": {"falsify_share": 0.2, "session_share": 0.2, "merge_wait_share": 0.5, "review_agents": 3}
   },
   "slices": {
     "issue": false,

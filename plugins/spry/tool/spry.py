@@ -57,6 +57,7 @@ from __future__ import annotations
 
 import argparse
 import filecmp
+import glob
 import hashlib
 import json
 import math
@@ -75,7 +76,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.32.0"
+VERSION = "0.33.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -4362,6 +4363,8 @@ def serve_page(project: Project, title: str, main: str, current: Item | None = N
            ("AGENTS.md", os.path.join(project.root, "AGENTS.md"))]
     links = "".join(f'<a href="{serve_href(project, p)}{"/" if os.path.isdir(native(p)) else ""}">{label}</a>'
                     for label, p in nav if os.path.exists(native(p)))
+    if os.path.isfile(native(os.path.join(project.root, ".spry", "view", "pace.md"))):
+        links += '<a href="/-/pace">Pace</a>'
     product = html.escape(project.config.get("product") or "spry")
     page = (f'<!doctype html><html lang="en"><head><meta charset="utf-8">'
             f'<meta name="viewport" content="width=device-width,initial-scale=1">'
@@ -4424,6 +4427,10 @@ def serve_response(project: Project, path: str, repo: str | None = None, makers:
                         f'<small>{html.escape(rel)}</small>{snippet}</li>')
         found = f'<ol class="hits">{"".join(rows)}</ol>' if rows else ("<p>Nothing found.</p>" if query.strip() else "")
         return 200, "text/html; charset=utf-8", serve_page(project, f"Search {query}", f"<h1>Search: {html.escape(query)}</h1>{found}"), {}
+    if url.path == "/-/pace":
+        page = os.path.join(project.root, ".spry", "view", "pace.md")
+        text = read(page) if os.path.isfile(native(page)) else "# Pace\n\nNo page yet: run `spry pace` to write it.\n"
+        return 200, "text/html; charset=utf-8", serve_page(project, "Pace", md_html(text)), {}
     if url.path.startswith("/-/item/"):
         item = project.items.get(url.path[len("/-/item/"):])
         return redirect("/" + project.rel(item.doc)) if item else (404, "text/plain", b"no such item", {})
@@ -4739,6 +4746,14 @@ DEFAULT_RETRY_WHEN = r"timed? ?out|timeout|ETIMEDOUT"
 
 
 def gate(project: Project, force: bool = False, say=print, fast: bool = False, full: bool = False) -> int:
+    """The gate, timed into the step log (§17)."""
+    started, seen = time.time(), {"steps": []}
+    code = run_gate(project, force, say, fast, full, seen)
+    pace_log(project, "gate", time.time() - started, ok=code == 0, fast=fast, full=full, force=force, **seen)
+    return code
+
+
+def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: dict) -> int:
     """`spry check`, then the fast checks, then the affected tests, then `tests.always` — stopping at
     the first failure. A branch that changed only test files runs those files instead of the affected
     tests, unless `full`: a test file breaks no other package's tests. A pass is stamped with the
@@ -4747,6 +4762,7 @@ def gate(project: Project, force: bool = False, say=print, fast: bool = False, f
     started = time.time()
     errors = [p for p in check(project) if p.level == "error"]
     say(f"{'✗' if errors else '✓'} spry check · {time.time() - started:.1f}s")
+    seen["steps"].append(["spry check", round(time.time() - started, 1), not errors])
     if errors:
         for p in errors[:10]:
             say(f"  {p}")
@@ -4762,10 +4778,12 @@ def gate(project: Project, force: bool = False, say=print, fast: bool = False, f
     if fingerprint and stamp.get("code") == fingerprint and not force and not (full and stamp.get("mode")):
         done = f"the {stamp['mode']} gate" if stamp.get("mode") else ", ".join(n for n, *_ in steps)
         say(f"– {done} skipped: no code changed since it passed at {stamp.get('at', '?')}")
+        seen["skipped"] = "stamp"
         return 0
     changes = branch_changes(project)
     if changes and documents_only(project, changes[1]) and not force:
         say(f"– {', '.join(n for n, *_ in steps)} skipped: only documents changed since {changes[0]}")
+        seen["skipped"] = "documents"
         return 0
     mode = None
     if changes and not fast and not full:
@@ -4781,7 +4799,9 @@ def gate(project: Project, force: bool = False, say=print, fast: bool = False, f
     tests = project.config.get("tests", {})
     retry = str(tests.get("retry") or "").strip()
     retry_when = re.compile(tests.get("retry_when") or DEFAULT_RETRY_WHEN, re.I)
+    seen.update({"code": fingerprint, "tests": False, **({"mode": mode} if mode else {})})
     for name, command, cwd in steps:
+        seen["tests"] = seen["tests"] or "test" in name
         started = time.time()
         done = subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True)
         say(f"{'✓' if done.returncode == 0 else '✗'} {name} · {time.time() - started:.1f}s")
@@ -4792,6 +4812,8 @@ def gate(project: Project, force: bool = False, say=print, fast: bool = False, f
             started = time.time()
             done = subprocess.run(retry, shell=True, cwd=project.root, capture_output=True, text=True)
             say(f"{'✓' if done.returncode == 0 else '✗'} {name}, quiet retry · {time.time() - started:.1f}s")
+            seen["retried"] = True
+        seen["steps"].append([name, round(time.time() - started, 1), done.returncode == 0])
         if done.returncode != 0:
             tail = (done.stdout + done.stderr).rstrip().split("\n")[-40:]
             say("\n".join("  " + line for line in tail))
@@ -4969,6 +4991,833 @@ def review_check(payload, diff: str, own: bool = False) -> list:
 
 # ---------------------------------------------------------------- main
 
+# ---------------------------------------------------------------- pace (§17)
+
+PACE_VERSION = 1
+# Every second of active time gets one of these; `away` is left out of every total.
+PACE_KINDS = (("agent", "the agent, thinking and writing"), ("gate", "gate"), ("falsify", "falsify"),
+              ("tests", "tests outside the gate"), ("fast", "fast checks outside the gate"),
+              ("spry", "other spry commands"), ("git", "git"), ("gh", "gh"), ("stack", "local services"),
+              ("polling", "polling loops"), ("files", "file tools"), ("subagent", "subagents waited on"),
+              ("tool", "other tools"), ("you", "waiting on you"), ("question", "a question to you"),
+              ("elsewhere", "you, busy in another session"), ("background", "waiting on a background task"),
+              ("session", "waiting on another session"), ("wake", "waiting on a scheduled wake-up"))
+PACE_LABEL = dict(PACE_KINDS)
+PACE_GROUPS = (("agent", ("agent",)), ("checks", ("gate", "falsify", "tests", "fast")),
+               ("other tools", ("spry", "git", "gh", "stack", "polling", "files", "subagent", "tool")),
+               ("you", ("you", "question")), ("you elsewhere", ("elsewhere",)),
+               ("waits", ("background", "session", "wake")))
+PACE_PHASES = ("open", "build", "close", "review", "fixes", "merge", "other")
+PACE_FLAGS = {"falsify_share": 0.2, "session_share": 0.2, "merge_wait_share": 0.5, "review_agents": 3}
+PACE_LIMIT = 590       # a tool call this long ran into the agent's 10-minute limit
+PACE_OTHER = re.compile(r'^\{"type":\s*"(?!(?:user|assistant|system)")')  # a record pace never reads, by its first key
+PACE_GATE_STEP = re.compile(r"^([✓✗]) (.+?) · ([\d.]+)s", re.M)
+PACE_RUNNERS = {"pytest", "vitest", "jest", "playwright", "mocha", "ava"}
+PACE_ORDER = ("gate", "falsify", "tests", "fast", "polling", "spry", "stack", "gh", "git")
+
+
+def pace_config(project: Project) -> dict:
+    conf = project.config.get("pace") or {}
+    flags = {**PACE_FLAGS, **(conf.get("flags") or {})}
+    return {"away": float(conf.get("away", 30)) * 60, "logs": list(conf.get("logs") or []), "flags": flags}
+
+
+def pace_root(project: Project) -> str:
+    """The project's folder in the main checkout, so every worktree of one clone shares one step log."""
+    done = git(project.root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    common = done.stdout.strip() if done.returncode == 0 else ""
+    if os.path.basename(common) != ".git":
+        return project.root
+    return os.path.join(os.path.dirname(common), git_prefix(project.root))
+
+
+def pace_home(project: Project) -> str:
+    return os.path.join(pace_root(project), ".spry", "pace")
+
+
+def pace_log(project: Project, command: str, seconds: float, **fields) -> None:
+    """One line in `.spry/pace/steps.jsonl` for a step spry ran. Never fails the command it times."""
+    try:
+        branch = git(project.root, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        home = pace_home(project)
+        os.makedirs(native(home), exist_ok=True)
+        line = json.dumps({"at": round(time.time(), 1), "branch": branch, "command": command,
+                           "seconds": round(seconds, 1), **fields})
+        with open(native(os.path.join(home, "steps.jsonl")), "a", encoding="utf-8", newline="\n") as handle:
+            handle.write(line + "\n")
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+
+
+def pace_segments(command: str):
+    """The simple commands in a shell line, each as its words, heredoc bodies and env prefixes dropped."""
+    command = re.sub(r"<<-?\s*['\"]?(\w+)['\"]?.*?\n.*?\n\1\b", " ", command, flags=re.S)
+    for part in re.split(r"&&|\|\||;|\||\n|\(|\)|\bdo\b|\bthen\b", command):
+        words = part.split()
+        while words and (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", words[0]) or words[0] in ("export", "env", "time", "exec", "sudo", "{")):
+            words = words[1:]
+        if words:
+            yield words
+
+
+def pace_word_kind(words: list) -> str | None:
+    head = words[0].split("/")[-1]
+    rest = " ".join(words[1:6])
+    spry_tool = re.compile(r"(spry|writ)(\.py)?$")
+    if spry_tool.search(head) or (head.startswith("python") and len(words) > 1 and spry_tool.search(words[1])):
+        sub = next((w for w in words[1:] if not w.startswith("-") and not spry_tool.search(w) and "/" not in w), "")
+        return {"gate": "gate", "falsify": "falsify"}.get(sub, "spry")
+    if head in ("until", "while", "sleep") or (head == "for" and "sleep" in words):
+        return "polling"
+    package = head in ("npx", "pnpm", "npm", "yarn", "bunx")
+    if head in PACE_RUNNERS or (package and re.search(r"(^|\s)(vitest|jest|playwright|test|test:\S+|e2e|falsify)\b", rest)):
+        return "falsify" if "falsify" in rest else "tests"
+    if head in ("go", "cargo") and rest.startswith("test"):
+        return "tests"
+    if head in ("tsc", "eslint", "ruff", "mypy", "prettier", "biome") or (package and re.search(r"\b(lint|typecheck|tsc|eslint|prettier|format|check-types)\b", rest)):
+        return "fast"
+    if head in ("docker", "docker-compose"):
+        return "stack"
+    if head in ("gh", "git"):
+        return head
+    return None
+
+
+def pace_bash_kind(command: str) -> str:
+    """A shell line's kind: the costliest kind of any command in it."""
+    kinds = {pace_word_kind(w) for w in pace_segments(command)} - {None}
+    return next((k for k in PACE_ORDER if k in kinds), "tool")
+
+
+def pace_runs_suite(command: str, suite: list) -> bool:
+    """A simple command in `command` is one of `suite` exactly, give or take a redirection: a run
+    filtered to a package or a file is not the whole suite."""
+    for words in pace_segments(command):
+        words = [w for w in words if not re.match(r"^\d?>", w)]
+        if words[:1] == ["npx"]:
+            words = words[1:]
+        if " ".join(words) in suite:
+            return True
+    return False
+
+
+def pace_head(command: str) -> str:
+    """A command's first line, short, without `NAME=value` words or a bearer token — what is kept."""
+    line = command.strip().split("\n")[0] if command.strip() else ""
+    line = " ".join(w for w in line.split() if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", w))
+    return re.sub(r"(?i)(bearer|token)\s+\S+", r"\1 …", line)[:100]
+
+
+def pace_tool_kind(block: dict) -> str:
+    name, given = block.get("name", ""), block.get("input") or {}
+    if name == "Bash":
+        return pace_bash_kind(str(given.get("command", "")))
+    if name in ("Agent", "Task"):
+        return "subagent"
+    if name in ("Edit", "Write", "Read", "Grep", "Glob", "NotebookEdit", "MultiEdit"):
+        return "files"
+    if name == "AskUserQuestion":
+        return "question"
+    if name in ("Monitor", "TaskOutput", "BashOutput"):
+        return "background"
+    return "tool"
+
+
+def pace_is_review(block: dict) -> bool:
+    given = block.get("input") or {}
+    text = f"{given.get('description', '')} {given.get('subagent_type', '')} {str(given.get('prompt', ''))[:400]}"
+    return block.get("name") in ("Agent", "Task") and bool(re.search(r"\breview", text, re.I))
+
+
+def pace_phase_of(skill: str) -> str | None:
+    name = skill.split(":")[-1].lstrip("/").strip()
+    return {"slice-open": "open", "slice-close": "close", "merge": "merge"}.get(name)
+
+
+def pace_text(content) -> str:
+    if isinstance(content, str):
+        return content
+    return " ".join(str(c.get("text", "")) for c in content or [] if isinstance(c, dict))
+
+
+def pace_stamp(text: str) -> float:
+    from datetime import datetime
+    return datetime.fromisoformat(text.replace("Z", "+00:00")).timestamp()
+
+
+def pace_records(path: str):
+    """The user, assistant and system records of a session log, oldest first; others skipped unread."""
+    with open(native(path), encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            if PACE_OTHER.match(line):
+                continue
+            try:
+                record = json.loads(line)
+            except ValueError:
+                continue
+            if not isinstance(record, dict) or record.get("type") not in ("user", "assistant", "system"):
+                continue
+            try:
+                record["_t"] = pace_stamp(str(record.get("timestamp")))
+            except ValueError:
+                continue
+            message = record.get("message") if isinstance(record.get("message"), dict) else {}
+            content = message.get("content")
+            if not isinstance(content, str):  # a record of an unexpected shape loses its content, not the log
+                message["content"] = [c for c in content if isinstance(c, dict)] if isinstance(content, list) else []
+            record["message"] = message
+            if not isinstance(record.get("origin"), dict):
+                record["origin"] = {}
+            yield record
+
+
+def pace_branch_entry() -> dict:
+    return {"kinds": {}, "phases": {}, "first": None, "last": None, "prompts": 0, "questions": 0,
+            "compactions": 0, "gates": [], "limit": 0, "slowest": [], "suite": 0}
+
+
+def pace_read_log(path: str, away: float, suite: list) -> dict:
+    """What one Claude Code session log says, per git branch: seconds by kind and by phase, and the
+    events pace counts. A gap between two records takes the kind of what filled it: a tool still
+    running, the agent writing, or a wait — on you only once the agent's turn has ended."""
+    branches, prompts, you_gaps = {}, [], []
+    pending = {}    # tool_use id → (start, kind, head, gate fast flag or None, review)
+    background = set()  # background tasks started and not yet reported finished, by tool_use id
+    prev, branch, ended, phase = None, "", True, "other"
+    turn = phase_turn = 0   # a phase set in this turn follows the agent to a new branch; an older one does not
+
+    def entry(name):
+        return branches.setdefault(name or "", pace_branch_entry())
+
+    for record in pace_records(path):
+        t = record["_t"]
+        kind_of_record = record["type"]
+        origin = record["origin"].get("kind")
+        message = record["message"]
+        content = message.get("content")
+        if prev is not None and t > prev:
+            gap = t - prev
+            if pending:
+                kind = min(pending.values(), key=lambda v: v[0])[1]
+                kind = "away" if kind == "question" and gap > away else kind
+            elif kind_of_record == "assistant":
+                kind = "agent"
+            elif gap > away:
+                kind = "away"
+            elif record.get("subtype") == "scheduled_task_fire":
+                kind = "wake"
+            elif origin == "peer":
+                kind = "session"
+            elif origin == "task-notification" or (ended and background):
+                kind = "background"
+            elif not ended:
+                kind = "agent"
+            else:
+                kind = "you"
+            spot = entry(branch)
+            spot["kinds"][kind] = spot["kinds"].get(kind, 0) + gap
+            if kind != "away":
+                cell = spot["phases"].setdefault(phase, {})
+                cell[kind] = cell.get(kind, 0) + gap
+                spot["first"] = prev if spot["first"] is None else min(spot["first"], prev)
+                spot["last"] = t if spot["last"] is None else max(spot["last"], t)
+            if kind == "you":
+                you_gaps.append([prev, t, branch, phase])
+        if record.get("gitBranch") and record["gitBranch"] != branch:
+            branch = record["gitBranch"]
+            phase = phase if phase_turn == turn else "other"
+        spot = entry(branch)
+        if kind_of_record == "assistant":
+            for block in content if isinstance(content, list) else []:
+                if block.get("type") != "tool_use":
+                    continue
+                given = block.get("input") or {}
+                kind = pace_tool_kind(block)
+                command = str(given.get("command", ""))
+                if block.get("name") == "Skill" and pace_phase_of(str(given.get("skill", ""))):
+                    phase, phase_turn = pace_phase_of(str(given.get("skill", ""))), turn
+                elif kind == "question":
+                    spot["questions"] += 1
+                elif block.get("name") == "Bash":
+                    if re.search(r"\blink\b.*--pr\b", command):
+                        phase, phase_turn = "build", turn
+                    elif re.search(r"\bmerge-check\b", command):
+                        phase, phase_turn = "merge", turn
+                    if pace_runs_suite(command, suite):
+                        spot["suite"] += 1
+                review = pace_is_review(block)
+                if review:
+                    phase, phase_turn = "review", turn
+                if given.get("run_in_background"):
+                    background.add(block.get("id"))
+                    kind = "tool"
+                head = pace_head(command) or block.get("name", "")
+                gate_fast = ("--fast" in command) if kind == "gate" else None
+                pending[block.get("id")] = (t, kind, head, gate_fast, review and not given.get("run_in_background"))
+            ended = message.get("stop_reason") == "end_turn" and not pending
+        elif kind_of_record == "user" and isinstance(content, list) and any(c.get("type") == "tool_result" for c in content if isinstance(c, dict)):
+            for c in content:
+                if not isinstance(c, dict) or c.get("type") != "tool_result" or c.get("tool_use_id") not in pending:
+                    continue
+                start, kind, head, gate_fast, review = pending.pop(c["tool_use_id"])
+                seconds = t - start
+                if seconds >= PACE_LIMIT and kind not in ("question", "you"):
+                    spot["limit"] += 1
+                if kind not in ("question",):
+                    spot["slowest"] = sorted(spot["slowest"] + [[round(seconds, 1), kind, head]], reverse=True)[:5]
+                if gate_fast is not None:
+                    out = pace_text(c.get("content"))
+                    steps = {m.group(2): float(m.group(3)) for m in PACE_GATE_STEP.finditer(out)}
+                    if steps:
+                        spot["gates"].append({"at": start, "fast": gate_fast, "ok": "✗" not in out,
+                                              "tests": any("test" in s for s in steps) or "tests-only" in out,
+                                              "retried": "quiet retry" in out, "steps": steps})
+                if review:
+                    phase = "fixes"
+        elif kind_of_record == "user":
+            text = pace_text(content)
+            named = re.search(r"<command-name>(.*?)</command-name>", text)
+            if origin == "human":
+                turn += 1
+            if named and pace_phase_of(named.group(1)):
+                phase, phase_turn = pace_phase_of(named.group(1)), turn
+            if named:
+                if named.group(1).strip() == "/compact":
+                    spot["compactions"] += 1
+            if origin == "human":
+                spot["prompts"] += 1
+                prompts.append(t)
+                pending.clear()
+                ended = False
+            elif origin == "task-notification":
+                finished = re.search(r"<tool-use-id>(.*?)</tool-use-id>", text)
+                if finished:
+                    background.discard(finished.group(1))
+                elif background:
+                    background.pop()
+                if phase == "review":
+                    phase = "fixes"
+            if "[Request interrupted" in text:
+                pending.clear()
+                ended = True
+        elif kind_of_record == "system":
+            subtype = record.get("subtype")
+            if subtype == "local_command":
+                ended = True
+                background.clear()  # `/clear` stops what the session had running
+            elif subtype == "turn_duration":
+                ended = ended or not pending
+            elif subtype == "compact_boundary":
+                spot["compactions"] += 1
+        prev = t if prev is None else max(prev, t)  # a record a few ms out of order is not counted twice
+    return {"branches": branches, "prompts": prompts, "you": you_gaps, "agents": pace_subagents(path)}
+
+
+def pace_subagents(path: str) -> list:
+    """[branch, seconds, review] for each subagent this session started; a review agent is one whose
+    first prompt says review."""
+    found = []
+    for sub in sorted(glob.glob(os.path.join(glob.escape(path[:-6]), "subagents", "*.jsonl"))):
+        first = last = None
+        branch, review = "", False
+        for record in pace_records(sub):
+            t = record["_t"]
+            if first is None:
+                first = t
+                review = bool(re.search(r"\breview", pace_text(record["message"]["content"])[:3000], re.I))
+            last = t
+            branch = branch or record.get("gitBranch") or ""
+        if first is not None:
+            found.append([branch, round(last - first, 1), review])
+    return found
+
+
+def pace_log_dirs(project: Project) -> list:
+    """Claude Code's session-log folders for this clone and its worktrees, plus `pace.logs`."""
+    home = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    folder = os.path.join(home, "projects")
+    names = {re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(r).rstrip(os.sep)) for r in (project.root, pace_root(project))}
+    dirs = []
+    if os.path.isdir(folder):
+        for name in sorted(os.listdir(folder)):
+            if any(name == n or name.startswith(n + "--claude-worktrees-") for n in names):
+                dirs.append(os.path.join(folder, name))
+    for pattern in pace_config(project)["logs"]:
+        dirs += [d for d in sorted(glob.glob(os.path.expanduser(pattern))) if os.path.isdir(d) and d not in dirs]
+    return dirs
+
+
+def pace_suite(project: Project) -> list:
+    """The commands that run the whole suite — an agent running one breaks §15."""
+    tests = project.config.get("tests") or {}
+    found = [tests.get("all")] + [p.get("run") for p in tests.get("parts") or [] if isinstance(p, dict)]
+    return [str(c).strip() for c in found if c and not PLACEHOLDER.search(str(c)) and str(c).strip()]
+
+
+def pace_logs(project: Project, newer_than: float | None = None, say=None) -> dict:
+    """{log path: what it says}, read once per size and mtime and kept in `.spry/pace/logs.json`."""
+    conf = pace_config(project)
+    suite = pace_suite(project)
+    key = hashlib.sha256(json.dumps([PACE_VERSION, conf["away"], suite]).encode()).hexdigest()[:12]
+    cache_path = os.path.join(pace_home(project), "logs.json")
+    try:
+        cache = json.loads(read(cache_path))
+    except (OSError, ValueError):
+        cache = {}
+    known = cache.get("logs", {}) if cache.get("key") == key else {}
+    found, fresh = {}, 0
+    for folder in pace_log_dirs(project):
+        for path in sorted(glob.glob(os.path.join(glob.escape(folder), "*.jsonl"))):
+            try:  # a log deleted or rotated under us is simply not there
+                stat = os.stat(native(path))
+                subs = glob.glob(os.path.join(glob.escape(path[:-6]), "subagents", "*.jsonl"))
+                sign = [stat.st_size, int(stat.st_mtime), sum(os.path.getsize(native(s)) for s in subs)]
+            except OSError:
+                continue
+            old = known.get(path)
+            if old and old.get("sign") == sign:
+                found[path] = old
+                continue
+            if newer_than is not None and stat.st_mtime < newer_than:
+                if old:
+                    found[path] = old
+                continue
+            try:
+                found[path] = {"sign": sign, **pace_read_log(path, conf["away"], suite)}
+                fresh += 1
+            except (OSError, ValueError, KeyError, TypeError, AttributeError) as error:
+                if say:
+                    say(f"  skipped {os.path.basename(path)}: {error}")
+    if fresh:
+        keep = {**known, **found} if newer_than is not None else found
+        try:
+            os.makedirs(native(os.path.dirname(cache_path)), exist_ok=True)
+            write(cache_path, json.dumps({"key": key, "logs": keep}) + "\n")
+        except OSError:
+            pass
+    return found
+
+
+def pace_steps(project: Project) -> list:
+    try:
+        lines = read(os.path.join(pace_home(project), "steps.jsonl")).split("\n")
+    except OSError:
+        return []
+    out = []
+    for line in lines:
+        try:
+            out.append(json.loads(line)) if line.strip() else None
+        except ValueError:
+            continue
+    return out
+
+
+def pace_branch_map(project: Project) -> dict:
+    """{branch: slice ID} — a slice's `branch:`, else the branch named after its file."""
+    out = {}
+    for item in project.items.values():
+        if item.type != "slice":
+            continue
+        out.setdefault(slice_branch(item), item.id)
+        if branch_of(item):
+            out[branch_of(item)] = item.id
+    return out
+
+
+def pace_lines(project: Project) -> dict:
+    """{slice ID: lines changed}, from the `Slice:` trailer of each squash commit on the main branch."""
+    done = git(project.root, "log", main_branch(project), "--format=%x1e%B", "--shortstat")
+    out = {}
+    for chunk in done.stdout.split("\x1e") if done.returncode == 0 else []:
+        named = re.search(r"^Slice:\s*(\S+)\s*$", chunk, re.M)
+        stat = re.search(r"(\d+) insertions?\(\+\)", chunk), re.search(r"(\d+) deletions?\(-\)", chunk)
+        if named and (stat[0] or stat[1]):
+            out[named.group(1)] = sum(int(s.group(1)) for s in stat if s)
+    return out
+
+
+def pace_add(into: dict, more: dict) -> None:
+    for key, value in more.items():
+        into[key] = into.get(key, 0) + value
+
+
+def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
+    """{slice ID: its numbers} from the session logs, the step log and the summaries kept in
+    `.spry/pace/slices/` — a summary outlives the logs it came from."""
+    by_branch = pace_branch_map(project)
+    slices = {}
+
+    def spot(slice_id):
+        return slices.setdefault(slice_id, {"id": slice_id, "kinds": {}, "phases": {}, "first": None, "last": None,
+                                            "sessions": 0, "prompts": 0, "questions": 0, "compactions": 0,
+                                            "reviews": [], "limit": 0, "slowest": [], "suite": 0, "gates": [],
+                                            "log_gates": []})
+    prompts = sorted((t, path) for path, data in logs.items() for t in data.get("prompts", []))
+    times = [p[0] for p in prompts]
+    import bisect
+    for path, data in logs.items():
+        for branch, d in data["branches"].items():
+            slice_id = by_branch.get(branch)
+            if not slice_id or (only and slice_id != only) or d["first"] is None:
+                continue
+            s = spot(slice_id)
+            pace_add(s["kinds"], d["kinds"])
+            for phase, kinds in d["phases"].items():
+                pace_add(s["phases"].setdefault(phase, {}), kinds)
+            s["first"] = d["first"] if s["first"] is None else min(s["first"], d["first"])
+            s["last"] = d["last"] if s["last"] is None else max(s["last"], d["last"])
+            s["sessions"] += 1
+            for key in ("prompts", "questions", "compactions", "limit", "suite"):
+                s[key] += d[key]
+            s["slowest"] = sorted(s["slowest"] + d["slowest"], reverse=True)[:5]
+            s["log_gates"] += d["gates"]
+        for start, end, branch, phase in data.get("you", []):
+            slice_id = by_branch.get(branch)
+            if slice_id not in slices:
+                continue
+            i, j = bisect.bisect_right(times, start), bisect.bisect_left(times, end)
+            if any(prompts[x][1] != path for x in range(i, j)):
+                s, gap = slices[slice_id], end - start
+                for kinds in (s["kinds"], s["phases"].setdefault(phase, {})):
+                    kinds["you"] = kinds.get("you", 0) - gap
+                    kinds["elsewhere"] = kinds.get("elsewhere", 0) + gap
+        for branch, seconds, review in data.get("agents", []):
+            if review and by_branch.get(branch) in slices:
+                slices[by_branch[branch]]["reviews"].append(seconds)
+    for step in pace_steps(project):
+        slice_id = by_branch.get(step.get("branch", ""))
+        if step.get("command") == "gate" and slice_id and (not only or slice_id == only):
+            spot(slice_id)["gates"].append(step)
+    lines = {} if only else pace_lines(project)  # a slice at merge-check has no squash commit yet
+    folder = os.path.join(pace_home(project), "slices")
+    for slice_id, s in slices.items():
+        if not s["gates"]:  # no step log (before CH-44, or another clone): the gate's own output
+            s["gates"] = [{"fast": g["fast"], "ok": g["ok"], "tests": g["tests"], "retried": g["retried"],
+                           "steps": [[n, v, True] for n, v in g["steps"].items()], "at": g["at"]} for g in s["log_gates"]]
+        del s["log_gates"]
+        s["lines"] = lines.get(slice_id)
+    kept = glob.glob(os.path.join(glob.escape(folder), "*.json"))
+    for path in kept:
+        slice_id = os.path.basename(path)[:-5]
+        if only and slice_id != only:
+            continue
+        try:
+            stored = json.loads(read(path))
+        except (OSError, ValueError):
+            continue
+        if slice_id not in slices or pace_active(stored) > pace_active(slices[slice_id]):
+            stored["lines"] = stored.get("lines") or lines.get(slice_id)
+            slices[slice_id] = stored
+    for slice_id, s in slices.items():
+        item = project.items.get(slice_id)
+        if item is not None and item.state == "closed" and s["first"] is not None:
+            try:
+                os.makedirs(native(folder), exist_ok=True)
+                write(os.path.join(folder, f"{slice_id}.json"), json.dumps(s) + "\n")
+            except OSError:
+                pass
+    return slices
+
+
+def pace_active(s: dict) -> float:
+    return sum(v for k, v in s["kinds"].items() if k != "away")
+
+
+def pace_group(s: dict, kinds) -> float:
+    return sum(s["kinds"].get(k, 0) for k in kinds)
+
+
+def pace_time(seconds: float) -> str:
+    seconds = int(round(seconds))
+    if seconds >= 3600:
+        return f"{seconds // 3600}h{seconds % 3600 // 60:02d}"
+    return f"{seconds // 60}m{seconds % 60:02d}"
+
+
+def pace_share(part: float, whole: float) -> str:
+    return f"{100 * part / whole:.0f}%" if whole else "–"
+
+
+def pace_median(values: list):
+    values = sorted(v for v in values if v is not None)
+    if not values:
+        return None
+    middle = len(values) // 2
+    return values[middle] if len(values) % 2 else (values[middle - 1] + values[middle]) / 2
+
+
+def pace_full_gates(s: dict) -> list:
+    return [g for g in s["gates"] if not g.get("fast")]
+
+
+def pace_flags(project: Project, s: dict) -> list:
+    """What stands out in one slice, each with its number. Flags describe; they never judge."""
+    conf = pace_config(project)["flags"]
+    active = pace_active(s) or 1
+    full = pace_full_gates(s)
+    out = []
+    failed = [g for g in full if not g.get("ok", True)]
+    if failed:
+        out.append(f"the full gate failed {len(failed)}× — fast checks while building catch most of that earlier")
+    tested = [g for g in full if g.get("tests")]
+    if len(tested) > 1:
+        out.append(f"tests ran through the full gate {len(tested)}× — §15 expects one full gate")
+    passed, again = set(), 0
+    for g in sorted(full, key=lambda g: g.get("at", 0)):
+        code = g.get("code")
+        if code and g.get("tests") and code in passed and not (g.get("force") or g.get("full")):
+            again += 1
+        if code and g.get("ok", True):
+            passed.add(code)
+    if again:
+        out.append(f"tests ran again {again}× on code that had passed — the stamp missed: a spry bug, worth /spry:contribute")
+    retried = sum(1 for g in s["gates"] if g.get("retried"))
+    if retried:
+        out.append(f"{retried} quiet retr{'y' if retried == 1 else 'ies'} — the machine was loaded, or a test is flaky")
+    if s.get("limit"):
+        out.append(f"{s['limit']} call{'s' if s['limit'] != 1 else ''} ran to the agent's 10-minute limit — a wait that belonged in the background, or a hung test")
+    session = s["kinds"].get("session", 0)
+    if session / active > conf["session_share"]:
+        out.append(f"waiting on another session took {pace_share(session, active)} ({pace_time(session)})")
+    merge = s["phases"].get("merge", {})
+    merge_all = sum(merge.values())
+    merge_you = merge.get("you", 0) + merge.get("question", 0)
+    if merge_all >= 600 and merge_you / merge_all > conf["merge_wait_share"]:
+        out.append(f"the merge waited on you for {pace_share(merge_you, merge_all)} of its {pace_time(merge_all)}")
+    if len(s.get("reviews", [])) > conf["review_agents"]:
+        out.append(f"{len(s['reviews'])} review agents — the slice may be too big, or its work order unclear")
+    if s.get("compactions"):
+        out.append(f"{s['compactions']} compaction{'s' if s['compactions'] != 1 else ''} — the slice outgrew one context")
+    falsify = s["kinds"].get("falsify", 0)
+    if falsify / active > conf["falsify_share"]:
+        out.append(f"falsify took {pace_share(falsify, active)} ({pace_time(falsify)}) — `falsify.parallel` or `falsify.setup`")
+    if s.get("suite"):
+        out.append(f"the agent ran the whole suite {s['suite']}× — §15 leaves that to CI and /spry:test-all")
+    return out
+
+
+def pace_changes(project: Project) -> list:
+    """[(time, what)] — each dated change to how the project runs spry: a process-changes row, a
+    commit that changed the config (a new `spry_baseline` among them)."""
+    from datetime import datetime
+    out = []
+    log = os.path.join(project.spry, "knowledge", "process-changes.md")
+    try:
+        text = read(log)
+    except OSError:
+        text = ""
+    for line in text.split("\n"):
+        cells = table_cells(line) if line.lstrip().startswith("|") else []
+        if len(cells) > 1 and DATE.match(cells[0].strip()):
+            out.append((datetime.strptime(cells[0].strip(), "%Y-%m-%d").timestamp(), f"process change: {cells[1].strip()}"))
+    config = os.path.relpath(os.path.join(project.spry, "spry.config.json"), project.root)
+    done = git(project.root, "log", "--format=%ct%x09%h %s", "--", config)
+    for line in done.stdout.split("\n") if done.returncode == 0 else []:
+        if "\t" in line:
+            stamp, what = line.split("\t", 1)
+            out.append((float(stamp), f"config: {what}"))
+    return sorted(out)
+
+
+def pace_point(project: Project, point: str) -> tuple:
+    """(time, label) for `--compare`: a date, a CH-n taken (its process-changes row) or a commit."""
+    from datetime import datetime
+    if DATE.match(point):
+        return datetime.strptime(point, "%Y-%m-%d").timestamp(), "the day you named"
+    if re.match(r"^CH-\d+$", point):
+        for t, what in pace_changes(project):
+            if re.search(rf"\b{point}\b", what):
+                return t, what
+        raise PlanError(f"no process-changes row or config commit names {point}")
+    done = git(project.root, "show", "-s", "--format=%ct%x09%h %s", point)
+    if done.returncode != 0 or "\t" not in done.stdout:
+        raise PlanError(f"{point} is not a date (YYYY-MM-DD), a CH-n or a commit")
+    stamp, what = done.stdout.strip().split("\t", 1)
+    return float(stamp), what
+
+
+def pace_merged(slices: list, changes: list) -> list:
+    """Changes with no slice ending between them become one: their before and after are the same."""
+    out = []
+    for at, label in changes:
+        label = label if len(label) <= 100 else label[:99] + "…"
+        if out and not any(out[-1][0] < s["last"] <= at for s in slices):
+            out[-1] = (at, out[-1][1] + "; " + label)
+        else:
+            out.append((at, label))
+    return out
+
+
+def pace_measures(s: dict) -> dict:
+    active = pace_active(s)
+    full = pace_full_gates(s)
+    out = {"active time": active}
+    for name, kinds in PACE_GROUPS:
+        out[f"{name} share"] = pace_group(s, kinds) / active if active else None
+    out["full gates failed"] = sum(1 for g in full if not g.get("ok", True))
+    out["quiet retries"] = sum(1 for g in s["gates"] if g.get("retried"))
+    out["active time per 100 lines"] = active / s["lines"] * 100 if s.get("lines") else None
+    return out
+
+
+def pace_compare(slices: list, at: float, label: str) -> list:
+    """Markdown: the slices ended after `at` against as many ended before it, by median."""
+    after = sorted((s for s in slices if s["last"] > at), key=lambda s: s["last"])[:20]
+    before = sorted((s for s in slices if s["last"] <= at), key=lambda s: s["last"])[-max(len(after), 1):]
+    head = f"### {time.strftime('%Y-%m-%d', time.localtime(at))} — {label}"
+    if len(after) < 10 or len(before) < 10:
+        return [head, "", f"- too few slices to tell: {len(before)} before, {len(after)} after (10 a side needed)", ""]
+    rows = [head, "", f"| {len(before)} slices a side | before | after |", "|---|---:|---:|"]
+    measured = [pace_measures(s) for s in before], [pace_measures(s) for s in after]
+    for key in measured[0][0]:
+        counted = key in ("full gates failed", "quiet retries")
+        values = [(sum(m[key] for m in side) / len(side)) if counted else pace_median([m[key] for m in side]) for side in measured]
+        if key.endswith("share"):
+            shown = [f"{100 * v:.0f}%" if v is not None else "–" for v in values]
+        elif key.startswith("active"):
+            shown = [pace_time(v) if v is not None else "–" for v in values]
+        else:
+            shown = [f"{v:.2f}" if v is not None else "–" for v in values]
+        rows.append(f"| {key + ', per slice' if counted else 'median ' + key} | {shown[0]} | {shown[1]} |")
+    return rows + [""]
+
+
+def pace_slice_lines(s: dict, flags: list) -> list:
+    """Markdown for one slice."""
+    active = pace_active(s)
+    rows = [f"## {s['id']}", "",
+            f"- {pace_time(active)} active over {s['sessions']} session{'s' if s['sessions'] != 1 else ''}, "
+            f"{s['prompts']} prompt{'s' if s['prompts'] != 1 else ''}, {s['questions']} question{'s' if s['questions'] != 1 else ''}"
+            + (f", {s['lines']} lines changed" if s.get("lines") else ""), ""]
+    rows += ["| | time | share |", "|---|---:|---:|"]
+    for kind, label in PACE_KINDS:
+        if s["kinds"].get(kind, 0) >= 1:
+            rows.append(f"| {label} | {pace_time(s['kinds'][kind])} | {pace_share(s['kinds'][kind], active)} |")
+    rows += ["", "| phase | time | most of it |", "|---|---:|---|"]
+    for phase in PACE_PHASES:
+        cell = s["phases"].get(phase) or {}
+        total = sum(cell.values())
+        if total >= 1:
+            top = sorted(((v, k) for k, v in cell.items() if v > 0), reverse=True)[:3]
+            rows.append(f"| {phase} | {pace_time(total)} | " + ", ".join(f"{PACE_LABEL.get(k, k)} {pace_share(v, total)}" for v, k in top) + " |")
+    full = pace_full_gates(s)
+    rows += ["", f"- gate: {len(full)} full ({sum(1 for g in full if not g.get('ok', True))} failed, "
+             f"{sum(1 for g in full if g.get('tests'))} ran tests), {len(s['gates']) - len(full)} fast"
+             + (f"; {len(s['reviews'])} review agent{'s' if len(s['reviews']) != 1 else ''}, {pace_time(sum(s['reviews']))}" if s.get("reviews") else "")]
+    if s.get("slowest"):
+        rows.append("- slowest calls: " + "; ".join(f"{pace_time(v)} {PACE_LABEL.get(k, k)} `{h[:60]}`" for v, k, h in s["slowest"][:3]))
+    rows += [f"- flag: {f}" for f in flags]
+    return rows + [""]
+
+
+def pace_page(project: Project, slices: dict, since: str | None = None, last: int | None = None,
+              compare: tuple | None = None) -> str:
+    """The page, `.spry/view/pace.md`: where the slices' time went, before and after each change."""
+    from datetime import datetime
+    chosen = sorted((s for s in slices.values() if s["first"] is not None), key=lambda s: s["last"])
+    if since:
+        if not DATE.match(since):
+            raise PlanError(f"--since takes a day, YYYY-MM-DD, not {since}")
+        cut = datetime.strptime(since, "%Y-%m-%d").timestamp()
+        chosen = [s for s in chosen if s["last"] >= cut]
+    if last:
+        chosen = chosen[-last:]
+    rows = ["# Pace", "",
+            f"> Local to this clone, written {time.strftime('%Y-%m-%d %H:%M')} by `spry pace`. Not committed. "
+            "Away time (a gap over `pace.away`) is left out of every number.", ""]
+    if not chosen:
+        return "\n".join(rows + ["No slice time found yet: none of this clone's session logs or step logs name a slice's branch.", ""])
+    actives = sorted(pace_active(s) for s in chosen)
+    total = sum(actives)
+    kinds = {}
+    for s in chosen:
+        pace_add(kinds, {k: v for k, v in s["kinds"].items() if k != "away"})
+    rows += [f"- {len(chosen)} slices, {time.strftime('%Y-%m-%d', time.localtime(chosen[0]['first']))} to "
+             f"{time.strftime('%Y-%m-%d', time.localtime(chosen[-1]['last']))}; median {pace_time(pace_median(actives))} "
+             f"active, the slowest quarter from {pace_time(actives[3 * len(actives) // 4])}", ""]
+    rows += ["## Where the time went", "", "| | time | share |", "|---|---:|---:|"]
+    for name, group in PACE_GROUPS:
+        part = sum(kinds.get(k, 0) for k in group)
+        if part >= 1:
+            rows.append(f"| **{name}** | {pace_time(part)} | {pace_share(part, total)} |")
+            if len(group) > 1:
+                for k in group:
+                    if kinds.get(k, 0) >= 1:
+                        rows.append(f"| {PACE_LABEL[k]} | {pace_time(kinds[k])} | {pace_share(kinds[k], total)} |")
+    changes = [compare] if compare else pace_merged(chosen, [c for c in pace_changes(project) if chosen[0]["first"] < c[0] < chosen[-1]["last"]])[-5:]
+    rows += ["", "## Before and after each change", ""]
+    if not changes:
+        rows += ["- no dated change in this range: a process-changes row or a config commit marks one", ""]
+    for at, label in reversed(changes):
+        rows += pace_compare(chosen, at, label)
+    flagged = [(s, pace_flags(project, s)) for s in reversed(chosen)]
+    rows += ["## Flags", ""]
+    listed = [f"- {s['id']}: {f}" for s, flags in flagged for f in flags]
+    rows += (listed[:40] or ["- none"]) + [""]
+    rows += ["## Slices, newest first", "",
+             "| slice | active | agent | checks | other tools | you | you elsewhere | waits | full gates (failed) | review agents | sessions |",
+             "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+    for s, _ in flagged[:60]:
+        active = pace_active(s)
+        shares = [pace_share(pace_group(s, group), active) for _, group in PACE_GROUPS]
+        full = pace_full_gates(s)
+        rows.append(f"| {s['id']} | {pace_time(active)} | " + " | ".join(shares)
+                    + f" | {len(full)} ({sum(1 for g in full if not g.get('ok', True))}) | {len(s.get('reviews', []))} | {s['sessions']} |")
+    steps = {}
+    for s in chosen:
+        for g in s["gates"]:
+            for name, seconds, *_ in g.get("steps", []):
+                steps.setdefault(name, []).append(seconds)
+    if steps:
+        rows += ["", "## Gate steps", "", "| step | runs | total | median | longest |", "|---|---:|---:|---:|---:|"]
+        for name, values in sorted(steps.items(), key=lambda kv: -sum(kv[1])):
+            rows.append(f"| {name} | {len(values)} | {pace_time(sum(values))} | {pace_median(values):.1f}s | {max(values):.1f}s |")
+    calls = sorted(([v, k, h, s["id"]] for s in chosen for v, k, h in s.get("slowest", [])), reverse=True)[:15]
+    if calls:
+        rows += ["", "## Slowest single calls", "", "| time | slice | kind | command |", "|---:|---|---|---|"]
+        for v, k, h, slice_id in calls:
+            rows.append(f"| {pace_time(v)} | {slice_id} | {PACE_LABEL.get(k, k)} | `{h[:80].replace('|', '¦').replace('`', '')}` |")
+    return "\n".join(rows) + "\n"
+
+
+def pace(project: Project, slice_id: str | None = None, since: str | None = None, last: int | None = None,
+         compare: str | None = None, say=print) -> int:
+    """`spry pace`: read what changed, keep each closed slice's numbers, write the page."""
+    if slice_id and slice_id not in project.items:
+        raise PlanError(f"no slice {slice_id}")
+    if since and not DATE.match(since):
+        raise PlanError(f"--since takes a day, YYYY-MM-DD, not {since}")
+    point = pace_point(project, compare) if compare else None
+    logs = pace_logs(project, say=say)
+    slices = pace_slices(project, logs)
+    if slice_id:
+        s = slices.get(slice_id)
+        if not s:
+            say(f"no time found for {slice_id}: no session or step log names its branch")
+            return 1
+        say("\n".join(pace_slice_lines(s, pace_flags(project, s))).rstrip())
+        return 0
+    page = pace_page(project, slices, since, last, point)
+    target = os.path.join(project.root, ".spry", "view", "pace.md")
+    os.makedirs(native(os.path.dirname(target)), exist_ok=True)
+    write(target, page)
+    head = page.split("## Flags")[0].split("\n")
+    say("\n".join(line for line in head if line.startswith("- ")))
+    say(f"page: {project.rel(target)} — `spry serve` shows it at /-/pace")
+    return 0
+
+
+def pace_on_merge_check(project: Project, slice_id: str) -> None:
+    """Keep a passing slice's numbers, reading only logs touched since its file was made."""
+    try:
+        item = project.items[slice_id]
+        made = git(project.root, "log", "-1", "--diff-filter=A", "--format=%ct", "--", project.rel(item.doc)).stdout.strip()
+        newer = float(made) - 86400 if made else time.time() - 30 * 86400
+        pace_slices(project, pace_logs(project, newer_than=newer), only=slice_id)
+    except Exception:  # noqa: BLE001 — pace never stands between a slice and its merge
+        pass
+
+
 def find_root(start: str):
     here = os.path.abspath(start)
     while True:
@@ -5085,6 +5934,11 @@ def main(argv=None) -> int:
     p.add_argument("--force", action="store_true", help="run everything even if the code is unchanged")
     p.add_argument("--fast", action="store_true", help="spry check and the fast checks only, no tests; stamps nothing")
     p.add_argument("--full", action="store_true", help="the affected tests even when the branch changes only test files")
+    p = sub.add_parser("pace", help="where slices' time went — the agent, checks, waiting on you — from this clone's logs")
+    p.add_argument("slice", nargs="?", help="one slice in detail")
+    p.add_argument("--since", metavar="YYYY-MM-DD", help="slices active since this day")
+    p.add_argument("--last", type=int, metavar="N", help="the last N slices")
+    p.add_argument("--compare", metavar="POINT", help="before and after a date, a CH-n or a commit")
     p = sub.add_parser("changed", help="for CI: prints code=true when files outside checks.docs changed since --base")
     p.add_argument("--base", required=True, help="git ref to compare with")
     p = sub.add_parser("falsify", help="prove a slice's tests notice its safeguards")
@@ -5158,6 +6012,7 @@ def main(argv=None) -> int:
     project = Project(root, load=not light)
 
     if args.command == "check":
+        started = time.time()
         if args.base:
             changed_criteria(project, args.base)
             changed_blocks(project, args.base)
@@ -5167,6 +6022,7 @@ def main(argv=None) -> int:
             print(p)
         errors = sum(1 for p in problems if p.level == "error")
         print(f"{errors} error{'s' if errors != 1 else ''}, {len(problems) - errors} warning{'s' if len(problems) - errors != 1 else ''}")
+        pace_log(project, "check", time.time() - started, errors=errors)
         return 1 if errors else 0
     if args.command == "status":
         print(status(project, args.level, args.id, args.all))
@@ -5180,6 +6036,12 @@ def main(argv=None) -> int:
     if args.command == "done":
         print(done_block(project, os.path.join(project.spry, "DONE.md")))
         return 0
+    if args.command == "pace":
+        try:
+            return pace(project, args.slice, args.since, args.last, args.compare)
+        except PlanError as e:
+            print(str(e), file=sys.stderr)
+            return 2
     if args.command == "work":
         report = work(project, args.owner, args.since, args.until or date.today().isoformat())
         print(json.dumps(report, indent=2, ensure_ascii=False) if args.json else work_text(report))
@@ -5306,11 +6168,15 @@ def main(argv=None) -> int:
         print(slowest(project, args.junit, args.limit))
         return 0
     if args.command == "merge-check":
+        started = time.time()
         lines = merge_check(project, args.slice, args.base)
         mark = {"ok": "✓", "warn": "!", "block": "✗"}
         for level, text in lines:
             print(f"{mark[level]} {text}")
         blocks = sum(1 for s, _ in lines if s == "block")
+        pace_log(project, "merge-check", time.time() - started, slice=args.slice, blocks=blocks)
+        if not blocks:
+            pace_on_merge_check(project, args.slice)
         print("ready to merge" if not blocks else f"{blocks} thing{'s block' if blocks != 1 else ' blocks'} the merge")
         return 1 if blocks else 0
     if args.command == "gate":
@@ -5338,7 +6204,11 @@ def main(argv=None) -> int:
                           "name a test file if one guards it")
                 print("prune it to the safeguards that matter, then: falsify run " + project.rel(out))
                 return 0
+            started = time.time()
             results = falsify_run(project, args.plan, dry=args.dry_run, jobs=args.jobs)
+            if not args.dry_run:
+                pace_log(project, "falsify", time.time() - started, controls=len(results),
+                         **{r: sum(1 for _, x, _ in results if x == r) for r in ("caught", "survived", "unreliable")})
         except PlanError as e:
             print("plan refused: " + str(e), file=sys.stderr)
             return 1

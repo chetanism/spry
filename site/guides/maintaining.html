@@ -139,6 +139,49 @@ doesn't edit it.</p>
 
 <p>Why budgets exist at all: <a href="../design/knowledge.html">Knowledge and size</a>.</p>
 
+<h2>See where the time goes — spry pace</h2>
+
+<p>A slice takes longer than it should, and it's rarely the agent's writing. <code>spry pace</code> splits
+each slice's time into what filled it, so you can see which part of the process, the config or the
+tests to change.</p>
+
+<pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py pace                       <span class="c"># the page: .spry/view/pace.md</span>
+<span class="p">$ </span>python3 spry/tool/spry.py pace SL-42                 <span class="c"># one slice in detail</span>
+<span class="p">$ </span>python3 spry/tool/spry.py pace --compare 2026-10-20  <span class="c"># before and after a day, a CH-n or a commit</span></code></pre>
+
+<p>Each second goes into one of these:</p>
+
+<ul>
+  <li>the agent, thinking and writing</li>
+  <li>checks: the gate, falsify, and tests or fast checks the agent ran itself</li>
+  <li>other tools: spry, git, gh, the local services, polling loops</li>
+  <li>waiting on you, or a question it asked you</li>
+  <li>you, busy in another session</li>
+  <li>waiting on a background task, another session, or a scheduled wake-up</li>
+</ul>
+
+<p>A gap longer than <code>pace.away</code> (30 minutes) counts as away and is left out.</p>
+
+<p>The page also shows:</p>
+
+<ul>
+  <li>each slice and its phases (open, build, close, review, fixes, merge)</li>
+  <li>how long each gate step took</li>
+  <li>the slowest single calls</li>
+  <li>flags for what stands out</li>
+</ul>
+
+<ul>
+  <li><strong>Did a change help?</strong> Every row in <code>process-changes.md</code> and every commit to the
+  config marks a point. The page sets the slices after each point against as many before it.</li>
+  <li><strong>Nothing to switch on.</strong> The gate, <code>check</code>, falsify and <code>merge-check</code> each
+  add a line to a step log. Claude Code's own session logs are read only when you ask, so nothing
+  runs while you work.</li>
+  <li><strong>Yours only.</strong> Everything stays in <code>.spry/</code> in your clone and is never committed. A
+  passing <code>merge-check</code> keeps the slice's numbers there, after Claude Code deletes old session logs.</li>
+  <li><code>spry serve</code> shows the page under <em>Pace</em>.</li>
+</ul>
+
 <h2>Set your tone — /spry:tone</h2>
 
 <p>Every document has an audience level from 1 (no technical knowledge) to 10 (an engineer in this

@@ -394,7 +394,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 ## 17. Pace — where a slice's time goes
 
-> **Status:** designed, not built. Prototype: `docs/spikes/pace.py`.
+> **Status:** built in CH-44 (0.33.0), all but the `/spry:pace` skill. Prototype: `docs/spikes/pace.py`.
 
 Purpose: show where each slice's time went — the agent, the checks, waiting on a person — so that
 person can judge what to change: the process, the config, the tests, or spry. Report only; it never
@@ -402,33 +402,39 @@ changes anything.
 
 - **Always on, no switch.** Nothing runs while working that would not run anyway. There are two
   sources:
-  - **Steps spry runs.** `gate`, `falsify run`, `check`, `merge-check` and `test-all`'s parts each
-    add one JSON line to `.spry/pace/steps.jsonl`: when, the slice, the command, each step's
-    seconds, and the outcome — passed, failed, skipped on the stamp, docs only, tests only, quiet
-    retry. Writing a line costs microseconds. This works for every agent.
+  - **Steps spry runs.** `gate`, `falsify run`, `check` and `merge-check` each add one JSON line to
+    `.spry/pace/steps.jsonl` of the main checkout, shared by its worktrees. A line holds when it
+    ran, the branch, the command and its seconds. A gate's line also holds each step's seconds,
+    the code's fingerprint, whether it ran tests, and the outcome: passed, failed, skipped on the
+    stamp, docs only, tests only, or a quiet retry. Writing a line costs microseconds and never
+    fails the command. The gate figures on the page come from this log, for every agent. A slice
+    with no step lines (before CH-44) falls back to the gate output in the session log.
   - **The agent's session log**, read after the slice and never copied. Claude Code writes one:
     `~/.claude/projects/<dir>/*.jsonl`, with subagents' logs under `<session>/subagents/`. Each
     record has a timestamp, its `gitBranch`, its `stop_reason`, and who sent a prompt
-    (`origin.kind`: human, peer, task-notification). For an agent with no readable log, the page
-    shows step times alone and says so. The log format is not a stable API: a record the tool
-    cannot read is skipped and counted, never guessed.
+    (`origin.kind`: human, peer, task-notification). Only these records are parsed; the rest are
+    skipped by their first key. The time split needs this log: an agent that writes none gets
+    gate figures but no page rows. The log format is not a stable API, so a record the tool
+    cannot read is skipped, never guessed, and a log it cannot read at all is named.
   - Hooks were rejected: a hook on every tool call starts a process each time, hundreds per slice,
     and that cost is worst on a slow disk.
 - **Which slice:** a log record's branch, matched to a slice's `branch:` or an `sl-<n>-` name. A
   session that changes branch is split at the change, so worktrees and parallel sessions need
   nothing more.
 - **Which phase:** the skills and spry commands already in the logs mark the start of each phase.
-  Skills make no extra calls to mark one. The prototype gave all time to the last skill run, which
-  was too coarse: the review that `slice-close` starts filed its gate and falsify under *review*.
+  Skills make no extra calls to mark one. A phase set in an earlier turn does not follow the
+  session to another branch, so the next slice starts in *other* until its own skill runs. The
+  prototype gave all time to the last skill run, which was too coarse: the review that
+  `slice-close` starts filed its gate and falsify under *review*. The gate and falsify are kinds
+  of time inside each phase, not phases of their own.
 
   | Phase | Starts at |
   |---|---|
-  | open | `claim`, or `slice-open` starting |
+  | open | `slice-open` starting |
   | build | `link --pr`: the draft PR exists |
   | close | `slice-close` starting |
-  | review | the review agent's log starts; it ends when that log ends |
-  | fixes | the review agent ending |
-  | falsify · gate | `falsify run` · a full `gate`, for as long as each runs |
+  | review | a review agent starting (an `Agent` call whose description or prompt says review) |
+  | fixes | that agent's result, or the notice that a background one finished |
   | merge | `merge` starting, or `merge-check` |
 
 - **Every second of active time gets one category:**
@@ -446,7 +452,9 @@ changes anything.
     left out of every total.
   - Session start and `/clear` count as the end of a turn. Parallel sessions are summed, and the page
     also shows real time: the union of the active spans.
-- **When it runs:** `merge-check`, once it passes, writes the slice's summary with no extra call.
+- **When it runs:** `merge-check`, once it passes, writes the slice's summary with no extra call. It
+  reads only logs changed since a day before the slice's file was made, and any failure is
+  swallowed, because pace never stands between a slice and its merge.
   `spry pace [<slice>] [--since <date>] [--last <n>] [--compare <point>]` runs it on demand. Each slice gets a summary,
   `.spry/pace/slices/<SL-n>.json`, written once and kept: Claude Code deletes its logs after
   `cleanupPeriodDays` (30 by default), but the numbers outlive them. Only logs that are new or
@@ -549,7 +557,7 @@ changes anything.
 | `install --agent` | §3 |
 | `codeowners` | §14 |
 | `draw` | seeded, replayable choices for `/spry:explore` |
-| `pace [<slice>] [--since] [--last] [--compare]` | where slices' time went (§17); designed, not built |
+| `pace [<slice>] [--since] [--last] [--compare]` | where slices' time went (§17): the page in `.spry/view/pace.md`, or one slice in detail |
 
 ## 19. Skills (`spry` plugin)
 
@@ -769,3 +777,8 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-29 — falsify of a task's slice expects the task: a `T-n` in a test's name selects it, as
   a `B-n` does for a bug. Any `expect` can also be a test file's path, for a guard an older test
   covers (CH-43, 0.32.0, from issue #6).
+- 2026-10-29 — `spry pace` (CH-44, 0.33.0): where a slice's time went. Its sources are a step log
+  that `gate`, `check`, `falsify run` and `merge-check` write, and Claude Code's session logs read
+  after the fact. The page shows before and after each dated change, and a passing `merge-check`
+  keeps the slice's numbers. The `/spry:pace` skill waits until the numbers have been checked on
+  real slices.

@@ -215,6 +215,19 @@ which stops and asks.</p>
   </tbody>
 </table>
 
+<h2>Pace</h2>
+
+<p>All optional. See <a href="../guides/maintaining.html#see-where-the-time-goes-spry-pace">See where the time goes</a>.</p>
+
+<table>
+  <thead><tr><th>Key</th><th>Means</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td><code>pace.away</code></td><td>Minutes. A gap longer than this that is not a tool running counts as away and is left out of every number.</td><td><code>30</code></td></tr>
+    <tr><td><code>pace.logs</code></td><td>Extra folders of Claude Code session logs to read (globs), for a worktree outside the clone. The clone's own folder and its <code>.claude/worktrees/</code> are read already.</td><td><code>[]</code></td></tr>
+    <tr><td><code>pace.flags</code></td><td>When a slice is flagged: <code>falsify_share</code>, <code>session_share</code> (waiting on another session) and <code>merge_wait_share</code> (waiting on you during the merge) as fractions, <code>review_agents</code> as a count.</td><td><code>0.2</code>, <code>0.2</code>, <code>0.5</code>, <code>3</code></td></tr>
+  </tbody>
+</table>
+
 <h2>Slices and branches</h2>
 
 <table>

@@ -5,6 +5,7 @@ import io
 import datetime
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -2339,6 +2340,24 @@ class Falsify(unittest.TestCase):
         with self.assertRaises(SystemExit):
             self.gate()
 
+    def test_gate_logs_no_tests_when_a_fast_check_stops_it(self):
+        self.gate_config("false")
+        self.gate()
+        with open(os.path.join(self.root, ".spry", "pace", "steps.jsonl")) as handle:
+            line = json.loads(handle.read())
+        self.assertEqual((line["ok"], line["tests"], [s[0] for s in line["steps"]]), (False, False, ["spry check", "lint"]))
+
+    def test_gate_writes_each_run_to_the_step_log(self):
+        self.gate_config("echo f >> LOG")
+        self.gate()
+        self.gate()
+        with open(os.path.join(self.root, ".spry", "pace", "steps.jsonl")) as handle:
+            first, second = [json.loads(line) for line in handle]
+        self.assertEqual((first["command"], first["branch"], first["ok"], first["tests"]), ("gate", "sl-1", True, True))
+        self.assertEqual([s[0] for s in first["steps"]], ["spry check", "lint", "affected tests"])
+        self.assertEqual(second["skipped"], "stamp")
+        self.assertEqual(second["steps"][0][0], "spry check")
+
     def test_changed_tells_ci_whether_tests_must_run(self):
         p = spry.Project(self.root)
         self.assertTrue(spry.code_changed_since(p, "main"))
@@ -2517,6 +2536,226 @@ class Merge(Base):
         t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): self.closed_slice("")})
         message = spry.merge_message(t.project(), "SL-1", "billing  lock")
         self.assertRegex(message.rstrip().split("\n")[-1], r"^CI: did not run \(billing lock\); gate green locally at \S+$")
+
+
+T0 = 1_790_000_000  # a fixed moment, so the logs below read the same on every run
+
+
+def at(seconds):
+    return datetime.datetime.fromtimestamp(T0 + seconds, datetime.timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def said(t, text, branch="sl-1-a", origin="human"):
+    return {"type": "user", "timestamp": at(t), "gitBranch": branch, "origin": {"kind": origin} if origin else None,
+            "message": {"role": "user", "content": text}}
+
+
+def tool(t, ident, name="Bash", branch="sl-1-a", **given):
+    return {"type": "assistant", "timestamp": at(t), "gitBranch": branch, "message": {
+        "stop_reason": "tool_use", "content": [{"type": "tool_use", "id": ident, "name": name, "input": given}]}}
+
+
+def result(t, ident, out="", branch="sl-1-a"):
+    return {"type": "user", "timestamp": at(t), "gitBranch": branch,
+            "message": {"content": [{"type": "tool_result", "tool_use_id": ident, "content": out}]}}
+
+
+def reply(t, branch="sl-1-a"):
+    return {"type": "assistant", "timestamp": at(t), "gitBranch": branch,
+            "message": {"stop_reason": "end_turn", "content": [{"type": "text", "text": "done"}]}}
+
+
+GATE_OUT = "✓ spry check · 1.0s\n✗ lint · 20.0s\n"
+
+
+class Pace(Base):
+    """`spry pace` (DESIGN.md §17): what a session log says, and what the page makes of it."""
+
+    def setUp(self):
+        self.home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, self.home)
+        patcher = unittest.mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": self.home})
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def log(self, t, name, records):
+        folder = os.path.join(self.home, "projects", re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(t.root)))
+        os.makedirs(folder, exist_ok=True)
+        path = os.path.join(folder, name + ".jsonl")
+        with open(path, "w") as handle:
+            handle.write('{"type":"custom-title","customTitle":"x"}\n')
+            handle.write("".join(json.dumps(r) + "\n" for r in records))
+        return path
+
+    def session(self):
+        return [said(0, "<command-name>/spry:slice-close</command-name>"),
+                tool(10, "g", command="python3 spry/tool/spry.py gate"),
+                result(70, "g", GATE_OUT),
+                tool(75, "q", command="pnpm --filter api exec vitest run src/a.test.ts 2>&1 | tail"),
+                result(95, "q"),
+                reply(100),
+                said(220, "fix lint"),          # 120 s waiting on you
+                reply(230),
+                said(230 + 3600, "back"),       # an hour away
+                reply(3840)]
+
+    def test_shell_lines_take_their_costliest_kind(self):
+        kind = spry.pace_bash_kind
+        self.assertEqual(kind("cd x && python3 spry/tool/spry.py gate --fast"), "gate")
+        self.assertEqual(kind("PATH=a pnpm --filter db exec vitest run x.test.ts | tail"), "tests")
+        self.assertEqual(kind("grep vitest package.json"), "tool")
+        self.assertEqual(kind("python3 - <<'EOF'\nimport os\nprint('pnpm test')\nEOF"), "tool", "a heredoc body is not a command")
+        self.assertEqual(kind("until grep -q done log; do sleep 5; done"), "polling")
+        self.assertEqual(kind("git add -A && gh pr create"), "gh")
+        self.assertEqual(kind("spry falsify run plan.json"), "falsify")
+        self.assertTrue(spry.pace_runs_suite("cd a && turbo run test 2>&1", ["turbo run test"]))
+        self.assertFalse(spry.pace_runs_suite("turbo run test --filter=api", ["turbo run test"]))
+
+    def test_a_log_splits_time_into_tools_the_agent_you_and_away(self):
+        t = self.tree()
+        data = spry.pace_read_log(self.log(t, "a", self.session()), 1800, [])
+        d = data["branches"]["sl-1-a"]
+        self.assertEqual(d["kinds"], {"agent": 10 + 5 + 5 + 10 + 10, "gate": 60, "tests": 20, "you": 120, "away": 3600})
+        self.assertEqual(d["phases"]["close"]["gate"], 60)
+        self.assertEqual(d["gates"][0]["steps"], {"spry check": 1.0, "lint": 20.0})
+        self.assertFalse(d["gates"][0]["ok"])
+        self.assertEqual(d["prompts"], 3)
+
+    def test_a_wait_while_a_background_task_runs_is_not_on_you(self):
+        t = self.tree()
+        records = [said(0, "review it"),
+                   tool(5, "r", name="Agent", description="review SL-1", run_in_background=True),
+                   result(6, "r"), reply(10),
+                   said(300, "still there?"),      # you typed, but the review was still running
+                   reply(310),
+                   said(400, "<task-notification>done</task-notification>", origin="task-notification"),
+                   reply(420)]
+        d = spry.pace_read_log(self.log(t, "a", records), 1800, [])["branches"]["sl-1-a"]
+        self.assertEqual(d["kinds"].get("you", 0), 0)
+        self.assertEqual(d["kinds"]["background"], 290 + 90)
+        self.assertIn("fixes", d["phases"], "the review agent ending starts the fixes")
+
+    def test_a_rerun_after_a_failure_or_with_full_is_not_a_stamp_miss(self):
+        t = self.tree()
+        s = {"id": "SL-1", "kinds": {"agent": 100}, "phases": {}, "reviews": [], "limit": 0, "compactions": 0, "suite": 0,
+             "gates": [{"at": 0, "ok": False, "tests": True, "code": "x"}, {"at": 1, "ok": True, "tests": True, "code": "x"},
+                       {"at": 2, "ok": True, "tests": True, "code": "x", "full": True}]}
+        self.assertFalse([f for f in spry.pace_flags(t.project(), s) if "stamp missed" in f])
+
+    def test_a_long_gap_is_away_whatever_ends_it(self):
+        t = self.tree()
+        records = [said(0, "go"), reply(10),
+                   said(10 + 7200, "<cross-session-message>hi</cross-session-message>", origin="peer"), reply(7220),
+                   said(7230, "<task-notification>x</task-notification>", origin="task-notification")]
+        d = spry.pace_read_log(self.log(t, "a", records), 1800, [])["branches"]["sl-1-a"]
+        self.assertEqual(d["kinds"]["away"], 7200)
+        self.assertNotIn("session", d["kinds"])
+
+    def test_a_background_task_counts_until_its_own_notice_or_a_clear(self):
+        t = self.tree()
+        records = [said(0, "go"),
+                   tool(5, "b1", command="sleep 100", run_in_background=True), result(6, "b1"),
+                   tool(7, "b2", command="sleep 900", run_in_background=True), result(8, "b2"), reply(10),
+                   said(100, "<task-notification><tool-use-id>b1</tool-use-id></task-notification>", origin="task-notification"),
+                   reply(110),
+                   said(200, "anything?"), reply(210),        # b2 still runs: not on you
+                   {"type": "system", "subtype": "local_command", "timestamp": at(220), "gitBranch": "sl-1-a"},
+                   said(400, "next")]                       # after /clear nothing runs: on you
+        d = spry.pace_read_log(self.log(t, "a", records), 1800, [])["branches"]["sl-1-a"]
+        self.assertEqual(d["kinds"]["background"], 90 + 90 + 10)
+        self.assertEqual(d["kinds"]["you"], 180)
+
+    def test_a_project_in_a_subfolder_keeps_its_own_step_log(self):
+        t = self.tree()
+        sub = os.path.join(t.root, "app")
+        shutil.copytree(os.path.join(t.root, "spry"), os.path.join(sub, "spry"))
+        subprocess.run(["git", "init", "-q", t.root], check=True)
+        self.assertEqual(os.path.realpath(spry.pace_home(spry.Project(sub))),
+                         os.path.realpath(os.path.join(sub, ".spry", "pace")))
+
+    def test_kept_command_heads_drop_secrets(self):
+        self.assertEqual(spry.pace_head("GH_TOKEN=abc gh pr merge 3\nmore"), "gh pr merge 3")
+        self.assertEqual(spry.pace_head('curl -H "Authorization: Bearer xyz" u'), 'curl -H "Authorization: Bearer … u')
+
+    def test_slice_numbers_come_from_every_log_and_outlive_them(self):
+        t = self.tree()
+        self.log(t, "a", self.session())
+        self.log(t, "b", [said(150, "something else", branch="main"), reply(160, branch="main")])
+        p = t.project()
+        slices = spry.pace_slices(p, spry.pace_logs(p))
+        s = slices["SL-1"]
+        self.assertEqual((s["kinds"]["you"], s["kinds"]["elsewhere"]), (0, 120), "you typed in another session meanwhile")
+        self.assertEqual(s["sessions"], 1)
+        kept = os.path.join(t.root, ".spry", "pace", "slices", "SL-1.json")
+        self.assertTrue(os.path.isfile(kept), "a closed slice's numbers are kept")
+        shutil.rmtree(os.path.join(self.home, "projects"))
+        again = spry.pace_slices(p, spry.pace_logs(p))
+        self.assertEqual(spry.pace_active(again["SL-1"]), spry.pace_active(s))
+
+    def test_logs_are_read_once_per_size_and_mtime(self):
+        t = self.tree()
+        self.log(t, "a", self.session())
+        p = t.project()
+        spry.pace_logs(p)
+        with unittest.mock.patch.object(spry, "pace_read_log", side_effect=AssertionError("read again")):
+            self.assertEqual(len(spry.pace_logs(p)), 1)
+
+    def test_flags_name_what_stands_out(self):
+        t = self.tree()
+        s = {"id": "SL-1", "kinds": {"agent": 100, "falsify": 100, "session": 100}, "phases": {}, "reviews": [1] * 4,
+             "gates": [{"at": 0, "ok": False, "tests": False, "code": "y"}, {"at": 1, "ok": True, "tests": True, "code": "x"},
+                       {"at": 2, "ok": True, "tests": True, "code": "x", "retried": True}],
+             "limit": 1, "compactions": 1, "suite": 1}
+        flags = " | ".join(spry.pace_flags(t.project(), s))
+        for words in ("full gate failed 1×", "through the full gate 2×", "again 1× on code that had passed", "1 quiet retry",
+                      "10-minute limit", "another session took 33%", "4 review agents", "1 compaction",
+                      "falsify took 33%", "whole suite 1×"):
+            self.assertIn(words, flags)
+
+    def test_the_page_compares_before_and_after_a_change(self):
+        t = self.tree(**{"spry__knowledge__process-changes.md": "| Date | Change | Kind | Files | Why |\n|---|---|---|---|---|\n"
+                         "| 2026-09-01 | Gate once per slice | local | x | y |\n"})
+        change = datetime.datetime(2026, 9, 1).timestamp()
+
+        def one(n, offset, agent):
+            return {"id": f"SL-{n}", "kinds": {"agent": agent, "you": 60}, "phases": {}, "first": change + offset - 100,
+                    "last": change + offset, "sessions": 1, "prompts": 1, "questions": 0, "compactions": 0,
+                    "reviews": [], "limit": 0, "slowest": [], "suite": 0, "gates": [], "lines": 100}
+        slices = {s["id"]: s for s in [one(n, -1000 * n, 600) for n in range(1, 11)] + [one(n, 1000 * n, 300) for n in range(11, 21)]}
+        page = spry.pace_page(t.project(), slices)
+        self.assertIn("process change: Gate once per slice", page)
+        self.assertIn("| median active time | 11m00 | 6m00 |", page)
+        self.assertIn("| median agent share | 91% | 83% |", page)
+        few = spry.pace_page(t.project(), {k: v for k, v in slices.items() if int(k[3:]) > 5})
+        self.assertIn("too few slices to tell: 5 before, 10 after", few)
+
+    def test_compare_takes_a_day_or_refuses_what_it_cannot_read(self):
+        t = self.tree()
+        self.assertEqual(spry.pace_point(t.project(), "2026-09-01")[1], "the day you named")
+        with self.assertRaises(spry.PlanError):
+            spry.pace_point(t.project(), "CH-99")
+        with self.assertRaises(spry.PlanError):
+            spry.pace_point(t.project(), "nonsense")
+
+    def test_the_command_writes_the_page_and_serve_shows_it(self):
+        t = self.tree()
+        self.log(t, "a", self.session())
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            self.assertEqual(spry.main(["--root", t.root, "pace"]), 0)
+            self.assertEqual(spry.main(["--root", t.root, "pace", "SL-1"]), 0)
+        self.assertIn("page: .spry/view/pace.md", out.getvalue())
+        self.assertIn("| gate | 1m00 |", out.getvalue())
+        code, _, body, _ = spry.serve_response(t.project(), "/-/pace")
+        self.assertEqual(code, 200)
+        self.assertIn("Where the time went", body.decode())
+        self.assertIn('href="/-/pace"', body.decode())
+
+    def test_a_passing_merge_check_keeps_the_slice_numbers(self):
+        t = self.tree()
+        self.log(t, "a", self.session())
+        spry.pace_on_merge_check(t.project(), "SL-1")
+        self.assertTrue(os.path.isfile(os.path.join(t.root, ".spry", "pace", "slices", "SL-1.json")))
 
 
 class Issues(Base):

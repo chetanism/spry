@@ -818,3 +818,37 @@ Entry format:
 - **Migrate:** a task slice still open with controls recorded `skipped` because `expect` could not
   name the task can run them now: give each the task or a test file, run them, and `--record` the
   slice. Closed slices stay as they are.
+
+## CH-44 · Pace — where a slice's time goes
+
+- **Date:** 2026-10-29 · **Version:** 0.33.0
+- **Touches:** `tool/spry.py` (`pace`; `gate`, `check`, `falsify run` and `merge-check` write the
+  step log; `serve` shows the page at `/-/pace`), `process/templates/spry.config.json` (`pace`)
+- **Why:** nobody could say where a slice's time went. Reading two pilots' session logs showed it
+  was mostly not the agent:
+  - the agent thinking and writing was 12–15% of active time;
+  - checks were 19–26%;
+  - waiting on a background task was 17–19%;
+  - waiting on another session was 24% on one pilot;
+  - waiting on the person was 12–14%.
+  - `spry pace` now reports this per slice, with no switch and nothing added while working:
+    - `gate`, `check`, `falsify run` and `merge-check` add one line each to
+      `.spry/pace/steps.jsonl`;
+    - Claude Code's session logs are read after the fact, once per size and mtime.
+  - The page, `.spry/view/pace.md`:
+    - each category's share, and a row per slice;
+    - the phases (open, build, close, review, fixes, merge);
+    - gate steps, and the slowest calls;
+    - flags: the full gate failing at close, tests run twice on the same code, quiet retries,
+      calls that ran to the 10-minute limit, waiting on another session or on you at merge, many
+      review agents, compactions, falsify's share, the agent running the whole suite;
+    - **before and after** each dated change: a `process-changes.md` row, a commit to the config
+      (a new `spry_baseline` among them), or `--compare <date|CH-n|commit>`.
+  - A passing `merge-check` keeps the slice's numbers in `.spry/pace/slices/`, so they outlive the
+    logs Claude Code deletes after 30 days.
+  - Everything stays in the clone, under `.spry/` (gitignored).
+- **Adapt:** `pace.away` (minutes; a longer gap that is not a tool running counts as away, default 30),
+  `pace.logs` (extra session-log folders, for a clone outside Claude Code's usual place), and
+  `pace.flags` thresholds — all optional.
+- **Migrate:** nothing. The first `spry pace` reads every session log Claude Code still holds for the
+  clone, which can take a minute on a long project.
