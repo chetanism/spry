@@ -340,8 +340,10 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   Plan entries use writ's exact `find` / `with` form. With no such line in the diff, up to five
   lines that compute or store something are offered for deletion instead; `merge-check` never
   requires those. A branch that adds no source line at all (tests, documents) has nothing to falsify.
-- **`expect` names acceptance criteria** (`S-1/AC-2`), or the bug for a bug's slice (`B-4`); tests
-  are found by their names.
+- **`expect` names acceptance criteria** (`S-1/AC-2`), or the bug or task for a bug's or a task's
+  slice (`B-4`, `T-7`) — neither has criteria; tests are found by those IDs in their names. Or it
+  names a test file by its path (one `tests.match` takes): a task's guard is often covered by a
+  test that was there before the task, and names nothing.
 - **Runs only those test files**, through per-runner commands with `{files}`, using the runner's
   fail-fast flag — one failure is enough. Files that name the control's source file run first; the
   rest run only if those miss it. A control cited by more than 20 files is named `wide:` at the run.
@@ -632,3 +634,6 @@ in `spry/history/writ.md`, then retires `canon/`.
   broke first is `unreliable`. Worktrees are kept between runs and reset, run with pnpm's
   dependency check off, and each slot has its number and an optional `falsify.setup` (CH-42,
   0.31.0, from issues #7, #8, #9).
+- 2026-10-29 — falsify of a task's slice expects the task: a `T-n` in a test's name selects it, as
+  a `B-n` does for a bug. Any `expect` can also be a test file's path, for a guard an older test
+  covers (CH-43, 0.32.0, from issue #6).

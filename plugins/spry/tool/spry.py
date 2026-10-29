@@ -62,6 +62,7 @@ import json
 import math
 import ntpath
 import os
+import posixpath
 import re
 import shlex
 import shutil
@@ -74,7 +75,7 @@ import time
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.31.0"
+VERSION = "0.32.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -586,15 +587,16 @@ class Project:
 
         Only a citation inside a string — a test's title, a docstring, a parametrize id — counts.
         One in a comment or in code is listed in `self.unproving`, so `check` can say why.
-        A bug's ID in a test's name (`B-4 …`) goes to `self.bug_tests`, the same way: a bug has no
-        criteria, so falsify of a bug's slice expects the bug itself."""
+        A bug's or a task's ID in a test's name (`B-4 …`, `T-7 …`) goes to `self.item_tests`, the same
+        way: neither has criteria, so falsify of its slice expects the bug or the task itself."""
         story = re.escape(self.ids["story"])
         ref = re.compile(r"(?<![A-Za-z0-9])(" + story + r"-\d+)/(AC-\d+)(?!\d)")
-        bug_mark = self.ids["bug"] + "-"
+        marks = tuple(self.ids[k] + "-" for k in ("bug", "task"))
         # not inside another word, a path or a file name: `SUB-2`, `fixtures/B-4.json`, `B-7.json`
-        bug = re.compile(r"(?<![A-Za-z0-9_/-])(" + re.escape(self.ids["bug"]) + r"-\d+)(?!\d|\.\w|/\w+\.)")
+        bug = re.compile(r"(?<![A-Za-z0-9_/-])((?:" + "|".join(re.escape(self.ids[k]) for k in ("bug", "task"))
+                         + r")-\d+)(?!\d|\.\w|/\w+\.)")
         globs, found = self._test_globs(), {}
-        self.unproving, self.bug_tests, self.bug_unproving = [], {}, []
+        self.unproving, self.item_tests, self.item_unproving = [], {}, []
         for dirpath, dirnames, filenames in walk_dir(self.root):
             dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
             if os.path.abspath(dirpath) == self.root and "spry" in dirnames:
@@ -613,7 +615,7 @@ class Project:
                 triple = None
                 for n, line in enumerate(text.split("\n"), 1):
                     hits = list(ref.finditer(line)) if "/AC-" in line else []
-                    bugs = list(bug.finditer(line)) if bug_mark in line else []
+                    bugs = list(bug.finditer(line)) if any(m in line for m in marks) else []
                     if not hits and not bugs and '""' not in line and "''" not in line:
                         continue  # no citation, and no triple quote to open or close: nothing to track
                     spans, triple_after = string_spans(line, triple)
@@ -622,9 +624,9 @@ class Project:
                         for m in bugs:
                             span = None if comment else next((s for s in spans if s[0] <= m.start() < s[1]), None)
                             if span is None:
-                                self.bug_unproving.append((rel, n, m.group(1)))
+                                self.item_unproving.append((rel, n, m.group(1)))
                             else:
-                                self.bug_tests.setdefault(m.group(1), []).append(
+                                self.item_tests.setdefault(m.group(1), []).append(
                                     (rel, n, line[span[0]:span[1]].strip()))
                     if hits and not NOT_RUN.search(line):
                         comment = COMMENT_LINE.match(line) and triple is None
@@ -2663,22 +2665,50 @@ def load_plan(project: Project, path: str) -> list:
         if count != 1:
             raise PlanError(f"{where}: `find` occurs {count} times in {entry['file']} — it must occur exactly once")
         if not isinstance(entry["expect"], list):
-            raise PlanError(f"{where}: `expect` must be a list such as [\"S-1/AC-2\"] or [\"B-4\"]")
+            raise PlanError(f"{where}: `expect` must be a list such as [\"S-1/AC-2\"], [\"B-4\"] or [\"T-7\"]")
+        cited = set()
         for ref in entry["expect"]:
-            if "/" not in ref and (ref not in project.items or project.items[ref].type != "bug"):
-                raise PlanError(f"{where}: `expect` names {ref}, which is neither a criterion nor a bug")
-        cited = sorted({path for ref in entry["expect"]
-                        for path, _, _ in project.tests.get(ref) or project.bug_tests.get(ref, [])})
+            cited |= {path for path, _, _ in expected_tests(project, ref, where)}
+        if entry.get("files"):
+            entry["files"] = [posixpath.normpath(f.replace("\\", "/")) for f in entry["files"]]
+        cited = sorted(cited)
         if not cited:
-            loose = sorted({f"{path}:{line}" for path, line, ref in project.bug_unproving if ref in entry["expect"]})
+            loose = sorted({f"{path}:{line}" for path, line, ref in project.item_unproving if ref in entry["expect"]})
             hint = f" (cited only outside a test's name: {', '.join(loose[:3])})" if loose else ""
-            raise PlanError(f"{where}: no test cites {', '.join(entry['expect'])} — nothing could notice{hint}")
+            raise PlanError(f"{where}: no test cites {', '.join(entry['expect'])} — nothing could notice{hint}; "
+                            "put the ID in a test's name, or name the test file that guards it")
         chosen = entry.get("files") or cited
         stray = sorted(set(chosen) - set(cited))
         if stray:
             raise PlanError(f"{where}: {', '.join(stray)} cites none of {', '.join(entry['expect'])}")
         entry["_tests"] = chosen
     return plan
+
+
+EXPECT_FILE_NAME = re.compile(r"^(test_.+\.py|.+_test\.[^./]+|.+\.(test|spec)\.[^./]+)$")  # a helper or fixture runs no test
+
+
+def expected_tests(project: Project, ref: str, where: str) -> list:
+    """The tests one `expect` names: a criterion's (`S-1/AC-2`), a bug's or a task's (`B-4`, `T-7`) —
+    by the ID in a test's name — or one test file by its path, for a guard a test already covers."""
+    if re.fullmatch(re.escape(project.ids["story"]) + r"-\d+/AC-\d+", ref):
+        return project.tests.get(ref, [])
+    item = project.items.get(ref)
+    if item is not None and item.type in ("bug", "task"):
+        return project.item_tests.get(ref, [])
+    rel = posixpath.normpath(ref.replace("\\", "/"))
+    if os.path.isfile(native(os.path.join(project.root, rel))):
+        parts = rel.split("/")
+        # Only where the test scan looks: a path outside the project, or in `spry/`, a dot-folder or
+        # installed dependencies, would run code a worktree never mutated — a false `survived`.
+        if (posixpath.isabs(rel) or ntpath.splitdrive(rel)[0] or parts[0] in ("..", "spry")
+                or any(p.startswith(".") or p in SKIP_DIRS for p in parts[:-1])):
+            raise PlanError(f"{where}: `expect` names {ref}, which is not a test file inside the project")
+        if not (any(g.match(rel) for g in project._test_globs()) and EXPECT_FILE_NAME.match(parts[-1])):
+            raise PlanError(f"{where}: `expect` names {ref}, which is not named as a test file "
+                            "(tests.match, and test_*.py, *_test.*, *.test.* or *.spec.*)")
+        return [(rel, 0, "")]
+    raise PlanError(f"{where}: `expect` names {ref}, which is not a criterion, a bug, a task or a test file")
 
 
 def runner_command(project: Project, runner: dict, cwd: str, files: list, root: str | None = None) -> str:
@@ -3372,8 +3402,8 @@ def falsify_suggest(project: Project, slice_id: str, base: str, fallback: bool =
         raise PlanError(f"no slice {slice_id}")
     story = item.parent.id if item.parent and item.parent.type == "story" else None
     expect = [f"{story}/{ac}" for ac in item.fm.get("covers") or []] if story else []
-    if item.parent and item.parent.type == "bug":
-        expect = [item.parent.id]  # a bug has no criteria: its tests cite the bug
+    if item.parent and item.parent.type in ("bug", "task"):
+        expect = [item.parent.id]  # no criteria: its tests cite the bug or the task
     added = added_source(project, base)
     texts: dict = {}
 
@@ -5304,7 +5334,8 @@ def main(argv=None) -> int:
                     return 0
                 print(f"{len(plan)} candidate control{'s' if len(plan) != 1 else ''} → {project.rel(out)}")
                 if plan and not plan[0]["expect"]:
-                    print("fill in `expect` — the slice covers no story criteria and is not under a bug")
+                    print("fill in `expect` — the slice covers no story criteria and is not under a bug or a task; "
+                          "name a test file if one guards it")
                 print("prune it to the safeguards that matter, then: falsify run " + project.rel(out))
                 return 0
             results = falsify_run(project, args.plan, dry=args.dry_run, jobs=args.jobs)

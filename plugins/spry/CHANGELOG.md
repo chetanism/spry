@@ -800,3 +800,21 @@ Entry format:
 - **Migrate:** a project runner that gave each slot its own database, or passed
   `--config.verify-deps-before-run=false`, can hand both to spry: its slot setup moves to
   `falsify.setup`, keyed on `SPRY_FALSIFY_SLOT`. Rows already recorded stay as they are.
+
+## CH-43 · Falsify for a task's slice
+
+- **Date:** 2026-10-29 · **Version:** 0.32.0
+- **Touches:** `tool/spry.py` (test scan, `falsify run`, `falsify suggest`), `process/slicing.md`
+  (*Close* 6)
+- **Why:** `expect` took only a criterion or a bug, and a task has neither, so no control of a
+  task's slice could run: a pilot recorded 24 controls `skipped` over three slices of one task,
+  several guarding real behaviour — a pool's choice, a refused slot, a database-name guard (issue
+  #6). That is where set-up and refactors add safeguards.
+  - Now a `T-n` in a test's name selects that test, as a `B-n` does since CH-22; `falsify
+    suggest` drafts `["T-n"]` for a task's slice.
+  - Any `expect` can also be a test file's path, which `tests.match` must take — for a guard a test
+    older than the task already covers, which names no ID.
+- **Adapt:** nothing
+- **Migrate:** a task slice still open with controls recorded `skipped` because `expect` could not
+  name the task can run them now: give each the task or a test file, run them, and `--record` the
+  slice. Closed slices stay as they are.

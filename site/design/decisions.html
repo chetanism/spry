@@ -199,6 +199,7 @@ day came from pilot projects or from issues people filed.</p>
 <tr><td>2026-10-27</td><td>CH-40 · 0.29.0</td><td><code>/spry:work-report</code> and <code>spry work</code>: what one person built between two dates, under each story, task and bug. A slice's owner is who built it — set at open, required at merge, filled once from pull requests for older slices.</td></tr>
 <tr><td>2026-10-28</td><td>CH-41 · 0.30.0</td><td>A slice that changed only test files runs just those at the gate, and stamps green; <code>tests.always</code> runs whole-tree checks whenever tests run, locally and in CI. From issue #11.</td></tr>
 <tr><td>2026-10-29</td><td>CH-42 · 0.31.0</td><td>Falsify counts <code>caught</code> only when a test failed — a run that broke first is <code>unreliable</code>. Parallel worktrees are kept between runs and skip pnpm's dependency check, and each slot gets its number and an optional <code>falsify.setup</code>, for a database of its own. From issues #7, #8 and #9.</td></tr>
+<tr><td>2026-10-29</td><td>CH-43 · 0.32.0</td><td>Falsify runs a task's slice: its controls expect the task, which tests name, or a test file by its path. From issue #6.</td></tr>
 </tbody></table>
 
 </article>

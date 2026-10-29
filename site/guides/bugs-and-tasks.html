@@ -119,6 +119,14 @@ the due dates on loans already made — which waits for the first.</p>
 
 <p><em>Done when</em> is checkable: a command that passes, a number reached, a thing removed.</p>
 
+<h3>A task's slices and their tests</h3>
+
+<p>A task has no acceptance criteria either, so a test written for it names the task:
+<code>"T-1 refuses a pull request whose tests failed"</code>. Often a task's safeguard is guarded by a
+test that was there before the task and names nothing; then its falsify control names that test file
+instead — <code>"expect": ["tests/ci/gate.test.ts"]</code>. See
+<a href="../design/falsify.html">Falsify</a>.</p>
+
 <h2>Why they don't count toward progress</h2>
 
 <p>A milestone's progress is about outcomes for the people it serves — epics, features and stories

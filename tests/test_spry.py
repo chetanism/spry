@@ -1702,16 +1702,38 @@ class Falsify(unittest.TestCase):
                     "tests/test_note.py": "# B-1 only in a comment\n" + TEST_OVERDUE.replace("S-1/AC-2", "nothing")})
         self.commit("a bug and its test")
         project = spry.Project(self.root)
-        self.assertEqual(sorted(p for p, _, _ in project.bug_tests["B-1"]), ["tests/test_bug.py"],
+        self.assertEqual(sorted(p for p, _, _ in project.item_tests["B-1"]), ["tests/test_bug.py"],
                          "a bug cited only in a comment selects nothing")
         self.assertEqual(spry.falsify_suggest(project, "SL-2", "main")[0]["expect"], ["B-1"])
         results = self.run_plan([self.guard("    if count >= 3:", ["B-1"])])
         self.assertEqual(results[0][1], "caught")
-        for fragment, expect in {"neither a criterion nor a bug": ["B-9"],
+        for fragment, expect in {"not a criterion, a bug, a task or a test file": ["B-9"],
                                  "outside a test's name: tests/test_note.py:1": ["B-1"]}.items():
             if expect == ["B-1"]:
                 self.write({"tests/test_bug.py": TEST_LIMIT.replace('"""S-1/AC-1', '"""fixtures/B-1.json, B-1.json')})
                 self.commit("only data names the bug")
+            with self.assertRaises(spry.PlanError) as caught:
+                self.run_plan([self.guard("    if count >= 3:", expect)])
+            self.assertIn(fragment, str(caught.exception))
+
+    def test_a_tasks_slice_expects_the_task_or_a_test_file(self):
+        task = "spry/plan/M-1-m/tasks/T-1-pool"
+        self.write({f"{task}/README.md": "---\nid: T-1\ntitle: pool\nstate: open\n---\n# T-1\n",
+                    f"{task}/SL-2-pool.md": "---\nid: SL-2\ntitle: Pool\nstate: open\ncovers: []\n---\n# SL-2\n",
+                    "tests/test_pool.py": TEST_LIMIT.replace('"""S-1/AC-1', '"""T-1'),
+                    "tests/helper.py": "VALUE = 1\n", "spry/tests/test_x.py": "assert True\n"})
+        self.commit("a task and its test")
+        project = spry.Project(self.root)
+        self.assertEqual(sorted(p for p, _, _ in project.item_tests["T-1"]), ["tests/test_pool.py"])
+        self.assertEqual(spry.falsify_suggest(project, "SL-2", "main")[0]["expect"], ["T-1"])
+        results = self.run_plan([self.guard("    if count >= 3:", ["T-1"]),
+                                 self.guard("    if overdue:", ["./tests/test_limit.py"], files=["tests/test_limit.py"])])
+        self.assertEqual([r for _, r, _ in results], ["caught", "survived"])
+        for fragment, expect in {"not a criterion, a bug, a task or a test file": ["tests/test_gone.py"],
+                                 "not named as a test file": ["tests/helper.py"],
+                                 "not a test file inside the project": ["../" + os.path.basename(self.root) + "/tests/test_limit.py"],
+                                 "inside the project": ["spry/tests/test_x.py"],
+                                 "put the ID in a test's name, or name the test file": ["S-1/AC-9"]}.items():
             with self.assertRaises(spry.PlanError) as caught:
                 self.run_plan([self.guard("    if count >= 3:", expect)])
             self.assertIn(fragment, str(caught.exception))

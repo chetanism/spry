@@ -53,8 +53,10 @@ for the lines that matter — the safeguards the slice added — so it takes min
     that removes it. Each plan entry names the line with <code>find</code> and its replacement with
     <code>with</code> — writ's form. A person can edit the plan before it runs.</p></li>
   <li><strong>Each control names what should catch it.</strong>
-    <p><code>expect</code> names acceptance criteria (<code>S-1/AC-2</code>) — or, for a bug's slice, the
-    bug (<code>B-4</code>), since a bug has no criteria. Tests are found by those IDs in their names.</p></li>
+    <p><code>expect</code> names acceptance criteria (<code>S-1/AC-2</code>) — or, for a bug's or a task's
+    slice, the bug or the task (<code>B-4</code>, <code>T-7</code>), since neither has criteria. Tests are
+    found by those IDs in their names. Or it names a test file by its path, for a guard a test already
+    covers — a task's set-up or refactor is often guarded by tests older than the task.</p></li>
   <li><strong>Only those tests run</strong>, with the runner's fail-fast flag — one failure is enough.</li>
   <li><strong>The result is recorded</strong> in the slice file's Falsify table, with <code>--record</code>.</li>
 </ol>
@@ -156,7 +158,7 @@ So:</p>
 <h2>Safety</h2>
 <ul>
   <li><strong>It refuses</strong> a mutation that changes nothing, a file with uncommitted changes, and an
-  <code>expect</code> no test cites.</li>
+  <code>expect</code> no test cites, or a path that is not a test file.</li>
   <li><strong>It always restores</strong> the code — after an error, Ctrl-C or a kill signal too — and
   checks the files are exactly as committed afterwards.</li>
   <li><strong>A runner that times out is stopped with its whole process group</strong>, so no stray test

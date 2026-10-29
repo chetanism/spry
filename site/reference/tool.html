@@ -272,7 +272,7 @@ and <code>Covers:</code> trailers.</p>
 <h3 id="falsify-suggest">falsify suggest</h3>
 <p>Drafts a plan from the source lines the branch added: one candidate per guard, comparison or error
 line, each with a mutation that removes it, and <code>expect</code> taken from the slice's
-<code>covers</code> (or the bug, for a bug's slice). With no guard added, it offers up to five lines that
+<code>covers</code> (or the bug or the task, for a bug's or a task's slice). With no guard added, it offers up to five lines that
 compute or store something. With no source line added, there is nothing to falsify.</p>
 <pre><code>spry falsify suggest [--base BASE] [--out OUT] slice</code></pre>
 <ul>

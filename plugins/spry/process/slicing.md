@@ -135,14 +135,15 @@ that merges.
    - `python3 spry/tool/spry.py falsify suggest SL-<n>` drafts `.spry/falsify/SL-<n>.json` from the
      source lines the branch added: one candidate per guard, comparison or error line, each with a
      mutation that removes it (a guard made *never true*, a boundary flipped, a `throw` deleted) and
-     `expect` taken from `covers` — or, for a bug's slice, the bug (`["B-4"]`), which its tests
-     name, since a bug has no criteria. **No guard added** — the slice changes a value, a key, a digest —
+     `expect` taken from `covers` — or, for a bug's or a task's slice, the bug or the task
+     (`["B-4"]`, `["T-7"]`), which its tests name, since neither has criteria. **No guard added** — the slice changes a value, a key, a digest —
      it offers up to five lines that compute or store something, each deleted: keep the ones a test
      must notice. **No source line added** — only tests or documents — it says so, and there is
      nothing to falsify: `merge-check --base` accepts the empty table.
    - **Keep every control the draft lists** — `merge-check` blocks when one has no row. Narrow
      each `expect` to the criteria that control serves, and add any the draft missed (same
-     `find` / `with` form). A control that cannot run (it needs a clock, a network) gets the row
+     `find` / `with` form). A guard that a test no ID names already covers — common in a task's
+     slice — takes that test file's path as its `expect` (`["tests/db/pool.test.ts"]`). A control that cannot run (it needs a clock, a network) gets the row
      `skipped — <reason>`, for a person to accept at the merge.
    - Rename a `control` in plain words if it helps the reader — before the run or in the table
      after. The `<!-- f:… -->` in each row names the control by its file and line, so keep it.
