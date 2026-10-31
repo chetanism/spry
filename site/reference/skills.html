@@ -20,7 +20,7 @@
 <h1>Skills</h1>
 <p class="lead">A skill is a command you type into your agent — <code>/spry:story</code>,
 <code>/spry:slice-close</code>. Each one runs one step of the work by following a process file in
-your project. This page lists all 27, grouped by when you reach for them.</p>
+your project. This page lists all 28, grouped by when you reach for them.</p>
 
 <div class="callout note">
   <span class="callout-title">How to read each entry</span>
@@ -42,7 +42,7 @@ your project. This page lists all 27, grouped by when you reach for them.</p>
     <tr><td>Build</td><td><a href="#spryslice"><code>slice</code></a>, <a href="#spryslice-open"><code>slice-open</code></a>, <a href="#spryslice-close"><code>slice-close</code></a></td></tr>
     <tr><td>Review and merge</td><td><a href="#spryreview"><code>review</code></a>, <a href="#sprymerge"><code>merge</code></a></td></tr>
     <tr><td>QA and testing</td><td><a href="#sprytest-scenarios"><code>test-scenarios</code></a>, <a href="#sprytest-all"><code>test-all</code></a>, <a href="#spryexplore"><code>explore</code></a>, <a href="#sprysecurity-audit"><code>security-audit</code></a>, <a href="#spryprelaunch"><code>prelaunch</code></a></td></tr>
-    <tr><td>Knowledge</td><td><a href="#spryrecord"><code>record</code></a>, <a href="#sprycompact"><code>compact</code></a>, <a href="#sprymemory-check"><code>memory-check</code></a></td></tr>
+    <tr><td>Knowledge</td><td><a href="#spryrecord"><code>record</code></a>, <a href="#sprycompact"><code>compact</code></a>, <a href="#sprymemory-check"><code>memory-check</code></a>, <a href="#sprypace"><code>pace</code></a></td></tr>
     <tr><td>Keeping spry current</td><td><a href="#spryprocess-change"><code>process-change</code></a>, <a href="#spryupdate"><code>update</code></a>, <a href="#sprycontribute"><code>contribute</code></a></td></tr>
     <tr><td>Status and tone</td><td><a href="#sprystatus"><code>status</code></a>, <a href="#sprywork-report"><code>work-report</code></a>, <a href="#sprytone"><code>tone</code></a></td></tr>
   </tbody>
@@ -323,6 +323,19 @@ with its evidence, and changes nothing until you answer.</p>
   <li><strong>Audience:</strong> 7.</li>
   <li><strong>Writes:</strong> only the memory files you approve, and the index to match — never the repository. Obvious changes are asked together, the agent applying them recommended; each tricky one alone, you editing it recommended.</li>
   <li><strong>Guide:</strong> <a href="../guides/maintaining.html#prune-the-agents-memory-sprymemory-check">Prune the agent's memory</a>.</li>
+</ul>
+
+<h3 id="sprypace">/spry:pace</h3>
+<p>Reads where slices' time went and proposes what to change. <code>spry pace</code> measures and never
+judges; this skill has a fresh agent read its page, the flagged slices and the process-changes log, and
+propose one thing per finding with its evidence: a process change, a config change, a bug in spry or in
+the project, or nothing. It changes nothing.</p>
+<ul>
+  <li><strong>When:</strong> slices feel slow, a process change has landed and you want to know whether it helped, or you want to know what to improve.</li>
+  <li><strong>Arguments:</strong> a slice, <code>--since</code>, <code>--last N</code> or <code>--compare</code>, all optional; they go to <code>spry pace</code>.</li>
+  <li><strong>Audience:</strong> 7.</li>
+  <li><strong>Writes:</strong> nothing but what <code>spry pace</code> keeps under <code>.spry/</code>. A proposal starts <a href="#spryprocess-change"><code>process-change</code></a>, <a href="#sprycontribute"><code>contribute</code></a>, <a href="#sprybug"><code>bug</code></a> or <a href="#sprytask"><code>task</code></a> only when you say yes.</li>
+  <li><strong>Guide:</strong> <a href="../guides/maintaining.html#ask-what-to-change-sprypace">Ask what to change</a>.</li>
 </ul>
 
 <!-- ============================================================ -->

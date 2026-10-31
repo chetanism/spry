@@ -20,7 +20,7 @@
 <h1>Keep spry yours</h1>
 <p class="lead">No process fits every team on day one. spry's process is copied into your project so you
 can change it — and every change is recorded, so a later update keeps it instead of overwriting it.
-These six skills cover living with spry over time.</p>
+These seven skills cover living with spry over time.</p>
 
 <div class="table-wrap"><table>
   <thead><tr><th>Skill</th><th>Use it when</th></tr></thead>
@@ -29,6 +29,7 @@ These six skills cover living with spry over time.</p>
     <tr><td><a href="#take-updates-spryupdate"><code>/spry:update</code></a></td><td>spry has gained something since you set it up</td></tr>
     <tr><td><a href="#give-back-sprycontribute"><code>/spry:contribute</code></a></td><td>Your project built something other projects would use</td></tr>
     <tr><td><a href="#trim-what-grows-sprycompact"><code>/spry:compact</code></a></td><td><code>spry check</code> says a file is over its line budget</td></tr>
+    <tr><td><a href="#ask-what-to-change-sprypace"><code>/spry:pace</code></a></td><td>Slices take longer than they should, or you changed the process and want to know if it helped</td></tr>
     <tr><td><a href="#prune-the-agents-memory-sprymemory-check"><code>/spry:memory-check</code></a></td><td>The agent acts on something that stopped being true, or its memory index has grown long</td></tr>
     <tr><td><a href="#set-your-tone-sprytone"><code>/spry:tone</code></a></td><td>Replies are too technical, or not technical enough, for you</td></tr>
   </tbody>
@@ -213,6 +214,28 @@ tests to change.</p>
   passing <code>merge-check</code> keeps the slice's numbers there, after Claude Code deletes old session logs.</li>
   <li><code>spry serve</code> shows the page under <em>Pace</em>.</li>
 </ul>
+
+<h2>Ask what to change — /spry:pace</h2>
+
+<p>The page shows where the time went; it doesn't say what to do about it. <code>/spry:pace</code> does
+that step. It runs <code>spry pace</code>, and a fresh agent — never the session you are in — reads the
+page, the slices that were flagged and the log of your process changes.</p>
+
+<pre data-label="In your agent"><code><span class="p">&gt; </span>/spry:pace</code></pre>
+
+<ol class="steps">
+  <li><strong>It finds what is worth a change.</strong> A flag on several slices, or a share of the time that
+  is high throughout or moved after a dated change. A flag on one slice is a note.</li>
+  <li><strong>It proposes one thing per finding,</strong> with its evidence: a process change, a config key
+  and its value, a bug in spry, a bug or task in your project, or nothing when the time is where the work is.</li>
+  <li><strong>It won't read a difference into too few slices.</strong> Below 10 slices on each side of a
+  change, it says so and proposes nothing from it.</li>
+  <li><strong>You decide.</strong> Nothing starts until you answer; then each proposal goes to the skill that
+  carries it out — <code>/spry:process-change</code>, <code>/spry:contribute</code>, <code>/spry:bug</code> or <code>/spry:task</code>.</li>
+</ol>
+
+<p>After a process change lands, run it again: the page sets the slices closed after the change against the
+ones before it, so you can see whether it helped.</p>
 
 <h2>Set your tone — /spry:tone</h2>
 

@@ -395,7 +395,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 ## 17. Pace — where a slice's time goes
 
-> **Status:** built in CH-44 (0.33.0), all but the `/spry:pace` skill. Prototype: `docs/spikes/pace.py`.
+> **Status:** built in CH-44 (0.33.0); the `/spry:pace` skill in CH-47 (0.36.0). Prototype: `docs/spikes/pace.py`.
 
 Purpose: show where each slice's time went — the agent, the checks, waiting on a person — so that
 person can judge what to change: the process, the config, the tests, or spry. Report only; it never
@@ -625,7 +625,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `test-scenarios` | 4 | Scenarios in a story's `checks.md` from its ACs |
 | `record` | 6–7 | A decision, convention or external behaviour, into the right index |
 | `security-audit`, `prelaunch` | 8 | Standalone reviews |
-| `pace` | 7 | Where slices' time went (§17): a fresh agent reads the page and proposes a process change, config change, bug or nothing per finding. Report only. Designed, not built |
+| `pace` | 7 | Where slices' time went (§17): a fresh agent reads the page and proposes a process change, config change, bug or nothing per finding, each with its evidence. Report only |
 | `test-all` | 8 | The whole suite on purpose, the local services managed; failures, slow and flaky tests named. Report only |
 | `explore` | 8 | Seeded, replayable exploratory walk over an isolated instance; oracles are the area's ACs. Report only |
 | `compact` | 7 | A file back under budget by moving sections to their owners; a pointer left, no fact lost |
@@ -712,6 +712,14 @@ in `spry/history/writ.md`, then retires `canon/`.
   a tricky one is asked alone, the person editing it recommended — the person's call (2026-10-31).
   `gh` is asked once per hundred numbers through GraphQL, not once per number: Pulse's memory names
   over 200.
+- 2026-10-31 — the `/spry:pace` skill (CH-47) judges and `spry pace` measures, as `/spry:memory-check`
+  and `spry memory-check` do: one skill for each tool, so the numbers can be read without the
+  judging. It reads the page and `spry pace <slice>`, not a JSON form of them: the page is the one
+  place the flags and their evidence already sit, and a second form would have to be kept equal to
+  it. A finding needs the slices it names; with fewer than 10 a side the skill reports *too few to
+  tell* and proposes nothing. Memory is not an input: a memory that repeats a process rule might
+  mean the rule is unclear, but it is per person and per checkout, so it cannot carry a finding
+  alone. A skill that joins the two waits until `/spry:pace` has been tried on real slices.
 
 ## 23. Built
 
@@ -848,3 +856,5 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-31 — `/spry:memory-check` and `spry memory-check` (CH-46, 0.35.0): Claude Code's memory
   for the checkout, audited and pruned only on the person's answer. From Pulse's memory: a
   reminder overdue since 2026-09-11, decisions whose day had passed, an index of 86 lines.
+- 2026-10-31 — `/spry:pace` (CH-47, 0.36.0): a fresh agent reads `spry pace` and proposes a process
+  change, config change, bug, task or nothing per finding, each with its evidence; report only.

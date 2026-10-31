@@ -915,3 +915,21 @@ Entry format:
   `memory.stale_days` (a `project` memory unchanged this long is noted) — all optional; defaults 60,
   8000, 200 and 30.
 - **Migrate:** nothing.
+
+## CH-47 · Pace skill — what to change, read from where the time went
+
+- **Date:** 2026-10-31 · **Version:** 0.36.0
+- **Touches:** `skills/pace` (new), `process/templates/spry.config.json` (version only)
+- **Why:** `spry pace` (CH-44) shows where a slice's time went and flags what stands out, but nothing
+  turned a flag into a change: the person read the page, decided what it meant, and started
+  `/spry:process-change` by hand. The design (§17) always had a skill for that step and held it
+  back until the numbers had been checked on real slices.
+  - `/spry:pace` runs `spry pace`; a fresh agent reads the page, the process-changes log and the
+    flagged slices, and proposes one thing per finding, with its evidence: a process change, a
+    config change, a bug in spry or the project, or nothing.
+  - A finding needs the slices it names. With fewer than 10 slices a side, a before-and-after
+    shows *too few to tell* and the skill proposes nothing from it.
+  - It changes nothing: a proposal starts its skill (`/spry:process-change`, `/spry:contribute`,
+    `/spry:bug`, `/spry:task`) only on the person's answer.
+- **Adapt:** nothing.
+- **Migrate:** nothing.
