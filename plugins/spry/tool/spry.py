@@ -74,10 +74,11 @@ import sys
 import tempfile
 import threading
 import time
+import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.34.0"
+VERSION = "0.35.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -5819,6 +5820,453 @@ def pace_on_merge_check(project: Project, slice_id: str) -> None:
         pass
 
 
+# ---------------------------------------------------------------- memory-check
+
+# Claude Code's auto-memory lives outside the repository, one folder per checkout that all its
+# worktrees share: `~/.claude/projects/<the checkout's path, each other character a dash>/memory/`,
+# an index (MEMORY.md, loaded into every session) and one file per fact. `memory-check` finds what
+# can be told for certain — the index against the files, dates gone by, and the IDs, pull requests,
+# commits and paths the memories name — and leaves what a claim means to `/spry:memory-check`.
+MEMORY_DEFAULTS = {"index_lines": 60, "index_bytes": 8000, "line_chars": 200, "stale_days": 30}
+# Claude Code loads the index's first 200 lines or 25 KB, whichever comes first; a session never sees the rest.
+MEMORY_LOADED, MEMORY_LOADED_BYTES = 200, 25_000
+MEMORY_TYPES = ("user", "feedback", "project", "reference")
+MEMORY_LINE = re.compile(r"^\s*[-*]\s+\[([^\]]+)\]\(([^)\s]+)\)\s*(?:[—–-]\s*)?(.*)$")
+MEMORY_WIKI = re.compile(r"\[\[([^\]|#]+)(?:[|#][^\]]*)?\]\]")
+MEMORY_PENDING = re.compile(r"\b(?:pending|queued|due(?!\s+to\b)|overdue|owed|decides|deciding|waiting (?:on|for)|awaiting|"
+                            r"remind(?:er)?|revisit|scheduled|follow[- ]?up|todo|tbd|deadline|not yet|to be decided)\b", re.I)
+MEMORY_RELATIVE = re.compile(r"\b(?:tomorrow|yesterday|today|tonight|(?:next|this|last) (?:week|month|sprint))\b", re.I)
+MEMORY_DATE = re.compile(r"\b(\d{4})-(\d{2})-(\d{2})\b")
+# `by` and `on` read too many ranges ("on 2-3 worktrees") to take a day without two digits each.
+MEMORY_SHORT_DATE = re.compile(r"\b(?:(?:decides?|due|revisit)\s+(\d{1,2})-(\d{1,2})|(?:by|on)\s+(\d{2})-(\d{2}))\b(?!-)", re.I)
+MEMORY_REF = re.compile(r"(?:(?<![\w/&])#|\b(?:PR|pull request|issue)\s+#?)(\d{1,6})\b", re.I)
+MEMORY_COMMIT = re.compile(r"\b(?=[0-9a-f]*[a-f])(?=[0-9a-f]*\d)[0-9a-f]{7,40}\b")
+MEMORY_VERSION = re.compile(r"\b(\d+\.\d+\.\d+)\b")
+MEMORY_PATH = re.compile(r"`([^`\s]+)`")
+MEMORY_URL = re.compile(r"\bhttps?://\S+")
+MEMORY_EXTENSIONS = (".md", ".py", ".json", ".ts", ".tsx", ".js", ".mjs", ".yml", ".yaml", ".toml", ".html",
+                     ".css", ".sh", ".sql", ".go", ".rs", ".java", ".kt", ".swift", ".rb", ".txt")
+
+
+def memory_config(project: Project) -> dict:
+    conf = project.config.get("memory") or {}
+    return {k: type(v)(conf.get(k, v)) for k, v in MEMORY_DEFAULTS.items()}
+
+
+def memory_dir(project: Project, given: str | None = None) -> str:
+    """This checkout's memory folder: the main checkout's, which its worktrees share."""
+    if given:
+        return os.path.abspath(os.path.expanduser(given))
+    home = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    # `autoMemoryDirectory` moves it: the local settings win over the project's, the project's over the user's.
+    for settings in (os.path.join(project.root, ".claude", "settings.local.json"),
+                     os.path.join(project.root, ".claude", "settings.json"), os.path.join(home, "settings.json")):
+        try:
+            moved = json.loads(read(settings)).get("autoMemoryDirectory")
+        except (OSError, ValueError, AttributeError):
+            continue
+        if isinstance(moved, str) and moved.strip():
+            return os.path.abspath(os.path.join(project.root, os.path.expanduser(moved.strip())))
+    roots = []
+    done = git(project.root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    common = done.stdout.strip() if done.returncode == 0 else ""
+    if os.path.basename(common) == ".git":
+        roots.append(os.path.dirname(common))
+    done = git(project.root, "rev-parse", "--show-toplevel")
+    if done.returncode == 0 and done.stdout.strip():
+        roots.append(done.stdout.strip())
+    roots.append(project.root)
+    dirs = []
+    for root in roots:
+        for path in (os.path.abspath(root), os.path.realpath(root)):
+            d = os.path.join(home, "projects", re.sub(r"[^A-Za-z0-9]", "-", path.rstrip("/\\")), "memory")
+            if d not in dirs:
+                dirs.append(d)
+    return next((d for d in dirs if os.path.isdir(native(d))), dirs[0])
+
+
+def memory_front_matter(text: str):
+    """({key: value}, first body line). Claude Code's memories nest `type` under `metadata:`."""
+    lines = text.split("\n")
+    if not lines or lines[0].lstrip("﻿").strip() != "---":
+        return None, 0
+    fields, parent = {}, None
+    for i in range(1, len(lines)):
+        line = lines[i]
+        if line.strip() == "---":
+            return fields, i + 1
+        m = re.match(r"^(\s*)([A-Za-z_][\w-]*):\s*(.*)$", line)
+        if not m:
+            continue
+        key, value = m.group(2), m.group(3).strip()
+        if len(value) > 1 and value[0] == value[-1] == '"':
+            try:
+                value = json.loads(value)
+            except ValueError:
+                value = value[1:-1]
+        elif len(value) > 1 and value[0] == value[-1] == "'":
+            value = value[1:-1].replace("''", "'")
+        if m.group(1) and parent:
+            fields[f"{parent}.{key}"] = value
+        else:
+            fields[key], parent = value, key if not value else None
+    return None, 0
+
+
+def memory_day(year: int, month: int, day: int) -> date | None:
+    """The day, or None for one that does not exist (2026-02-31): a typo must not stop the report."""
+    try:
+        return date(year, month, day)
+    except ValueError:
+        return None
+
+
+def memory_clauses(line: str) -> list:
+    """A line in the parts a date or an ID belongs to, so one `pending` reaches only its own clause."""
+    return [c for c in re.split(r"(?<=[.;])\s+|\s+[—–]\s+|\s+-\s+|;\s*", line) if c.strip()]
+
+
+def memory_words(text: str) -> list:
+    return re.findall(r"[a-z0-9]+", text.lower())
+
+
+def memory_shingles(text: str, size: int = 5) -> set:
+    words = memory_words(text)
+    return {" ".join(words[i:i + size]) for i in range(len(words) - size + 1)}
+
+
+def memory_refs(project: Project, numbers: list) -> dict | None:
+    """{number: {kind, state, title, date}} from one `gh api graphql` call per hundred numbers, or None
+    when gh cannot answer. A number the repository does not have maps to None."""
+    if not numbers:
+        return {}
+    if not shutil.which("gh"):
+        return None
+    found = {}
+    for i in range(0, len(numbers), 100):
+        fields = " ".join(f"n{n}: issueOrPullRequest(number: {n}) {{ __typename ... on PullRequest "
+                          "{ state title mergedAt closedAt } ... on Issue { state title closedAt } }"
+                          for n in numbers[i:i + 100])
+        query = f"query($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) {{ {fields} }} }}"
+        try:
+            # A number it cannot find fails the call, with the rest of the answer still on stdout.
+            done = subprocess.run(["gh", "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-f",
+                                   f"query={query}"], cwd=project.root, capture_output=True, text=True, timeout=60)
+            repo = (json.loads(done.stdout or "null") or {}).get("data", {}).get("repository")
+        except (OSError, ValueError, AttributeError, subprocess.TimeoutExpired):
+            repo = None
+        if repo is None:
+            return None
+        for n in numbers[i:i + 100]:
+            said = repo.get(f"n{n}")
+            found[n] = said and {"kind": "pr" if said.get("__typename") == "PullRequest" else "issue",
+                                 "state": str(said.get("state", "")).lower(), "title": said.get("title", ""),
+                                 "date": (said.get("mergedAt") or said.get("closedAt") or "")[:10]}
+    return found
+
+
+def memory_commit(project: Project, sha: str, main: str) -> str:
+    """`main`, `elsewhere` (in this clone, not on the main branch) or `missing`."""
+    if git(project.root, "cat-file", "-e", f"{sha}^{{commit}}").returncode != 0:
+        return "missing"
+    for ref in (f"origin/{main}", main):
+        if git(project.root, "rev-parse", "--verify", "--quiet", ref).returncode == 0:
+            return "main" if git(project.root, "merge-base", "--is-ancestor", sha, ref).returncode == 0 else "elsewhere"
+    return "elsewhere"
+
+
+def memory_path_exists(tracked: set, token: str) -> bool | None:
+    """Whether a backticked path a memory names is tracked — as given, or as the end of a longer
+    path, since a memory often names a file by its last parts. None when the token is not a path."""
+    path = re.sub(r":\d+(?:-\d+)?$", "", token)
+    folder = path.endswith("/")
+    path = path.rstrip("/")
+    if path.startswith("/") or (folder and "/" not in path):
+        return None  # a URL's path, or a branch prefix like `fix/`
+    name = path.rsplit("/", 1)[-1]
+    if (not path or not re.match(r"^[\w./@+-]+$", path) or ".." in path.split("/") or path.startswith(("~", "-"))
+            or not (folder or (name.endswith(MEMORY_EXTENSIONS) and not name.startswith(".") and "." in name[1:]))):
+        return None
+    return any(f == path or f.endswith("/" + path) or (folder and (f.startswith(path + "/") or f"/{path}/" in f))
+               for f in tracked)
+
+
+def memory_items(project: Project) -> tuple:
+    """({ID: state}, ID pattern) from file names, opening only the files a memory names."""
+    names = Names(project)
+    located = names.located()
+    for n in names.numbers("decision"):
+        located.setdefault(f"{project.ids['decision']}-{n}", []).append(("decision", None, None))
+    prefixes = sorted(set(project.ids.values()), key=len, reverse=True)
+    pattern = re.compile(r"(?<![\w/-])(" + "|".join(map(re.escape, prefixes)) + r")-(\d+)\b")
+
+    def state(ident):
+        if ident not in located:
+            return None
+        kind, rel, _ = located[ident][0]
+        if not rel:
+            return "recorded"
+        fm, _, _ = parse_front_matter(names.read(rel) or "")
+        return (fm or {}).get("state") or "unknown"
+
+    return state, pattern
+
+
+def memory_check(project: Project, folder: str | None = None, offline: bool = False, today: str | None = None) -> dict:
+    """The memory folder's index and files, each with what can be told for certain about it."""
+    conf, folder = memory_config(project), memory_dir(project, folder)
+    now = date.fromisoformat(today) if today else date.today()
+    report = {"dir": folder, "exists": os.path.isdir(native(folder)), "today": now.isoformat(),
+              "index": {}, "problems": [], "memories": [], "gh": "offline" if offline else "unused"}
+    if not report["exists"]:
+        return report
+
+    def finding(level, kind, text, line=0, where="file"):
+        return {"level": level, "kind": kind, "text": text, "line": line, "where": where}
+
+    index_path = os.path.join(folder, "MEMORY.md")
+    index_text = read(index_path) if os.path.isfile(native(index_path)) else None
+    files = sorted((f for f in os.listdir(native(folder)) if f.endswith(".md") and f != "MEMORY.md"), key=natural_key)
+    problems, listed, long_lines = report["problems"], {}, []
+    if index_text is None:
+        problems.append(finding("error", "no_index", "there is no MEMORY.md, so no memory reaches a session", where="index"))
+        index_lines = []
+    else:
+        index_lines = index_text.split("\n")
+        while index_lines and not index_lines[-1].strip():
+            index_lines.pop()
+        size = len(index_text.encode("utf-8"))
+        report["index"] = {"lines": len(index_lines), "bytes": size, "budget_lines": conf["index_lines"],
+                           "budget_bytes": conf["index_bytes"]}
+        if len(index_lines) > MEMORY_LOADED or size > MEMORY_LOADED_BYTES:
+            problems.append(finding("error", "cut_off", f"{len(index_lines)} lines, {size / 1000:.1f} KB — Claude Code "
+                                    f"loads the first {MEMORY_LOADED} lines or {MEMORY_LOADED_BYTES // 1000} KB, so the "
+                                    "rest never reaches a session", where="index"))
+        if len(index_lines) > conf["index_lines"] or size > conf["index_bytes"]:
+            problems.append(finding("warning", "over_budget", f"{len(index_lines)} lines, {size / 1000:.1f} KB — over the "
+                                    f"budget of {conf['index_lines']} lines, {conf['index_bytes'] / 1000:.1f} KB "
+                                    "(`memory` in the config); every session pays for it", where="index"))
+    for number, line in enumerate(index_lines, 1):
+        if not line.strip() or line.lstrip().startswith("#"):
+            continue
+        m = MEMORY_LINE.match(line)
+        if not m:
+            problems.append(finding("warning", "not_a_line", "not an index line `- [Title](file.md) — hook`: "
+                                    + line.strip()[:80], number, "index"))
+            continue
+        target = posixpath.normpath(urllib.parse.unquote(m.group(2).split("#")[0]))
+        if target in listed:
+            problems.append(finding("warning", "twice", f"{target} is listed again (first on line {listed[target][0]})",
+                                    number, "index"))
+            continue
+        listed[target] = (number, m.group(1), m.group(3), line)
+        if not os.path.isfile(native(os.path.join(folder, target))):
+            problems.append(finding("error", "dead_line", f"points at {target}, which does not exist", number, "index"))
+        if len(line) > conf["line_chars"]:
+            long_lines.append(f"{target} ({len(line)})")
+
+    if long_lines:
+        problems.append(finding("warning", "long_line", f"{len(long_lines)} line{'s' if len(long_lines) != 1 else ''} "
+                                f"over {conf['line_chars']} characters — the detail belongs in the file: "
+                                + ", ".join(long_lines), where="index"))
+    state_of, id_pattern = memory_items(project)
+    done = git(project.root, "ls-files", "-z")
+    tracked = set(done.stdout.split("\0")) - {""} if done.returncode == 0 else set()
+    main = main_branch(project)
+    current = version_tuple(str(project.config.get("spry", "")))
+    corpus = {}
+    for rel in ("AGENTS.md", "CLAUDE.md"):
+        if os.path.isfile(native(os.path.join(project.root, rel))):
+            corpus[rel] = memory_shingles(read(os.path.join(project.root, rel)))
+    for dirpath, _, filenames in walk_dir(os.path.join(project.spry, "knowledge")):
+        for f in filenames:
+            if f.endswith(".md"):
+                path = os.path.join(dirpath, f)
+                corpus[project.rel(path)] = memory_shingles(read(path))
+
+    memories, names, refs_wanted = [], {}, set()
+    for f in files:
+        path = os.path.join(folder, f)
+        text = read(path)
+        fm, start = memory_front_matter(text)
+        fm = fm or {}
+        kind = fm.get("metadata.type") or fm.get("type") or ""
+        body_lines = text.split("\n")[start:]
+        days = int((time.time() - os.path.getmtime(native(path))) // 86400)
+        m = {"file": f, "name": fm.get("name", ""), "type": kind, "description": fm.get("description", ""),
+             "days": days, "findings": [], "ids": {}, "refs": {}, "commits": {}, "_body": "\n".join(body_lines)}
+        memories.append(m)
+        if not fm:
+            m["findings"].append(finding("error", "front_matter", "no front-matter (`name`, `description`, `metadata.type`)", 1))
+        else:
+            for key in ("name", "description"):
+                if not fm.get(key):
+                    m["findings"].append(finding("error", "front_matter", f"front-matter has no `{key}`", 1))
+            if kind not in MEMORY_TYPES:
+                m["findings"].append(finding("error", "front_matter", f"type `{kind or '—'}` is not one of "
+                                             + ", ".join(MEMORY_TYPES), 1))
+        if m["name"]:
+            names.setdefault(m["name"], []).append(f)
+        if kind in ("feedback", "project"):
+            missing = [w for w in ("**Why:**", "**How to apply:**") if w not in m["_body"]]
+            if missing:
+                m["findings"].append(finding("warning", "why_missing", f"a {kind} memory without "
+                                             + " or ".join(missing)))
+        if f not in listed:
+            problems.append(finding("error", "orphan", f"{f} is not in MEMORY.md, so no session knows it is there",
+                                    where="index"))
+        if kind == "project" and days > conf["stale_days"]:
+            m["findings"].append(finding("note", "old", f"unchanged for {days} days"))
+
+        # An index line is one statement: its title says what the hook's clauses are about. A
+        # **Why:** line tells what happened, so nothing in it is still to do.
+        lines = [(n + start + 1, line, "file", "") for n, line in enumerate(body_lines)]
+        if f in listed:
+            lines.append((listed[f][0], f"{listed[f][1]} — {listed[f][2]}", "index", listed[f][1]))
+        relative = []
+        for number, line, where, title in lines:
+            plain = MEMORY_URL.sub("", line)
+            relative += [(number, where, match.group(0)) for match in MEMORY_RELATIVE.finditer(plain)]
+            history = "**Why:**" in line
+            for clause in memory_clauses(plain):
+                pending = not history and bool(MEMORY_PENDING.search(clause) or MEMORY_PENDING.search(title))
+                quote = clause.strip()[:90]
+                if pending:
+                    days_named = [memory_day(int(y), int(mo), int(d)) for y, mo, d in MEMORY_DATE.findall(clause)]
+                    if not MEMORY_DATE.search(clause):
+                        for groups in MEMORY_SHORT_DATE.findall(clause):
+                            mo, d = [int(g) for g in groups if g]
+                            # A month-day with no year is this year's — next year's for January or February, said in December.
+                            days_named.append(memory_day(now.year + (now.month == 12 and mo < 3), mo, d))
+                    days_named = [d for d in days_named if d]
+                    past = [d for d in days_named if d < now]
+                    if past and len(past) == len(days_named):
+                        m["findings"].append(finding("warning", "past_date", f"“{quote}” — {max(past).isoformat()} "
+                                                     "has passed", number, where))
+                for prefix, num in id_pattern.findall(clause):
+                    ident = f"{prefix}-{num}"
+                    state = state_of(ident)
+                    m["ids"][ident] = state or "missing"
+                    if pending and state in ("closed", "dropped"):
+                        m["findings"].append(finding("warning", "item_done", f"{ident} is {state}, but “{quote}” "
+                                                     "reads as still to do", number, where))
+                for num in MEMORY_REF.findall(clause):
+                    refs_wanted.add(int(num))
+                    m["refs"].setdefault(int(num), []).append((number, where, pending, quote))
+                for sha in MEMORY_COMMIT.findall(clause):
+                    m["commits"].setdefault(sha, (number, where))
+                older = [v for v in MEMORY_VERSION.findall(clause) if current and version_tuple(v) < current]
+                if older and "spry" in line.lower():
+                    m["findings"].append(finding("note", "version", f"names {', '.join(older)}; this project is on "
+                                                 f"spry {project.config.get('spry')}", number, where))
+            for token in MEMORY_PATH.findall(line):
+                if tracked and memory_path_exists(tracked, token) is False:
+                    m["findings"].append(finding("warning", "path_missing", f"names `{token}`, which is not in "
+                                                 "this checkout", number, where))
+            for target in MEMORY_WIKI.findall(line):
+                m.setdefault("_links", []).append((target.strip(), number))
+        if relative:
+            said = ", ".join(f"“{w}” ({'index line' if where == 'index' else 'line'} {n})" for n, where, w in relative)
+            m["findings"].append(finding("warning", "relative_date", f"says {said} — with no day, nobody can tell "
+                                         "when that was"))
+
+    for name, owners in names.items():
+        if len(owners) > 1:
+            problems.append(finding("error", "same_name", f"{', '.join(owners)} share the name `{name}`", where="index"))
+    for m in memories:
+        for target, number in m.pop("_links", []):
+            if target not in names:
+                m["findings"].append(finding("note", "link_dangling", f"links [[{target}]], which no memory has yet",
+                                             number))
+        missing = [i for i, s in m["ids"].items() if s == "missing"]
+        if missing:
+            m["findings"].append(finding("note", "item_missing", "names " + ", ".join(missing) + ", not in this "
+                                         "project's plan"))
+        if m["commits"]:
+            m["commits"] = {sha: memory_commit(project, sha, main) for sha in m["commits"]}
+            for sha, where in m["commits"].items():
+                if where == "missing":
+                    m["findings"].append(finding("note", "commit_missing", f"names commit {sha}, which this clone "
+                                                 "does not have — fetch, or it was rewritten"))
+                elif where == "elsewhere":
+                    m["findings"].append(finding("note", "commit_off_main", f"names commit {sha}, which is not on {main}"))
+        shingles = memory_shingles(m["_body"])
+        if len(shingles) >= 5:
+            best = max(((len(shingles & s) / len(shingles), rel) for rel, s in corpus.items()), default=(0, ""))
+            if best[0] >= 0.4:
+                m["findings"].append(finding("warning", "repeats", f"{round(best[0] * 100)}% of it is already in "
+                                             f"{best[1]}, which the repository keeps"))
+
+    words = {m["file"]: {w for w in memory_words(m["description"] + " " + m["_body"])
+                         if len(w) > 3 and w not in STOPWORDS and not w.isdigit()} for m in memories}
+    for i, a in enumerate(memories):
+        for b in memories[i + 1:]:
+            wa, wb = words[a["file"]], words[b["file"]]
+            if len(wa) >= 8 and len(wb) >= 8 and len(wa & wb) / len(wa | wb) >= 0.45:
+                a["findings"].append(finding("note", "overlap", f"overlaps {b['file']} "
+                                             f"({round(len(wa & wb) / len(wa | wb) * 100)}% of words shared)"))
+
+    refs = {} if offline else memory_refs(project, sorted(refs_wanted))
+    if not offline:
+        report["gh"] = "unavailable" if refs is None else "checked" if refs_wanted else "unused"
+    for m in memories:
+        wanted, m["refs"] = m["refs"], {}
+        for num, uses in wanted.items():
+            said = (refs or {}).get(num)
+            m["refs"][num] = said or {"state": "unknown"}
+            if said and said["state"] in ("merged", "closed"):
+                for number, where, pending, quote in uses:
+                    if pending:
+                        m["findings"].append(finding("warning", "ref_done", f"#{num} ({said['kind']}) was "
+                                                     f"{said['state']} {said['date']}, but “{quote}” reads as still "
+                                                     "to do", number, where))
+        del m["_body"]
+        m["findings"] = [f for i, f in enumerate(m["findings"]) if f not in m["findings"][:i]]
+        m["findings"].sort(key=lambda x: (("error", "warning", "note").index(x["level"]), x["line"]))
+    report["memories"] = memories
+    return report
+
+
+def memory_text(report: dict) -> str:
+    marks = {"error": "✗", "warning": "!", "note": "·"}
+    if not report["exists"]:
+        return (f"no memory at {report['dir']} — Claude Code has not saved one for this checkout, or it lives "
+                "elsewhere: `autoMemoryDirectory` in Claude Code's settings, or --dir")
+    out = [f"memory: {report['dir']}"]
+    idx = report["index"]
+    if idx:
+        out.append(f"index: {idx['lines']} lines, {idx['bytes'] / 1000:.1f} KB "
+                   f"(budget {idx['budget_lines']} lines, {idx['budget_bytes'] / 1000:.1f} KB)")
+    out.append({"checked": "pull requests and issues: read with gh", "offline": "pull requests and issues: not read (--offline)",
+                "unavailable": "pull requests and issues: gh could not answer — not checked",
+                "unused": "pull requests and issues: none named"}[report["gh"]])
+
+    def at(f):
+        return f"{'index line' if f['where'] == 'index' else 'line'} {f['line']}: " if f["line"] else ""
+
+    if report["problems"]:
+        out += ["", "MEMORY.md"] + [f"  {marks[f['level']]} {at(f)}{f['text']}" for f in report["problems"]]
+    clean = 0
+    for m in report["memories"]:
+        named = []
+        for what, states in (("items", list(m["ids"].values())), ("pull requests and issues",
+                                                                   [r["state"] for r in m["refs"].values()])):
+            if states:
+                counts = {s: states.count(s) for s in states}
+                named.append(f"{len(states)} {what} (" + ", ".join(f"{c} {s}" for s, c in counts.items()) + ")")
+        if not m["findings"]:
+            clean += 1
+            if not named:
+                continue
+        out += ["", f"{m['file']} · {m['type'] or '?'} · {m['days']}d · {m['description'][:80]}"]
+        out += [f"  {marks[f['level']]} {at(f)}{f['text']}" for f in m["findings"]]
+        if named:
+            out.append("  names " + "; ".join(named))
+    found = sum(1 for m in report["memories"] if m["findings"])
+    out += ["", f"{len(report['memories'])} memories: {found} with findings, {clean} without"]
+    return "\n".join(out)
+
+
 # ---------------------------------------------------------------- agent hooks
 
 # Claude Code runs these from the plugin's hooks/hooks.json, each filtered so that no process starts
@@ -6251,6 +6699,11 @@ def main(argv=None) -> int:
     p.add_argument("--since", metavar="YYYY-MM-DD", help="slices active since this day")
     p.add_argument("--last", type=int, metavar="N", help="the last N slices")
     p.add_argument("--compare", metavar="POINT", help="before and after a date, a CH-n or a commit")
+    p = sub.add_parser("memory-check", help="Claude Code's memory for this checkout: index against files, dates gone by, "
+                                            "and the IDs, pull requests, commits and paths it names")
+    p.add_argument("--dir", help="the memory folder (default: this checkout's, under ~/.claude/projects/)")
+    p.add_argument("--offline", action="store_true", help="do not ask gh about pull requests and issues")
+    p.add_argument("--json", action="store_true")
     p = sub.add_parser("changed", help="for CI: prints code=true when files outside checks.docs changed since --base")
     p.add_argument("--base", required=True, help="git ref to compare with")
     p = sub.add_parser("falsify", help="prove a slice's tests notice its safeguards")
@@ -6327,8 +6780,9 @@ def main(argv=None) -> int:
     if not root:
         print("not inside a spry project — no spry/spry.config.json above here; pass --root", file=sys.stderr)
         return 2
-    # `new`, `claim` and `release` open only the files they write (`Names`); a document needs the plan.
-    light = args.command in ("claim", "release") or (args.command == "new" and args.type not in DOCUMENT_KINDS)
+    # `new`, `claim` and `release` open only the files they write (`Names`), `memory-check` only the
+    # items a memory names; a document needs the plan.
+    light = args.command in ("claim", "release", "memory-check") or (args.command == "new" and args.type not in DOCUMENT_KINDS)
     project = Project(root, load=not light)
 
     if args.command == "check":
@@ -6362,6 +6816,10 @@ def main(argv=None) -> int:
         except PlanError as e:
             print(str(e), file=sys.stderr)
             return 2
+    if args.command == "memory-check":
+        report = memory_check(project, args.dir, args.offline)
+        print(json.dumps(report, indent=2, ensure_ascii=False) if args.json else memory_text(report))
+        return 0
     if args.command == "work":
         report = work(project, args.owner, args.since, args.until or date.today().isoformat())
         print(json.dumps(report, indent=2, ensure_ascii=False) if args.json else work_text(report))

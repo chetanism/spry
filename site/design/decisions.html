@@ -148,6 +148,18 @@ skills rather than written separately.</p>
 </ul>
 <p><a href="plan-tree.html#two-sessions-one-number">IDs and parallel sessions →</a></p>
 
+<h3>2026-10-31 — the agent's memory changes only on your answer</h3>
+<ul>
+  <li><strong>The tool settles what needs no judgement; the agent reads the rest.</strong> A dead index line
+  or a merged pull request is a fact; whether "queued" still means queued is not. Either half alone misses
+  what the other catches.</li>
+  <li><strong>Nothing changes before you answer.</strong> The memory is yours and sits outside the
+  repository, where no review or history would catch a wrong delete.</li>
+  <li><strong>Obvious changes come in one question</strong>, the agent applying them recommended; <strong>each
+  tricky one alone</strong>, you editing it recommended.</li>
+</ul>
+<p><a href="../guides/maintaining.html#prune-the-agents-memory-sprymemory-check">Prune the agent's memory →</a></p>
+
 <h2>What was built, and when</h2>
 <p>Every change spry has made since it started, oldest first. A <code>CH-n</code> is a changelog entry —
 a change a project may want, offered to it by <code>/spry:update</code>. Most changes after the first
@@ -201,6 +213,8 @@ day came from pilot projects or from issues people filed.</p>
 <tr><td>2026-10-29</td><td>CH-42 · 0.31.0</td><td>Falsify counts <code>caught</code> only when a test failed — a run that broke first is <code>unreliable</code>. Parallel worktrees are kept between runs and skip pnpm's dependency check, and each slot gets its number and an optional <code>falsify.setup</code>, for a database of its own. From issues #7, #8 and #9.</td></tr>
 <tr><td>2026-10-29</td><td>CH-43 · 0.32.0</td><td>Falsify runs a task's slice: its controls expect the task, which tests name, or a test file by its path. From issue #6.</td></tr>
 <tr><td>2026-10-29</td><td>CH-44 · 0.33.0</td><td><code>spry pace</code>: where a slice's time goes — the agent, checks, background tasks, another session, or you — with flags and before-and-after each dated change. Read from a step log and Claude Code's session logs; nothing runs while you work, and nothing leaves your clone.</td></tr>
+<tr><td>2026-10-29</td><td>CH-45 · 0.34.0</td><td>Agent hooks: six Claude Code hooks, each switched on in the config, say at the moment of a mistake what <code>check</code> or <code>merge-check</code> would say later — and fail open, so the checks stay the authority.</td></tr>
+<tr><td>2026-10-31</td><td>CH-46 · 0.35.0</td><td><code>/spry:memory-check</code> and <code>spry memory-check</code>: Claude Code's memory of the project checked for stale facts, with keep, update or delete proposed per memory and applied only on your answer. From Pulse's memory, which had a reminder overdue for seven weeks.</td></tr>
 </tbody></table>
 
 </article>

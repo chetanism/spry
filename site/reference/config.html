@@ -102,6 +102,7 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
     "session": true, "link_fields": true, "cited_criteria": true,
     "check_edit": true, "merge": true, "check_stop": true
   },
+  "memory": { "index_lines": 60, "index_bytes": 8000, "line_chars": 200, "stale_days": 30 },
   "slices": { "issue": false, "pick": "offer" },
   "main_branch": "main",
   "mint": "local"
@@ -256,6 +257,21 @@ off, so a project set up before 0.34.0 has none until it takes them. New project
     <tr><td><code>hooks.check_edit</code></td><td>After an edit of a document, checks that one file and sends its errors back to the agent.</td></tr>
     <tr><td><code>hooks.merge</code></td><td>Runs <code>merge-check</code> before <code>gh pr merge</code> of a slice's pull request, made from its branch, and refuses the merge if anything blocks it.</td></tr>
     <tr><td><code>hooks.check_stop</code></td><td>Before the agent finishes with documents changed, runs <code>check</code>; on errors it goes back once to fix them, and the same documents are not checked again.</td></tr>
+  </tbody>
+</table>
+
+<h2>Memory</h2>
+
+<p>All optional; budgets for Claude Code's memory, read by <code>spry memory-check</code>. See
+<a href="../guides/maintaining.html#prune-the-agents-memory-sprymemory-check">Prune the agent's memory</a>.</p>
+
+<table>
+  <thead><tr><th>Key</th><th>Means</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td><code>memory.index_lines</code></td><td>Lines in <code>MEMORY.md</code>, which every session loads. Claude Code loads the first 200 lines or 25 KB, whichever comes first, and none of the rest.</td><td><code>60</code></td></tr>
+    <tr><td><code>memory.index_bytes</code></td><td>Bytes in <code>MEMORY.md</code>.</td><td><code>8000</code></td></tr>
+    <tr><td><code>memory.line_chars</code></td><td>Characters in one index line; the detail belongs in the memory's file.</td><td><code>200</code></td></tr>
+    <tr><td><code>memory.stale_days</code></td><td>A <code>project</code> memory unchanged this many days is noted.</td><td><code>30</code></td></tr>
   </tbody>
 </table>
 

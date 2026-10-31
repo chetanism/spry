@@ -51,6 +51,7 @@ Start at its [`spry/README.md`](docs/example/spry/README.md) and click down.
 | `/spry:record` | A decision, a convention, or how an external service really behaves |
 | `/spry:test-all`, `/spry:explore` | The whole suite on purpose; a seeded exploratory walk over a real, isolated instance — both report only |
 | `/spry:compact` | A file back under its line budget, sections moved to where they belong, no fact lost |
+| `/spry:memory-check` | Claude Code's memory of the project checked for stale facts: keep, update or delete each, applied only on your yes |
 | `/spry:security-audit`, `/spry:prelaunch` | Reviews that report and turn findings into bugs and tasks — never fix, never deploy |
 | `/spry:process-change` | Change the process in every file it touches, kept through updates |
 | `/spry:status`, `/spry:tone` | Where things stand, at your tone; how technical replies are for you |

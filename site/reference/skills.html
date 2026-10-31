@@ -20,7 +20,7 @@
 <h1>Skills</h1>
 <p class="lead">A skill is a command you type into your agent — <code>/spry:story</code>,
 <code>/spry:slice-close</code>. Each one runs one step of the work by following a process file in
-your project. This page lists all 25, grouped by when you reach for them.</p>
+your project. This page lists all 27, grouped by when you reach for them.</p>
 
 <div class="callout note">
   <span class="callout-title">How to read each entry</span>
@@ -42,7 +42,7 @@ your project. This page lists all 25, grouped by when you reach for them.</p>
     <tr><td>Build</td><td><a href="#spryslice"><code>slice</code></a>, <a href="#spryslice-open"><code>slice-open</code></a>, <a href="#spryslice-close"><code>slice-close</code></a></td></tr>
     <tr><td>Review and merge</td><td><a href="#spryreview"><code>review</code></a>, <a href="#sprymerge"><code>merge</code></a></td></tr>
     <tr><td>QA and testing</td><td><a href="#sprytest-scenarios"><code>test-scenarios</code></a>, <a href="#sprytest-all"><code>test-all</code></a>, <a href="#spryexplore"><code>explore</code></a>, <a href="#sprysecurity-audit"><code>security-audit</code></a>, <a href="#spryprelaunch"><code>prelaunch</code></a></td></tr>
-    <tr><td>Knowledge</td><td><a href="#spryrecord"><code>record</code></a>, <a href="#sprycompact"><code>compact</code></a></td></tr>
+    <tr><td>Knowledge</td><td><a href="#spryrecord"><code>record</code></a>, <a href="#sprycompact"><code>compact</code></a>, <a href="#sprymemory-check"><code>memory-check</code></a></td></tr>
     <tr><td>Keeping spry current</td><td><a href="#spryprocess-change"><code>process-change</code></a>, <a href="#spryupdate"><code>update</code></a>, <a href="#sprycontribute"><code>contribute</code></a></td></tr>
     <tr><td>Status and tone</td><td><a href="#sprystatus"><code>status</code></a>, <a href="#sprywork-report"><code>work-report</code></a>, <a href="#sprytone"><code>tone</code></a></td></tr>
   </tbody>
@@ -311,6 +311,18 @@ text; it does not edit it, and no fact is lost.</p>
   <li><strong>Audience:</strong> 7.</li>
   <li><strong>Writes:</strong> the moves, on a branch, one commit per destination — shown to you first and applied only on a yes.</li>
   <li><strong>Guide:</strong> <a href="../guides/maintaining.html">Keep spry yours</a>.</li>
+</ul>
+
+<h3 id="sprymemory-check">/spry:memory-check</h3>
+<p>Audits Claude Code's own memory of the project — the <code>MEMORY.md</code> index loaded into every session,
+and the file per fact behind it — for what has gone stale. It proposes keep, update or delete for each memory,
+with its evidence, and changes nothing until you answer.</p>
+<ul>
+  <li><strong>When:</strong> the agent acts on something no longer true, or the index has grown long.</li>
+  <li><strong>Arguments:</strong> a memory folder, optional; by default this checkout's, under <code>~/.claude/projects/</code>.</li>
+  <li><strong>Audience:</strong> 7.</li>
+  <li><strong>Writes:</strong> only the memory files you approve, and the index to match — never the repository. Obvious changes are asked together, the agent applying them recommended; each tricky one alone, you editing it recommended.</li>
+  <li><strong>Guide:</strong> <a href="../guides/maintaining.html#prune-the-agents-memory-sprymemory-check">Prune the agent's memory</a>.</li>
 </ul>
 
 <!-- ============================================================ -->

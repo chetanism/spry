@@ -20,7 +20,7 @@
 <h1>Keep spry yours</h1>
 <p class="lead">No process fits every team on day one. spry's process is copied into your project so you
 can change it — and every change is recorded, so a later update keeps it instead of overwriting it.
-These five skills cover living with spry over time.</p>
+These six skills cover living with spry over time.</p>
 
 <div class="table-wrap"><table>
   <thead><tr><th>Skill</th><th>Use it when</th></tr></thead>
@@ -29,6 +29,7 @@ These five skills cover living with spry over time.</p>
     <tr><td><a href="#take-updates-spryupdate"><code>/spry:update</code></a></td><td>spry has gained something since you set it up</td></tr>
     <tr><td><a href="#give-back-sprycontribute"><code>/spry:contribute</code></a></td><td>Your project built something other projects would use</td></tr>
     <tr><td><a href="#trim-what-grows-sprycompact"><code>/spry:compact</code></a></td><td><code>spry check</code> says a file is over its line budget</td></tr>
+    <tr><td><a href="#prune-the-agents-memory-sprymemory-check"><code>/spry:memory-check</code></a></td><td>The agent acts on something that stopped being true, or its memory index has grown long</td></tr>
     <tr><td><a href="#set-your-tone-sprytone"><code>/spry:tone</code></a></td><td>Replies are too technical, or not technical enough, for you</td></tr>
   </tbody>
 </table></div>
@@ -138,6 +139,37 @@ doesn't edit it.</p>
 </ul>
 
 <p>Why budgets exist at all: <a href="../design/knowledge.html">Knowledge and size</a>.</p>
+
+<h2>Prune the agent's memory — /spry:memory-check</h2>
+
+<p>Claude Code saves what it learns about your project in a memory of its own: one file per fact, and an
+index, <code>MEMORY.md</code>, that it loads into <strong>every</strong> session. The memory lives outside the
+repository (<code>~/.claude/projects/&lt;your checkout&gt;/memory/</code>, shared by its worktrees), so no
+check, review or history ever looks at it. It goes stale: a reminder long overdue, a decision whose day
+has passed, "PR #461 still open" a month after it merged. The agent then acts on it, and every session
+pays for the lines.</p>
+
+<pre data-label="In your agent"><code><span class="p">&gt; </span>/spry:memory-check</code></pre>
+
+<ol class="steps">
+  <li><strong>The tool settles the certain part.</strong> <code>spry memory-check</code> reads the index against
+  the files: lines pointing at nothing, files no line points at, and the index's size against its budget.
+  It flags dates that have passed in a sentence still to do ("queued", "awaiting", "decides 10-17"). It
+  looks up each plan item, pull request and issue (through <code>gh</code>), commit and path a memory names,
+  and finds text <code>AGENTS.md</code> or <code>spry/knowledge/</code> already holds.</li>
+  <li><strong>The agent reads every memory</strong> and checks what each one claims against the main branch,
+  <code>spry status</code>, GitHub and the code.</li>
+  <li><strong>It proposes keep, update or delete</strong> for each, with the evidence: "#1626 merged
+  2026-10-30", "SL-412 closed", "now in <code>AGENTS.md</code>".</li>
+  <li><strong>You decide.</strong> The obvious changes come as one question, with the agent applying them
+  recommended. Each tricky one — a claim only partly true, a preference that may still hold, two memories to
+  merge — is asked on its own, its current and proposed text side by side. For these, editing it yourself is
+  recommended.</li>
+  <li><strong>Only what you approve changes,</strong> and the index is made to match. Nothing is committed: the
+  memory is yours, not the project's.</li>
+</ol>
+
+<p>Budgets live under <code>memory</code> in the config; see <a href="../reference/config.html#memory">Configuration</a>.</p>
 
 <h2>See where the time goes — spry pace</h2>
 

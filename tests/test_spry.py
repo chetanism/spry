@@ -712,6 +712,182 @@ class Work(Base):
             self.assertIn(expect, out.getvalue())
 
 
+def memory(name, kind, body, description="a fact"):
+    return f"---\nname: {name}\ndescription: {description}\nmetadata:\n  type: {kind}\n---\n\n{body}\n"
+
+
+class MemoryCheck(Base):
+    """Claude Code's memory for a checkout: the index against the files, and the claims it can test."""
+
+    def folder(self, files, index=None):
+        path = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, path)
+        for name, text in files.items():
+            with open(os.path.join(path, name), "w") as handle:
+                handle.write(text)
+        lines = index if index is not None else [f"- [{n}]({n}) — hook" for n in files]
+        with open(os.path.join(path, "MEMORY.md"), "w") as handle:
+            handle.write("\n".join(lines) + "\n")
+        return path
+
+    def check(self, t, files, index=None, refs=None, today="2026-10-31", **given):
+        with unittest.mock.patch.object(spry, "memory_refs", return_value=refs if refs is not None else {}):
+            return spry.memory_check(spry.Project(t.root, load=False), self.folder(files, index),
+                                     today=today, **given)
+
+    def kinds(self, report, file=None):
+        found = report["problems"] if file is None else next(m for m in report["memories"] if m["file"] == file)["findings"]
+        return [(f["kind"], f["level"]) for f in found]
+
+    def texts(self, report, file):
+        return [f["text"] for f in next(m for m in report["memories"] if m["file"] == file)["findings"]]
+
+    def test_index_against_the_files(self):
+        t = self.tree(**{"spry__spry.config.json": json.dumps({**CONFIG, "memory": {"index_lines": 3, "line_chars": 60}})})
+        why = "Use it.\n\n**Why:** it broke.\n\n**How to apply:** always."
+        files = {"a.md": memory("a", "feedback", why), "b.md": memory("b", "project", "No reasons given."),
+                 "c.md": memory("a", "habit", why), "lost.md": memory("lost", "user", "Nobody points here."),
+                 "bare.md": "no front-matter\n"}
+        index = ["# Memory", "", "- [A](a.md) — hook", "- [B](b.md) — a hook long enough to go past the sixty characters",
+                 "- [A again](a.md) — hook", "- [Gone](gone.md) — hook", "a loose line", "- [C](c.md)",
+                 "- [Bare](bare.md) — hook"]
+        report = self.check(t, files, index)
+        self.assertEqual(sorted(self.kinds(report)), sorted([
+            ("over_budget", "warning"), ("twice", "warning"), ("dead_line", "error"), ("not_a_line", "warning"),
+            ("long_line", "warning"), ("orphan", "error"), ("same_name", "error")]))
+        problems = {f["kind"]: f for f in report["problems"]}
+        self.assertEqual((problems["dead_line"]["line"], problems["twice"]["line"]), (6, 5))
+        self.assertIn("b.md (", problems["long_line"]["text"])
+        self.assertIn("lost.md is not in MEMORY.md", problems["orphan"]["text"])
+        self.assertIn("a.md, c.md share the name `a`", problems["same_name"]["text"])
+        self.assertEqual(self.kinds(report, "a.md"), [])
+        self.assertEqual(self.kinds(report, "b.md"), [("why_missing", "warning")])
+        self.assertEqual(self.kinds(report, "c.md"), [("front_matter", "error")])
+        self.assertEqual(self.kinds(report, "bare.md"), [("front_matter", "error")])
+        self.assertEqual(report["index"]["lines"], 9)
+
+    def test_an_index_past_two_hundred_lines_is_cut_off(self):
+        t = self.tree()
+        files = {f"m{i}.md": memory(f"m{i}", "user", "x") for i in range(201)}
+        self.assertIn(("cut_off", "error"), self.kinds(self.check(t, files)))
+
+    def test_dates_gone_by_on_what_is_still_to_do(self):
+        t = self.tree()
+        body = ("Gate cadence: Chetan decides 10-17.\nReminder due 2026-11-04; nothing else.\n"
+                "Release queued for 2026-10-20 - the rest is fine.\nShipped 2026-10-01, all done.\n"
+                "**Why:** queued on 2026-09-01 and forgotten.\nSay it tomorrow.\n\n**How to apply:** ask.")
+        report = self.check(t, {"a.md": memory("a", "project", body)},
+                            ["- [Reminder overdue](a.md) — since week of 2026-09-11"])
+        texts = self.texts(report, "a.md")
+        self.assertEqual([x for x in texts if "has passed" in x], [
+            "“since week of 2026-09-11” — 2026-09-11 has passed",
+            "“Gate cadence: Chetan decides 10-17.” — 2026-10-17 has passed",
+            "“Release queued for 2026-10-20” — 2026-10-20 has passed"])
+        self.assertIn("says “tomorrow” (line 13) — with no day, nobody can tell when that was", texts)
+
+    def test_days_that_do_not_exist_ranges_and_causes_are_not_dates_gone_by(self):
+        t = self.tree()
+        body = ("Reminder pending until 2026-02-31.\nRelease due 02-31.\nDue 0000-01-01 pending.\n"
+                "Pending: rerun on 2-3 worktrees.\nThe merge failed due to the stale lock, 2026-10-01.\n"
+                "Gate decides 01-05.")
+        report = self.check(t, {"a.md": memory("a", "user", body)}, today="2026-12-20")
+        self.assertEqual(self.texts(report, "a.md"), [])
+        report = self.check(t, {"a.md": memory("a", "user", "Release due on 2026-10-02.")}, today="2026-12-20")
+        self.assertEqual(self.texts(report, "a.md"), ["“Release due on 2026-10-02.” — 2026-10-02 has passed"])
+
+    def test_index_paths_quoted_values_and_the_loaded_size(self):
+        t = self.tree()
+        text = '---\nname: a\ndescription: "says \\"hi\\""\nmetadata:\n  type: \'user\'\n---\n\nPlain.\n'
+        report = self.check(t, {"a.md": text}, ["- [A](./a.md) — " + "x" * 26000])
+        self.assertEqual(self.kinds(report), [("cut_off", "error"), ("over_budget", "warning"), ("long_line", "warning")])
+        a = report["memories"][0]
+        self.assertEqual((a["description"], a["type"], a["findings"]), ('says "hi"', "user", []))
+
+    def test_items_paths_versions_and_commits_it_names(self):
+        t = self.tree(**{"AGENTS.md": "# Rules\n\nNever merge a slice without running merge-check first, on its own branch.\n"})
+        run = git_repo(t.root)
+        head = subprocess.run(["git", "rev-parse", "--short=8", "HEAD"], cwd=t.root, capture_output=True,
+                              text=True).stdout.strip()
+        files = {
+            "a.md": memory("a", "project", "Fix queued as SL-1. S-1 is the story; SL-99 and D-1 are gone.\n"
+                           "See `src/a.test.ts`, `a.test.ts:3`, `src/gone.ts`, `src/` and `fix/`.\n"
+                           f"spry 0.1.0 then, pushed {head} and deadbee1.\n\n**Why:** x\n\n**How to apply:** y"),
+            "b.md": memory("b", "feedback", "Never merge a slice without running merge-check first, on its own "
+                           "branch.\n\n**Why:** x\n\n**How to apply:** y"),
+            "c.md": memory("c", "reference", "See [[a]] and [[later]]."),
+        }
+        with open(os.path.join(t.root, "spry", "spry.config.json"), "w") as handle:
+            json.dump({**CONFIG, "spry": "0.34.0"}, handle)
+        run("commit", "-qam", "version")
+        report = self.check(t, files)
+        a = next(m for m in report["memories"] if m["file"] == "a.md")
+        self.assertEqual(a["ids"], {"SL-1": "closed", "S-1": "ready", "SL-99": "missing", "D-1": "missing"})
+        self.assertEqual(a["commits"], {head: "main", "deadbee1": "missing"})
+        texts = self.texts(report, "a.md")
+        self.assertIn("SL-1 is closed, but “Fix queued as SL-1.” reads as still to do", texts)
+        self.assertIn("names SL-99, D-1, not in this project's plan", texts)
+        self.assertEqual([x for x in texts if x.startswith("names `")],
+                         ["names `src/gone.ts`, which is not in this checkout"])
+        self.assertIn("names 0.1.0; this project is on spry 0.34.0", texts)
+        self.assertIn("names commit deadbee1, which this clone does not have — fetch, or it was rewritten", texts)
+        self.assertIn("60% of it is already in AGENTS.md, which the repository keeps", self.texts(report, "b.md"))
+        self.assertEqual(self.texts(report, "c.md"), ["links [[later]], which no memory has yet"])
+
+    def test_overlapping_memories(self):
+        t = self.tree()
+        words = "falsify worktree database ports migration fixture runner seeds"
+        report = self.check(t, {"a.md": memory("a", "user", words + " alpha"), "b.md": memory("b", "user", words + " beta")})
+        self.assertEqual(self.kinds(report, "a.md"), [("overlap", "note")])
+        self.assertEqual(self.kinds(report, "b.md"), [])
+
+    def test_pull_requests_merged_under_a_line_that_waits_on_them(self):
+        t = self.tree()
+        refs = {12: {"kind": "pr", "state": "merged", "title": "x", "date": "2026-10-20"},
+                13: {"kind": "issue", "state": "open", "title": "y", "date": ""}}
+        report = self.check(t, {"a.md": memory("a", "user", "PR #12 awaiting merge. Issue 13 pending. #12 shipped.")},
+                            refs=refs)
+        self.assertEqual(report["gh"], "checked")
+        self.assertEqual(self.texts(report, "a.md"),
+                         ["#12 (pr) was merged 2026-10-20, but “PR #12 awaiting merge.” reads as still to do"])
+        self.assertEqual(sorted(next(m for m in report["memories"])["refs"]), [12, 13])
+        report = self.check(t, {"a.md": memory("a", "user", "PR #12 awaiting merge.")}, refs=None)
+        with unittest.mock.patch.object(spry, "memory_refs", return_value=None):
+            report = spry.memory_check(spry.Project(t.root, load=False), self.folder({"a.md": memory("a", "user", "#12")}))
+        self.assertEqual(report["gh"], "unavailable")
+        report = self.check(t, {"a.md": memory("a", "user", "#12 pending")}, offline=True)
+        self.assertEqual((report["gh"], self.texts(report, "a.md")), ("offline", []))
+
+    def test_the_folder_is_the_main_checkouts_in_every_worktree(self):
+        t = self.tree()
+        run = git_repo(t.root)
+        home = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, home)
+        tree = os.path.join(t.root, ".claude", "worktrees", "one")
+        run("worktree", "add", "-q", tree, "-b", "one")
+        slug = re.sub(r"[^A-Za-z0-9]", "-", os.path.realpath(t.root))
+        with unittest.mock.patch.dict(os.environ, {"CLAUDE_CONFIG_DIR": home}):
+            expected = os.path.join(home, "projects", slug, "memory")
+            self.assertEqual(spry.memory_dir(spry.Project(tree, load=False)), expected)
+            os.makedirs(expected)
+            self.assertEqual(spry.memory_dir(spry.Project(t.root, load=False)), expected)
+            self.assertEqual(spry.memory_dir(spry.Project(tree, load=False), "~/elsewhere"),
+                             os.path.join(os.path.expanduser("~"), "elsewhere"))
+            os.makedirs(os.path.join(tree, ".claude"), exist_ok=True)
+            with open(os.path.join(tree, ".claude", "settings.local.json"), "w") as handle:
+                json.dump({"autoMemoryDirectory": "notes/memory"}, handle)
+            self.assertEqual(spry.memory_dir(spry.Project(tree, load=False)), os.path.join(tree, "notes", "memory"))
+
+    def test_cli_prints_text_or_json_and_says_when_there_is_no_memory(self):
+        t = self.tree()
+        folder = self.folder({"a.md": memory("a", "user", "Plain.")})
+        for extra, expect in (([], "1 memories: 0 with findings, 1 without"), (["--json"], '"file": "a.md"'),
+                              (["--dir", os.path.join(folder, "none")], "no memory at ")):
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                self.assertEqual(spry.main(["--root", t.root, "memory-check", "--offline", "--dir", folder, *extra]), 0)
+            self.assertIn(expect, out.getvalue())
+
+
 class Owner(Base):
     """A slice's owner is who built it: set at open, required at merge, filled once from PRs for old slices."""
 

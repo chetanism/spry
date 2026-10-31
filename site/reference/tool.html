@@ -332,6 +332,19 @@ falls back to plain search without FTS5.</p>
 <pre><code>spry find [--limit LIMIT] [--rebuild] query [query ...]</code></pre>
 <p><code>--rebuild</code> — rebuild the local index from scratch.</p>
 
+<h3 id="memory-check">memory-check</h3>
+<p>Claude Code's memory for this checkout, checked where no judgement is needed. It reads the index against
+its files (dead lines, files no line names, a name used twice) and the index's size against
+<code>memory</code> in the config. It flags front-matter, dates that have passed in a clause still to do,
+and relative days. It reports the plan items, pull requests and issues, commits and paths each memory
+names, and whether each is closed, merged or gone. It notes text <code>AGENTS.md</code> or
+<code>spry/knowledge/</code> already holds, and memories that overlap. Report only; used by
+<a href="skills.html#sprymemory-check"><code>/spry:memory-check</code></a>.</p>
+<pre><code>spry memory-check [--dir DIR] [--offline] [--json]</code></pre>
+<p><code>--dir</code> — the memory folder; by default the main checkout's, which every worktree shares.
+<code>--offline</code> — skip <code>gh</code>; pull requests and issues are looked up in one GraphQL call per
+hundred numbers otherwise.</p>
+
 <h3 id="scrub">scrub</h3>
 <p>Lists private words still in a file meant to leave the project: the product name, team names and
 handles, glossary terms, emails and URLs. Used by <code>/spry:contribute</code>.</p>

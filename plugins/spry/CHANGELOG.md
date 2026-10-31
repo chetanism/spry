@@ -885,3 +885,33 @@ Entry format:
   own `.claude/settings.json`, with `spry/tool/spry.py` for the tool.
 - **Migrate:** nothing. A project that kept a local hook or a rule in `AGENTS.md` for one of these
   (no merge without `merge-check`, `link` for a slice's fields) may drop it once the hook is on.
+
+## CH-46 · Memory check — the agent's memory, audited before it misleads
+
+- **Date:** 2026-10-31 · **Version:** 0.35.0
+- **Touches:** `skills/memory-check` (new), `tool/spry.py` (`memory-check`),
+  `process/templates/spry.config.json` (`memory`)
+- **Why:** Claude Code's auto-memory sits outside the repository, so nothing checks it, and its
+  index is loaded into every session. Pulse's had grown to 86 lines, 15.8 KB, and held:
+  - a reminder "overdue since week of 2026-09-11";
+  - "spry update owed in Connect", with Pulse on 0.25.0 when it was on 0.34.0;
+  - decisions whose day had passed ("Chetan decides 10-17") and work "queued as SL-A36" in a
+    pull request merged on 2026-10-13;
+  - "Branch protection is not set", from 2026-09-05, never checked again.
+  - `/spry:memory-check` now finds such memories and proposes keep, update or delete for each, with
+    its evidence. It changes nothing until the person approves:
+    - obvious changes are offered together, with the agent applying them recommended;
+    - each tricky one is asked about on its own, with the person editing it recommended.
+  - `spry memory-check` settles what can be settled without judgement:
+    - the index against the files, front-matter, and size against a budget and against what Claude
+      Code loads (200 lines or 25 KB);
+    - dates that have passed in a clause still to do;
+    - plan items, pull requests and issues (one `gh` call per hundred numbers), commits and paths a
+      memory names;
+    - text the repository already holds, and memories that overlap.
+  - It finds the folder from the main checkout's path, so every worktree checks the same memory, or
+    from `autoMemoryDirectory` in Claude Code's settings.
+- **Adapt:** `memory.index_lines`, `memory.index_bytes`, `memory.line_chars` (one index line) and
+  `memory.stale_days` (a `project` memory unchanged this long is noted) — all optional; defaults 60,
+  8000, 200 and 30.
+- **Migrate:** nothing.

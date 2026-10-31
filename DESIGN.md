@@ -602,6 +602,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `draw` | seeded, replayable choices for `/spry:explore` |
 | `pace [<slice>] [--since] [--last] [--compare]` | where slices' time went (§17): the page in `.spry/view/pace.md`, or one slice in detail |
 | `agent-hook <name>` | one Claude Code hook call, its payload on stdin (§18); run by `hooks/hooks.json`, not by hand |
+| `memory-check [--dir] [--offline] [--json]` | Claude Code's memory for this checkout: the index against its files and its budget, front-matter, dates passed on what is still to do, and the items, pull requests and issues (`gh`), commits and paths each memory names; text the repository holds, overlaps |
 
 ## 20. Skills (`spry` plugin)
 
@@ -628,6 +629,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `test-all` | 8 | The whole suite on purpose, the local services managed; failures, slow and flaky tests named. Report only |
 | `explore` | 8 | Seeded, replayable exploratory walk over an isolated instance; oracles are the area's ACs. Report only |
 | `compact` | 7 | A file back under budget by moving sections to their owners; a pointer left, no fact lost |
+| `memory-check` | 7 | Claude Code's memory checked against the repository, the plan and GitHub: keep, update or delete per memory with its evidence; obvious changes offered together, each tricky one asked alone; changes nothing until approved, commits nothing |
 | `process-change` | 7 | Change the process in every file it touches |
 | `update` | 7 | Offer a project what spry gained since it was set up; port only what is chosen |
 | `contribute` | 7 | Offer spry what a project built; files an issue, never a PR |
@@ -701,6 +703,15 @@ in `spry/history/writ.md`, then retires `canon/`.
   `merge-check`, which every agent and CI run. Each is filtered to the calls it is about, answering
   the objection to hooks for pace above; one switch per hook, because a team may want the merge
   guard and not a stop that sends the agent back.
+- 2026-10-31 — memory-check (CH-46) is split like `work`: the tool settles what needs no judgement
+  — the index against the files, dates, IDs, pull requests, commits, paths — and the skill reads
+  what each memory claims. Either half alone fails: the tool cannot tell "queued" from "was queued",
+  and an agent reading 86 memories misses a dead index line. Nothing changes before the person
+  answers, because the memory is theirs and outside the repository, where no review or history
+  catches a wrong delete. Obvious changes go in one ask with the agent applying them recommended;
+  a tricky one is asked alone, the person editing it recommended — the person's call (2026-10-31).
+  `gh` is asked once per hundred numbers through GraphQL, not once per number: Pulse's memory names
+  over 200.
 
 ## 23. Built
 
@@ -834,3 +845,6 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-10-29 — agent hooks (CH-45, 0.34.0): `session`, `link_fields`, `cited_criteria`, `check_edit`,
   `merge` and `check_stop`, each switched on under `hooks` in the config, in the plugin's
   `hooks/hooks.json`, answered by `spry agent-hook` (§18). From the pilots' incidents named there.
+- 2026-10-31 — `/spry:memory-check` and `spry memory-check` (CH-46, 0.35.0): Claude Code's memory
+  for the checkout, audited and pruned only on the person's answer. From Pulse's memory: a
+  reminder overdue since 2026-09-11, decisions whose day had passed, an index of 86 lines.
