@@ -395,7 +395,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 ## 17. Pace — where a slice's time goes
 
-> **Status:** built in CH-44 (0.33.0); the `/spry:pace` skill in CH-47 (0.36.0). Prototype: `docs/spikes/pace.py`.
+> **Status:** built in CH-44 (0.33.0); the `/spry:pace` skill in CH-47 (0.36.0); `/spry:retro`, which joins it with memory-check, in CH-48 (0.37.0). Prototype: `docs/spikes/pace.py`.
 
 Purpose: show where each slice's time went — the agent, the checks, waiting on a person — so that
 person can judge what to change: the process, the config, the tests, or spry. Report only; it never
@@ -629,6 +629,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `test-all` | 8 | The whole suite on purpose, the local services managed; failures, slow and flaky tests named. Report only |
 | `explore` | 8 | Seeded, replayable exploratory walk over an isolated instance; oracles are the area's ACs. Report only |
 | `compact` | 7 | A file back under budget by moving sections to their owners; a pointer left, no fact lost |
+| `retro` | 7 | `pace` and `memory-check` read together: a rule the agent keeps relearning, and slices that still lose time to it, is one finding. One proposal per finding with its evidence; a memory alone is never a finding. Report only |
 | `memory-check` | 7 | Claude Code's memory checked against the repository, the plan and GitHub: keep, update or delete per memory with its evidence; obvious changes offered together, each tricky one asked alone; changes nothing until approved, commits nothing |
 | `process-change` | 7 | Change the process in every file it touches |
 | `update` | 7 | Offer a project what spry gained since it was set up; port only what is chosen |
@@ -719,7 +720,16 @@ in `spry/history/writ.md`, then retires `canon/`.
   it. A finding needs the slices it names; with fewer than 10 a side the skill reports *too few to
   tell* and proposes nothing. Memory is not an input: a memory that repeats a process rule might
   mean the rule is unclear, but it is per person and per checkout, so it cannot carry a finding
-  alone. A skill that joins the two waits until `/spry:pace` has been tried on real slices.
+  alone. A skill that joined the two waited until `/spry:pace` had been tried on real slices (CH-48 below built it earlier, at the person's call).
+- 2026-10-31 — `/spry:retro` (CH-48) joins `/spry:pace` and `/spry:memory-check`, and replaces the
+  CH-47 decision to wait. The two skills stay, each alone, because one person wants the time and
+  another the memory; retro is the third, so the join is written once and neither skill grows a
+  mode. The agent makes the join, not the tool: whether a memory is about the same step as a flag is
+  a reading, and a mechanical map would be wrong as often as right. A memory bears on a finding
+  only when a pace finding already stands on its own evidence, so memory, which is per person and per
+  checkout, cannot start a proposal. A memory with no finding behind it is one line pointing at
+  `/spry:memory-check`; retro never prunes. Built before a pilot had run `/spry:pace`, at the
+  person's call; its proposals are to be read as drafts until one has.
 
 ## 23. Built
 
@@ -858,3 +868,5 @@ in `spry/history/writ.md`, then retires `canon/`.
   reminder overdue since 2026-09-11, decisions whose day had passed, an index of 86 lines.
 - 2026-10-31 — `/spry:pace` (CH-47, 0.36.0): a fresh agent reads `spry pace` and proposes a process
   change, config change, bug, task or nothing per finding, each with its evidence; report only.
+- 2026-10-31 — `/spry:retro` (CH-48, 0.37.0): `spry pace` and `spry memory-check` read together by a
+  fresh agent; a memory that bears on a pace finding sharpens its proposal, one that does not is a line.

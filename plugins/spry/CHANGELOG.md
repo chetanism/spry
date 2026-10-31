@@ -933,3 +933,19 @@ Entry format:
     `/spry:bug`, `/spry:task`) only on the person's answer.
 - **Adapt:** nothing.
 - **Migrate:** nothing.
+
+## CH-48 · Retro — time and memory read together
+
+- **Date:** 2026-10-31 · **Version:** 0.37.0
+- **Touches:** `skills/retro` (new), `process/templates/spry.config.json` (version only)
+- **Why:** `/spry:pace` (CH-47) reads where time went and `/spry:memory-check` (CH-46) audits the
+  agent's memory, but a rule the agent keeps relearning while slices still lose time to it shows in
+  both, and nothing put the two together.
+  - `/spry:retro` runs both readings; a fresh agent matches them and proposes one thing per finding,
+    with its evidence: a process change, a config change, a bug in spry or the project, or nothing.
+  - A memory bears on a finding only when a pace finding already stands without it. A memory alone
+    is one line pointing at `/spry:memory-check`: it is per person and per checkout.
+  - It changes nothing and prunes no memory; a proposal starts its skill only on the person's yes.
+  - Built before `/spry:pace` was tried on real slices: read its proposals as drafts until then.
+- **Adapt:** nothing.
+- **Migrate:** nothing.

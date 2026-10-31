@@ -20,7 +20,7 @@
 <h1>Skills</h1>
 <p class="lead">A skill is a command you type into your agent — <code>/spry:story</code>,
 <code>/spry:slice-close</code>. Each one runs one step of the work by following a process file in
-your project. This page lists all 28, grouped by when you reach for them.</p>
+your project. This page lists all 29, grouped by when you reach for them.</p>
 
 <div class="callout note">
   <span class="callout-title">How to read each entry</span>
@@ -42,7 +42,7 @@ your project. This page lists all 28, grouped by when you reach for them.</p>
     <tr><td>Build</td><td><a href="#spryslice"><code>slice</code></a>, <a href="#spryslice-open"><code>slice-open</code></a>, <a href="#spryslice-close"><code>slice-close</code></a></td></tr>
     <tr><td>Review and merge</td><td><a href="#spryreview"><code>review</code></a>, <a href="#sprymerge"><code>merge</code></a></td></tr>
     <tr><td>QA and testing</td><td><a href="#sprytest-scenarios"><code>test-scenarios</code></a>, <a href="#sprytest-all"><code>test-all</code></a>, <a href="#spryexplore"><code>explore</code></a>, <a href="#sprysecurity-audit"><code>security-audit</code></a>, <a href="#spryprelaunch"><code>prelaunch</code></a></td></tr>
-    <tr><td>Knowledge</td><td><a href="#spryrecord"><code>record</code></a>, <a href="#sprycompact"><code>compact</code></a>, <a href="#sprymemory-check"><code>memory-check</code></a>, <a href="#sprypace"><code>pace</code></a></td></tr>
+    <tr><td>Knowledge</td><td><a href="#spryrecord"><code>record</code></a>, <a href="#sprycompact"><code>compact</code></a>, <a href="#sprymemory-check"><code>memory-check</code></a>, <a href="#sprypace"><code>pace</code></a>, <a href="#spryretro"><code>retro</code></a></td></tr>
     <tr><td>Keeping spry current</td><td><a href="#spryprocess-change"><code>process-change</code></a>, <a href="#spryupdate"><code>update</code></a>, <a href="#sprycontribute"><code>contribute</code></a></td></tr>
     <tr><td>Status and tone</td><td><a href="#sprystatus"><code>status</code></a>, <a href="#sprywork-report"><code>work-report</code></a>, <a href="#sprytone"><code>tone</code></a></td></tr>
   </tbody>
@@ -336,6 +336,20 @@ the project, or nothing. It changes nothing.</p>
   <li><strong>Audience:</strong> 7.</li>
   <li><strong>Writes:</strong> nothing but what <code>spry pace</code> keeps under <code>.spry/</code>. A proposal starts <a href="#spryprocess-change"><code>process-change</code></a>, <a href="#sprycontribute"><code>contribute</code></a>, <a href="#sprybug"><code>bug</code></a> or <a href="#sprytask"><code>task</code></a> only when you say yes.</li>
   <li><strong>Guide:</strong> <a href="../guides/maintaining.html#ask-what-to-change-sprypace">Ask what to change</a>.</li>
+</ul>
+
+<h3 id="spryretro">/spry:retro</h3>
+<p>A look back that reads <a href="#sprypace"><code>pace</code></a> and <a href="#sprymemory-check"><code>memory-check</code></a>
+together. A rule the agent keeps relearning, while slices still lose time to it, is one finding. A fresh
+agent proposes one thing per finding with its evidence — a process change, a config change, a bug in spry
+or the project, or nothing — and starts none until you say. A memory counts only beside a pace finding;
+on its own it is a line pointing at <code>memory-check</code>.</p>
+<ul>
+  <li><strong>When:</strong> a regular look back, or slices feel slow and the agent seems to keep relearning a rule.</li>
+  <li><strong>Arguments:</strong> <code>--since</code>, <code>--last N</code> or <code>--compare</code>, all optional; they go to <code>spry pace</code>.</li>
+  <li><strong>Audience:</strong> 7.</li>
+  <li><strong>Writes:</strong> nothing but what <code>spry pace</code> keeps under <code>.spry/</code>; it prunes no memory. A proposal starts <a href="#spryprocess-change"><code>process-change</code></a>, <a href="#sprycontribute"><code>contribute</code></a>, <a href="#sprybug"><code>bug</code></a> or <a href="#sprytask"><code>task</code></a> only when you say yes.</li>
+  <li><strong>Guide:</strong> <a href="../guides/maintaining.html#look-back-spryretro">Look back</a>.</li>
 </ul>
 
 <!-- ============================================================ -->

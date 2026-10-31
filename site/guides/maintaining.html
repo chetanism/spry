@@ -20,7 +20,7 @@
 <h1>Keep spry yours</h1>
 <p class="lead">No process fits every team on day one. spry's process is copied into your project so you
 can change it — and every change is recorded, so a later update keeps it instead of overwriting it.
-These seven skills cover living with spry over time.</p>
+These eight skills cover living with spry over time.</p>
 
 <div class="table-wrap"><table>
   <thead><tr><th>Skill</th><th>Use it when</th></tr></thead>
@@ -30,6 +30,7 @@ These seven skills cover living with spry over time.</p>
     <tr><td><a href="#give-back-sprycontribute"><code>/spry:contribute</code></a></td><td>Your project built something other projects would use</td></tr>
     <tr><td><a href="#trim-what-grows-sprycompact"><code>/spry:compact</code></a></td><td><code>spry check</code> says a file is over its line budget</td></tr>
     <tr><td><a href="#ask-what-to-change-sprypace"><code>/spry:pace</code></a></td><td>Slices take longer than they should, or you changed the process and want to know if it helped</td></tr>
+    <tr><td><a href="#look-back-spryretro"><code>/spry:retro</code></a></td><td>You want a regular look back: slow slices and a memory that repeats the rules, read together</td></tr>
     <tr><td><a href="#prune-the-agents-memory-sprymemory-check"><code>/spry:memory-check</code></a></td><td>The agent acts on something that stopped being true, or its memory index has grown long</td></tr>
     <tr><td><a href="#set-your-tone-sprytone"><code>/spry:tone</code></a></td><td>Replies are too technical, or not technical enough, for you</td></tr>
   </tbody>
@@ -236,6 +237,26 @@ page, the slices that were flagged and the log of your process changes.</p>
 
 <p>After a process change lands, run it again: the page sets the slices closed after the change against the
 ones before it, so you can see whether it helped.</p>
+
+<h2>Look back — /spry:retro</h2>
+
+<p><code>/spry:pace</code> reads the time and <code>/spry:memory-check</code> reads the agent's memory. <code>/spry:retro</code>
+runs both and joins them. Say the agent's memory holds "run the fast checks before the full gate", and the
+pace page shows the full gate failing at close in several slices: the rule exists, the agent knows it, and
+slices still break it. That is one finding, and the proposal aims at why — a plainer rule, or a hook that
+says it at the moment of the mistake.</p>
+
+<pre data-label="In your agent"><code><span class="p">&gt; </span>/spry:retro</code></pre>
+
+<ul>
+  <li><strong>A memory never starts a proposal.</strong> It is per person and per checkout. It counts only
+  beside a pace finding that stands on its own; otherwise it is a line pointing at <code>/spry:memory-check</code>.</li>
+  <li><strong>A fresh agent does the reading,</strong> never the session you are in, and it makes the match —
+  whether a memory is about the same step as a flag is a reading, not a rule.</li>
+  <li><strong>Nothing changes until you answer.</strong> Each proposal then goes to <code>/spry:process-change</code>,
+  <code>/spry:contribute</code>, <code>/spry:bug</code> or <code>/spry:task</code>. It prunes no memory.</li>
+  <li><strong>Read the proposals as drafts</strong> until <code>/spry:pace</code> has been tried on real slices.</li>
+</ul>
 
 <h2>Set your tone — /spry:tone</h2>
 
