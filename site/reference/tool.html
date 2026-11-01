@@ -66,8 +66,9 @@ written rules into rules that are actually enforced.</p>
 
 <h3 id="gate">gate</h3>
 <p>The one command that says "this code is good to go": <code>spry check</code>, then the fast checks
-(format, lint, types — cheapest first), then the affected tests, stopping at the first failure.</p>
-<pre><code>spry gate [--force] [--fast] [--full]</code></pre>
+(format, lint, types — cheapest first), then the affected tests. Every fast check runs even if one fails; a failing
+test step stops the gate.</p>
+<pre><code>spry gate [--force] [--fast] [--full] [--failed]</code></pre>
 <ul>
   <li>A pass is stamped in <code>.spry/green</code> against a fingerprint of the code. While the code
   matches, the gate runs <code>check</code> alone — so fixing a document after the tests passed never
@@ -82,7 +83,16 @@ written rules into rules that are actually enforced.</p>
   parallelism. A real failure fails both runs.</li>
   <li><code>--fast</code> — <code>check</code> and the fast checks only, no tests; stamps nothing. Used
   for each change while building.</li>
-  <li><code>--force</code> — run everything even if the code is unchanged.</li>
+  <li>A red gate keeps the failing steps&rsquo; full output in <code>.spry/gate/last.log</code>, and its last
+  line names the failing test files and that path. On the same code and commands, the next gate does not
+  run again: it shows that failure (<code>--force</code> runs it anyway). A failure that looks like the
+  machine &mdash; a timeout, a worker that would not start, a port in use, a service that refused
+  the connection (<code>tests.load_when</code> replaces that list) &mdash; runs again. The record is per
+  checkout.</li>
+  <li><code>--force</code> — run everything even if the code is unchanged, or the last gate failed on this code.</li>
+  <li><code>--failed</code> — only the test files the last red gate named, through the falsify runners.
+  Stamps nothing. When they all pass it marks the test steps cleared so the full gate runs on the same
+  code; a check that is still red stays red, and a file it could not find keeps it from counting.</li>
   <li><code>--full</code> — the affected tests even when the branch changed only test files.</li>
 </ul>
 <p>More: <a href="../design/gate.html">The gate and test speed</a>.</p>

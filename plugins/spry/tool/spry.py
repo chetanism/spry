@@ -34,7 +34,7 @@
     python3 spry/tool/spry.py link <slice> [--branch B] [--pr N] [--issue N] [--owner [NAME]]   # set them in the slice's front-matter
     python3 spry/tool/spry.py issue-body <slice> [--close]   # the slice's issue (slices.issue): work order, or close summary
     python3 spry/tool/spry.py merge-message <slice> [--ci-local REASON]   # the squash commit: subject, summary, trailers
-    python3 spry/tool/spry.py gate [--force] [--fast] [--full]   # check, fast checks, affected tests — or only the changed ones when the branch adds only tests (--full: affected anyway) — then tests.always (--fast: no tests, no stamp); skipped while no code changed
+    python3 spry/tool/spry.py gate [--force] [--fast] [--full] [--failed]   # check, fast checks, affected tests — or only the changed ones when the branch adds only tests (--full: affected anyway) — then tests.always (--fast: no tests, no stamp; --failed: only the tests the last red gate named, no stamp); skipped while no code changed
     python3 spry/tool/spry.py changed --base <ref>   # for CI: code=true when anything but docs changed
     python3 spry/tool/spry.py agent-hook <name> < payload.json   # one Claude Code hook call (hooks/hooks.json); `hooks` in the config turns each on
     python3 spry/tool/spry.py review-check <payload.json> --diff <file|-> [--own]   # would GitHub take this review?
@@ -78,7 +78,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.37.0"
+VERSION = "0.38.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -4745,21 +4745,192 @@ def gate_steps(project: Project, fast: bool = False, changed_tests: list | None 
 
 
 DEFAULT_RETRY_WHEN = r"timed? ?out|timeout|ETIMEDOUT"
+# Output of a run that broke from the machine, not the code: a rerun is what it needs.
+LOAD_FAILURE = r"Failed to start forks worker|EADDRINUSE|EMFILE|ENOMEM|ECONNREFUSED|ECONNRESET|ENOTFOUND|EAI_AGAIN|command not found"
+GATE_LOG = ".spry/gate/last.log"
+GATE_KEEP_GOING = ("fast", "all", "off")
+# A failed test's file, as the runner prints it: vitest and jest (`FAIL [project|\|project\|] path`), pytest (`FAILED path::test`, `ERROR path` for one that would not load).
+# A path that names no test file is dropped when `gate --failed` looks for it in the project.
+FAILING_FILE = (re.compile(r"\bFAIL(?:ED)?\s+(?:\|[^|\s]+\|\s+|[\w.-]+\s+)?([^\s:>|]+\.[A-Za-z]{1,5})(?=[\s>:]|$)"),
+                re.compile(r"\b(?:FAILED|ERROR)\s+([^\s:]+\.py)(?=::|\s|$)"))
 
 
-def gate(project: Project, force: bool = False, say=print, fast: bool = False, full: bool = False) -> int:
+def failing_files(output: str) -> list:
+    """The test files a runner's output names as failed, as it printed them, in order."""
+    found = []
+    for line in ANSI.sub("", output).split("\n"):
+        for pattern in FAILING_FILE:
+            m = pattern.search(line)
+            name = m.group(1).replace("\\", "/") if m else None
+            if name and name not in found:
+                found.append(name)
+    return found
+
+
+def gate_pointer(steps: list, files: list) -> str:
+    """The last line of a red gate, so that even `| tail -1` says where the cause is."""
+    named = f" — failing: {', '.join(files[:3])}{f' (+{len(files) - 3} more)' if len(files) > 3 else ''}" if files else ""
+    return f"✗ {', '.join(steps)}{named} · full output {GATE_LOG}"
+
+
+def gate_dir(project: Project) -> str:
+    return os.path.join(project.root, ".spry", "gate")
+
+
+def gate_failure(project: Project):
+    """What the last red gate left in this checkout, or None."""
+    try:
+        record = json.loads(read(os.path.join(gate_dir(project), "last.json")))
+    except (OSError, ValueError):
+        return None
+    return record if isinstance(record, dict) else None
+
+
+def record_gate_failure(project: Project, failed: list, fingerprint: str, fast: bool, load: re.Pattern,
+                        keep_files: list | None = None) -> None:
+    """The full output of every failed step in `.spry/gate/last.log`, and what a rerun needs in `last.json`.
+    Never fails the gate."""
+    output = "\n".join(o for _n, _c, o in failed)
+    files = failing_files(output) or keep_files or []
+    try:
+        os.makedirs(native(gate_dir(project)), exist_ok=True)
+        write(os.path.join(gate_dir(project), "last.log"),
+              "".join(f"== {name} · {command}\n{out.rstrip()}\n\n" for name, command, out in failed))
+        write(os.path.join(gate_dir(project), "last.json"),
+              json.dumps({"code": fingerprint, "at": time.strftime("%Y-%m-%d %H:%M"), "fast": fast,
+                          "steps": [n for n, _c, _o in failed], "commands": [c for _n, c, _o in failed], "files": files,
+                          "load": bool(load.search(ANSI.sub("", output)))}) + "\n")
+    except OSError:
+        pass
+
+
+def clear_gate_failure(project: Project, ran: set | None = None) -> None:
+    """A pass forgets the red it follows — all of it, or, for a fast pass, only the steps it ran."""
+    last = gate_failure(project)
+    if last is None or (ran is not None and not set(last.get("steps") or ()) <= ran):
+        return
+    for name in ("last.json", "last.log"):
+        try:
+            os.remove(native(os.path.join(gate_dir(project), name)))
+        except OSError:
+            pass
+
+
+def gate_load(project: Project) -> re.Pattern:
+    """Output that says the machine, not the code, broke a run: `tests.retry_when` (timeouts) and
+    `tests.load_when`, which replaces the built-in list of other signs."""
+    tests = project.config.get("tests", {})
+    return re.compile((tests.get("retry_when") or DEFAULT_RETRY_WHEN) + "|" + (tests.get("load_when") or LOAD_FAILURE), re.I)
+
+
+def red_steps(last: dict) -> list:
+    """[(step, command)] a red gate left that nothing has since cleared."""
+    commands = list(last.get("commands") or [])
+    commands += [None] * (len(last.get("steps") or []) - len(commands))
+    return [(n, c) for n, c in zip(last.get("steps") or [], commands) if n not in (last.get("cleared") or [])]
+
+
+def gate_keep_going(project: Project) -> str:
+    keep = str((project.config.get("gate") or {}).get("keep_going") or "fast")
+    if keep not in GATE_KEEP_GOING:
+        raise SystemExit(f"spry.config.json: gate.keep_going is `{keep}` — use one of {', '.join(GATE_KEEP_GOING)}")
+    return keep
+
+
+def gate(project: Project, force: bool = False, say=print, fast: bool = False, full: bool = False,
+         failed: bool = False) -> int:
     """The gate, timed into the step log (§17)."""
     started, seen = time.time(), {"steps": []}
+    if failed:
+        code = rerun_failed(project, say, seen)
+        pace_log(project, "gate", time.time() - started, ok=code == 0, fast=True, failed=True, **seen)
+        return code
     code = run_gate(project, force, say, fast, full, seen)
     pace_log(project, "gate", time.time() - started, ok=code == 0, fast=fast, full=full, force=force, **seen)
     return code
 
 
+def rerun_failed(project: Project, say, seen: dict) -> int:
+    """`gate --failed`: only the test files the last red gate named, through their falsify runners. It
+    stamps nothing, so the full gate stays the proof. When every named file passes it marks the test
+    steps cleared — the full gate may run on the same code — but a red check stays red, and a file it
+    could not find or name keeps the whole thing from counting as a pass."""
+    last = gate_failure(project)
+    if last is None:
+        say("no red gate to rerun here — `spry.py gate` runs it")
+        return 1
+    wanted = last.get("files") or []
+    if not wanted:
+        say(f"the gate failed at {', '.join(last.get('steps') or ['?'])} and named no test file — "
+            f"read {GATE_LOG}, then `spry.py gate --fast` or `spry.py gate`")
+        return 1
+    tracked = git(project.root, "ls-files", "--", ".").stdout.split("\n")
+    tracked += git(project.root, "ls-files", "-o", "--exclude-standard", "--", ".").stdout.split("\n")
+    known = sorted({p for p in tracked if p and any(g.match(p) for g in project._test_globs())})
+    files, missing = [], []
+    for name in wanted:
+        hits = [p for p in known if p == name or p.endswith("/" + name)]
+        files += hits
+        if not hits:
+            missing.append(name)
+    if missing:
+        say(f"– no such test file in the project: {', '.join(missing)}")
+    if not files:
+        return 1
+    try:
+        groups = group_files(project, files)
+    except PlanError as e:
+        say(str(e))
+        return 1
+    table, failed = runners(project), []
+    for (index, cwd), group in groups.items():
+        command = runner_command(project, table[index], cwd, group)
+        label = f"failed files{'' if cwd == project.root else ' in ' + os.path.relpath(cwd, project.root).replace(os.sep, '/')}"
+        started = time.time()
+        done = subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True)
+        say(f"{'✓' if done.returncode == 0 else '✗'} {label} · {time.time() - started:.1f}s")
+        seen["steps"].append([label, round(time.time() - started, 1), done.returncode == 0])
+        if done.returncode != 0:
+            output = done.stdout + done.stderr
+            say("\n".join("  " + line for line in output.rstrip().split("\n")[-40:]))
+            failed.append((label, command, output))
+    if failed:
+        # The record keeps the code and steps of the gate that went red: this run did not check the rest.
+        output = "\n".join(o for _n, _c, o in failed)
+        try:
+            write(os.path.join(gate_dir(project), "last.log"),
+                  "".join(f"== {name} · {command}\n{out.rstrip()}\n\n" for name, command, out in failed))
+            write(os.path.join(gate_dir(project), "last.json"),
+                  json.dumps({**last, "files": failing_files(output) or wanted}) + "\n")
+        except OSError:
+            pass
+        say(gate_pointer([n for n, _c in red_steps(last)] or last.get("steps") or [], failing_files(output) or wanted))
+        return 1
+    if missing:
+        say("– not cleared: a file the gate named is not in the project, so this run did not check all of it")
+        return 1
+    checks = {n for n, _c, _k in named_commands(project.config.get("checks", {}).get("fast"), "checks.fast")}
+    last["cleared"] = sorted(set(last.get("cleared") or []) | {n for n in last.get("steps") or [] if n not in checks})
+    last["files"] = []
+    try:
+        write(os.path.join(gate_dir(project), "last.json"), json.dumps(last) + "\n")
+    except OSError:
+        pass
+    left = [n for n, _c in red_steps(last)]
+    if left:
+        say(f"the failing tests pass — but {', '.join(left)} is still red; `spry.py gate --fast` checks it")
+        return 1
+    say("the failing tests pass — nothing stamped; `spry.py gate` is still the proof")
+    return 0
+
+
 def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: dict) -> int:
-    """`spry check`, then the fast checks, then the affected tests, then `tests.always` — stopping at
-    the first failure. A branch that changed only test files runs those files instead of the affected
-    tests, unless `full`: a test file breaks no other package's tests. A pass is stamped with the
-    code's fingerprint; while the code is unchanged, only `check` runs again.
+    """`spry check`, then the fast checks, then the affected tests, then `tests.always`. A failed fast
+    check does not stop the other fast checks (`gate.keep_going`), and the tests do not run after one;
+    a failed test step stops the gate. A red gate leaves its output in `.spry/gate/last.log` and does
+    not run again on the same code. A branch that changed only test files runs those files instead of
+    the affected tests, unless `full`: a test file breaks no other package's tests. A pass is stamped
+    with the code's fingerprint; while the code is unchanged, only `check` runs again.
     `fast` leaves out the tests, for each change while building, and stamps nothing."""
     started = time.time()
     errors = [p for p in check(project) if p.level == "error"]
@@ -4801,8 +4972,27 @@ def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: d
     tests = project.config.get("tests", {})
     retry = str(tests.get("retry") or "").strip()
     retry_when = re.compile(tests.get("retry_when") or DEFAULT_RETRY_WHEN, re.I)
+    load = gate_load(project)
+    keep = gate_keep_going(project)
     seen.update({"code": fingerprint, "tests": False, **({"mode": mode} if mode else {})})
-    for name, command, cwd in steps:
+    names = {n for n, *_ in steps}
+    last = None if force else gate_failure(project)
+    red = red_steps(last) if last else []
+    if (red and fingerprint and last.get("code") == fingerprint and not last.get("load")
+            and {n for n, _c in red} <= names and {c for _n, c in red} <= {c for _n, c, _d in steps}):
+        # The same code, the same red. A rerun that cannot differ is minutes for the same answer.
+        say(f"– not run again: the code has not changed since the gate failed at {last.get('at', '?')}")
+        say("  `gate --failed` reruns the failing tests; `gate --force` runs it all again — if the cause was "
+            "outside the code (a service that was down, an install), or a flaky test")
+        say(gate_pointer([n for n, _c in red], last.get("files") or []))
+        seen["skipped"] = "failed"
+        return 1
+    fast_count = len(project.config.get("checks", {}).get("fast") or [])
+    failed, left_out = [], False
+    for n, (name, command, cwd) in enumerate(steps):
+        if failed and keep != "all" and (keep == "off" or n >= fast_count):
+            left_out = keep == "fast" and any(f[0] in {s[0] for s in steps[:fast_count]} for f in failed)
+            break
         seen["tests"] = seen["tests"] or "test" in name
         started = time.time()
         done = subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True)
@@ -4817,12 +5007,20 @@ def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: d
             seen["retried"] = True
         seen["steps"].append([name, round(time.time() - started, 1), done.returncode == 0])
         if done.returncode != 0:
-            tail = (done.stdout + done.stderr).rstrip().split("\n")[-40:]
-            say("\n".join("  " + line for line in tail))
-            return 1
+            output = done.stdout + done.stderr
+            say("\n".join("  " + line for line in output.rstrip().split("\n")[-40:]))
+            failed.append((name, command, output))
+    if failed:
+        record_gate_failure(project, failed, fingerprint, fast, load)
+        if left_out:
+            say("– the tests did not run: the checks above come first (`gate.keep_going: all` runs them anyway)")
+        say(gate_pointer([n for n, _c, _o in failed], failing_files("\n".join(o for _n, _c, o in failed))))
+        return 1
     if fast:
+        clear_gate_failure(project, names)
         say("fast checks green — tests not run; `spry.py gate` runs them")
         return 0
+    clear_gate_failure(project)
     if fingerprint:
         os.makedirs(native(os.path.dirname(stamp_path)), exist_ok=True)
         write(stamp_path, json.dumps({"code": fingerprint, "at": time.strftime("%Y-%m-%d %H:%M"),
@@ -5254,7 +5452,7 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
                     background.add(block.get("id"))
                     kind = "tool"
                 head = pace_head(command) or block.get("name", "")
-                gate_fast = ("--fast" in command) if kind == "gate" else None
+                gate_fast = ("--fast" in command or "--failed" in command) if kind == "gate" else None
                 pending[block.get("id")] = (t, kind, head, gate_fast, review and not given.get("run_in_background"))
             ended = message.get("stop_reason") == "end_turn" and not pending
         elif kind_of_record == "user" and isinstance(content, list) and any(c.get("type") == "tool_result" for c in content if isinstance(c, dict)):
@@ -5549,7 +5747,7 @@ def pace_median(values: list):
 
 
 def pace_full_gates(s: dict) -> list:
-    return [g for g in s["gates"] if not g.get("fast")]
+    return [g for g in s["gates"] if not g.get("fast") and g.get("skipped") != "failed"]
 
 
 def pace_flags(project: Project, s: dict) -> list:
@@ -6694,6 +6892,7 @@ def main(argv=None) -> int:
     p.add_argument("--force", action="store_true", help="run everything even if the code is unchanged")
     p.add_argument("--fast", action="store_true", help="spry check and the fast checks only, no tests; stamps nothing")
     p.add_argument("--full", action="store_true", help="the affected tests even when the branch changes only test files")
+    p.add_argument("--failed", action="store_true", help="only the test files the last red gate named; stamps nothing")
     p = sub.add_parser("pace", help="where slices' time went — the agent, checks, waiting on you — from this clone's logs")
     p.add_argument("slice", nargs="?", help="one slice in detail")
     p.add_argument("--since", metavar="YYYY-MM-DD", help="slices active since this day")
@@ -6958,7 +7157,7 @@ def main(argv=None) -> int:
         print("ready to merge" if not blocks else f"{blocks} thing{'s block' if blocks != 1 else ' blocks'} the merge")
         return 1 if blocks else 0
     if args.command == "gate":
-        return gate(project, args.force, fast=args.fast, full=args.full)
+        return gate(project, args.force, fast=args.fast, full=args.full, failed=args.failed)
     if args.command == "changed":
         print(f"code={'true' if code_changed_since(project, args.base) else 'false'}")
         return 0

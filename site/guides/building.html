@@ -152,6 +152,7 @@ only the third comes up:</p>
   <tbody>
     <tr><td>Check each change with <code>spry.py gate --fast</code></td><td>Runs <code>spry check</code> and the fast checks (format, lint, types — cheapest first). No tests, so it takes seconds</td></tr>
     <tr><td>Run <code>spry.py gate</code> (with affected tests) only when a test's answer is what you need</td><td>It adds the affected tests — minutes on a big project — and it runs once more at close anyway</td></tr>
+    <tr><td>After a red gate, read <code>.spry/gate/last.log</code>, fix, then <code>spry.py gate --failed</code>; never cut the gate's output with <code>tail</code>, <code>head</code> or <code>grep</code></td><td>The log names the failing test; <code>--failed</code> reruns only those files in seconds, and the full gate then runs once. Cutting the output hides the cause, and the gate gets run again for nothing</td></tr>
     <tr><td>Never run the full suite</td><td>CI runs it on the main branch and nightly; <code>/spry:test-all</code> runs it when someone asks</td></tr>
     <tr><td>Push only at close</td><td>Each push runs CI again</td></tr>
     <tr><td>Never run <code>spry.py index</code> on a branch</td><td>The progress pages are written only on the main branch, so branches never conflict over them. For fresh pages locally, use <code>spry.py view</code></td></tr>

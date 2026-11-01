@@ -2301,6 +2301,235 @@ class Falsify(unittest.TestCase):
         self.gate()
         self.assertEqual(self.ran(log), ["f", "t", "f", "t"], "a code change runs everything")
 
+    def red_config(self, log, output="FAIL  tests/test_limit.py > nothing"):
+        """The affected tests fail with this output, and count their runs as `r`."""
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["tests"]["affected"] = f"echo r >> {log}; echo '{output}'; false"
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+
+    def gate_state(self):
+        with open(os.path.join(self.root, ".spry", "gate", "last.json")) as handle:
+            return json.load(handle)
+
+    def test_a_red_gate_ends_on_a_line_saying_where_its_output_is(self):
+        log = self.gate_config("echo f >> LOG")
+        self.red_config(log)
+        code, said = self.gate()
+        self.assertEqual(code, 1)
+        self.assertEqual(said[-1], "✗ affected tests — failing: tests/test_limit.py · full output .spry/gate/last.log", said)
+        with open(os.path.join(self.root, ".spry", "gate", "last.log")) as handle:
+            self.assertIn("FAIL  tests/test_limit.py > nothing", handle.read())
+        state = self.gate_state()
+        self.assertEqual((state["steps"], state["files"], state["load"]), (["affected tests"], ["tests/test_limit.py"], False))
+
+    def test_a_red_gate_does_not_run_again_on_the_same_code(self):
+        log = self.gate_config("echo f >> LOG")
+        self.red_config(log)
+        self.gate()
+        code, said = self.gate()
+        self.assertEqual((code, self.ran(log)), (1, ["f", "r"]), "nothing ran the second time")
+        self.assertTrue(any("not run again" in x for x in said) and any("gate --force" in x for x in said), said)
+        self.assertTrue(said[-1].startswith("✗ affected tests — failing: tests/test_limit.py"), said)
+        self.assertEqual(spry.gate(spry.Project(self.root), force=True, say=lambda *_: None), 1)
+        self.assertEqual(self.ran(log), ["f", "r", "f", "r"], "--force runs it all")
+        self.write({"src/loans.py": LOANS_AFTER + "# changed\n"})
+        self.gate()
+        self.assertEqual(self.ran(log)[4:], ["f", "r"], "changed code runs it")
+        self.red_config(log, "FAIL  tests/test_limit.py > another")
+        self.gate()
+        self.assertEqual(self.ran(log)[6:], ["f", "r"], "a changed command runs it too")
+
+    def test_a_red_gate_from_load_runs_again_on_the_same_code(self):
+        log = self.gate_config("echo f >> LOG")
+        self.red_config(log, "Error: [vitest-pool]: Failed to start forks worker")
+        self.gate()
+        self.assertTrue(self.gate_state()["load"])
+        self.gate()
+        self.assertEqual(self.ran(log), ["f", "r", "f", "r"], "the machine broke it, not the code")
+
+    def test_a_pass_forgets_the_red_before_it_and_a_fast_pass_only_its_own(self):
+        log = self.gate_config("echo f >> LOG")
+        self.red_config(log)
+        self.gate()
+        spry.gate(spry.Project(self.root), say=lambda *_: None, fast=True)
+        self.assertTrue(os.path.exists(os.path.join(self.root, ".spry", "gate", "last.json")),
+                        "fast checks passing say nothing of the tests")
+        self.write({"src/loans.py": LOANS_AFTER + "# changed\n"})
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["tests"]["affected"] = f"echo t >> {log}"
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        self.assertEqual(self.gate()[0], 0)
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".spry", "gate", "last.json")))
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".spry", "gate", "last.log")))
+
+    def two_failing_fast_checks(self, keep=None):
+        log = self.gate_config("echo f >> LOG; echo bad lint; exit 1")
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["checks"]["fast"].append({"name": "types", "run": f"echo y >> {log}; echo bad type; exit 2"})
+        if keep:
+            config["gate"] = {"keep_going": keep}
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        return log
+
+    def test_every_fast_check_runs_and_the_tests_wait_for_them(self):
+        log = self.two_failing_fast_checks()
+        code, said = self.gate()
+        self.assertEqual((code, self.ran(log)), (1, ["f", "y"]), "both fast checks ran, the tests did not")
+        self.assertTrue(any("tests did not run" in x for x in said), said)
+        self.assertEqual(said[-1], "✗ lint, types · full output .spry/gate/last.log")
+        self.assertEqual(self.gate_state()["steps"], ["lint", "types"])
+
+    def test_keep_going_off_stops_at_the_first_failure_and_all_runs_the_tests_too(self):
+        log = self.two_failing_fast_checks("off")
+        self.assertEqual((self.gate()[0], self.ran(log)), (1, ["f"]))
+        log = self.two_failing_fast_checks("all")
+        shutil.rmtree(os.path.join(self.root, ".spry", "gate"))
+        self.assertEqual((self.gate()[0], self.ran(log)), (1, ["f", "y", "t"]))
+        self.assertEqual(self.gate_state()["steps"], ["lint", "types"])
+
+    def test_keep_going_takes_only_the_values_it_knows(self):
+        self.two_failing_fast_checks("sometimes")
+        with self.assertRaises(SystemExit) as raised:
+            self.gate()
+        self.assertIn("gate.keep_going is `sometimes`", str(raised.exception))
+
+    def test_a_failing_test_step_stops_the_gate_with_no_note_about_checks(self):
+        log = self.gate_config("echo f >> LOG")
+        self.red_config(log)
+        code, said = self.gate()
+        self.assertFalse(any("did not run" in x for x in said), said)
+
+    def test_gate_failed_reruns_only_the_files_the_red_gate_named(self):
+        log = self.gate_config("echo f >> LOG")
+        self.red_config(log, "FAILED tests/test_limit.py::t - boom")
+        self.gate()
+        code, said = [], []
+        said = []
+        self.assertEqual(spry.gate(spry.Project(self.root), say=said.append, failed=True), 0, said)
+        self.assertEqual(self.ran(log), ["f", "r"], "only the runner ran, not the fast checks or the affected tests")
+        self.assertTrue(any("nothing stamped" in x for x in said), said)
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".spry", "green")))
+        self.assertEqual(self.gate_state()["cleared"], ["affected tests"], "the record stays, with the step marked cleared")
+        self.gate()
+        self.assertEqual(self.ran(log)[2:], ["f", "r"], "so the full gate runs, though the code is the same")
+
+    def test_gate_failed_that_fails_keeps_the_red_for_the_next_one(self):
+        log = self.gate_config("echo f >> LOG")
+        self.red_config(log, "FAILED tests/test_limit.py::t - boom")
+        self.gate()
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["falsify"]["runners"][0]["command"] = "echo 'FAILED {files}::t'; false"
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        said = []
+        self.assertEqual(spry.gate(spry.Project(self.root), say=said.append, failed=True), 1)
+        self.assertEqual(said[-1], "✗ affected tests — failing: tests/test_limit.py · full output .spry/gate/last.log", said)
+        self.assertEqual(self.gate_state()["steps"], ["affected tests"])
+
+    def test_gate_failed_says_why_it_has_nothing_to_run(self):
+        said = []
+        self.assertEqual(spry.gate(spry.Project(self.root), say=said.append, failed=True), 1)
+        self.assertTrue(any("no red gate" in x for x in said), said)
+        log = self.gate_config("echo f >> LOG; echo bad; exit 1")
+        self.gate()
+        said = []
+        self.assertEqual(spry.gate(spry.Project(self.root), say=said.append, failed=True), 1)
+        self.assertTrue(any("named no test file" in x for x in said), said)
+        with contextlib.redirect_stdout(io.StringIO()):
+            self.assertEqual(spry.main(["--root", self.root, "gate", "--failed"]), 1)
+
+    def test_gate_failed_is_no_pass_when_a_named_file_is_missing(self):
+        log = self.gate_config("echo f >> LOG")
+        self.red_config(log, "FAILED tests/test_limit.py::t\nFAILED tests/test_gone.py::t")
+        self.gate()
+        said = []
+        self.assertEqual(spry.gate(spry.Project(self.root), say=said.append, failed=True), 1, said)
+        self.assertTrue(any("tests/test_gone.py" in x for x in said), said)
+        self.assertEqual(self.gate_state().get("cleared", []), [], "a run that missed a file clears nothing")
+        self.assertEqual(self.gate()[0], 1)
+        self.assertEqual(self.ran(log), ["f", "r"], "the red still stands for the full gate")
+
+    def test_gate_failed_does_not_clear_a_check_that_is_still_red(self):
+        log = self.two_failing_fast_checks("all")
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["checks"]["fast"] = config["checks"]["fast"][:1]
+        config["tests"]["affected"] = f"echo r >> {log}; echo 'FAILED tests/test_limit.py::t'; false"
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        self.gate()
+        self.assertEqual(self.gate_state()["steps"], ["lint", "affected tests"])
+        said = []
+        self.assertEqual(spry.gate(spry.Project(self.root), say=said.append, failed=True), 1, said)
+        self.assertTrue(any("lint is still red" in x for x in said), said)
+        code, said = self.gate()
+        self.assertEqual(code, 1)
+        self.assertTrue(said[-1].startswith("✗ lint"), said)
+        self.assertNotIn("affected tests", said[-1])
+
+    def test_a_failed_gate_failed_leaves_the_record_as_the_red_gate_made_it(self):
+        log = self.gate_config("echo f >> LOG")
+        self.red_config(log, "FAILED tests/test_limit.py::t - boom")
+        self.gate()
+        before = self.gate_state()
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["falsify"]["runners"][0]["command"] = "echo 'FAILED {files}::t'; false"
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        self.write({"src/loans.py": LOANS_AFTER + "# changed\n"})
+        spry.gate(spry.Project(self.root), say=lambda *_: None, failed=True)
+        after = self.gate_state()
+        self.assertEqual((after["code"], after["steps"], after["commands"]), (before["code"], before["steps"], before["commands"]))
+
+    def test_the_machine_is_told_from_the_code_by_a_list_a_project_can_replace(self):
+        log = self.gate_config("echo f >> LOG")
+        self.red_config(log, "connect ECONNREFUSED 127.0.0.1:5432")
+        self.gate()
+        self.assertTrue(self.gate_state()["load"], "a service that was down is not the code")
+        self.gate()
+        self.assertEqual(self.ran(log), ["f", "r", "f", "r"])
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["tests"]["load_when"] = "my own worker message"
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        shutil.rmtree(os.path.join(self.root, ".spry", "gate"))
+        self.gate()
+        self.assertFalse(self.gate_state()["load"], "load_when replaces the built-in list")
+
+    def test_pace_does_not_count_a_red_gate_that_was_not_run_again_as_another_failure(self):
+        gates = [{"fast": False, "ok": False}, {"fast": False, "ok": False, "skipped": "failed"},
+                 {"fast": False, "ok": True, "skipped": "stamp"}]
+        self.assertEqual(len(spry.pace_full_gates({"gates": gates})), 2)
+
+    def test_failing_files_reads_what_vitest_jest_and_pytest_print(self):
+        out = ("\x1b[41m FAIL \x1b[49m unit src/routes/users.test.ts > inviting > refuses\n"
+               "@connect/web:test: FAIL  src/a.spec.tsx\nFAILED tests/test_x.py::test_a - boom\n"
+               "FAIL  src/routes/users.test.ts > again\nFAIL  |integration| src/send.integration.test.ts > sends > S-1/AC-1 x\n"
+               "Tests  3 failed\n")
+        self.assertEqual(spry.failing_files(out), ["src/routes/users.test.ts", "src/a.spec.tsx", "tests/test_x.py",
+                                                   "src/send.integration.test.ts"])
+        self.assertEqual(spry.failing_files("ERROR tests/test_y.py - ImportError\nFAIL  src\\win.test.ts > x\n"),
+                         ["tests/test_y.py", "src/win.test.ts"], "a test that would not load, and a Windows path")
+        self.assertEqual(spry.failing_files("all fine\nFAIL\tgithub.com/x/pkg\t0.1s\n--- FAIL: TestX (0.00s)\nFAIL: test_y (m.C)\n"), [])
+        self.assertEqual(spry.gate_pointer(["affected tests"], list("abcde")),
+                         "✗ affected tests — failing: a, b, c (+2 more) · full output .spry/gate/last.log")
+
     def test_gate_fast_runs_no_tests_and_stamps_nothing(self):
         log = self.gate_config("echo f >> LOG")
         said = []
@@ -2489,7 +2718,10 @@ class Falsify(unittest.TestCase):
         self.assertEqual(self.ran(log), ["f"], "tests never ran after lint failed")
         self.assertIn("✗ lint", " ".join(said))
         code, _ = self.gate()
-        self.assertEqual(self.ran(log), ["f", "f"], "a failure is never stamped green")
+        self.assertEqual((code, self.ran(log)), (1, ["f"]), "the same red on the same code is shown, not run again")
+        self.assertFalse(os.path.exists(os.path.join(self.root, ".spry", "green")), "a failure is never stamped green")
+        spry.gate(spry.Project(self.root), force=True, say=lambda *_: None)
+        self.assertEqual(self.ran(log), ["f", "f"], "--force runs it again")
 
     def test_gate_retries_a_timeout_quietly_but_never_a_real_failure(self):
         flag = os.path.join(self.root, "busy")

@@ -222,8 +222,9 @@ and spry checks you stick to it.</p>
 <h2>G–M</h2>
 <dl class="terms">
   <dt>Gate</dt>
-  <dd><code>spry gate</code>: <code>spry check</code>, then the fast checks, then the affected tests,
-  stopping at the first failure. A pass is stamped against the code, so it does not re-run while only
+  <dd><code>spry gate</code>: <code>spry check</code>, then the fast checks, then the affected tests.
+  Every fast check runs even if one fails; a failing test step stops it, and a red gate leaves its output in
+  <code>.spry/gate/last.log</code> (<code>gate --failed</code> reruns just the failing tests). A pass is stamped against the code, so it does not re-run while only
   documents change. A branch that changed only test files runs just those. <code>gate --fast</code> skips the tests. <a href="../design/gate.html">The gate and test speed</a>.</dd>
 
   <dt>Generated block</dt>

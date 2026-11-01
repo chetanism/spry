@@ -27,7 +27,7 @@ never thrown away by a lint error.</p>
 <thead><tr><th>Command</th><th>Runs</th><th>When</th></tr></thead>
 <tbody>
 <tr><td><code>gate --fast</code></td><td><code>spry check</code> → fast checks (format, lint, types, cheapest first). No tests, and it stamps nothing.</td><td>After each change while building, and for review fixes at close</td></tr>
-<tr><td><code>gate</code></td><td><code>spry check</code> → fast checks → <strong>affected</strong> tests, stopping at the first failure</td><td>Once per slice, at close — or whenever a test's answer is what you need</td></tr>
+<tr><td><code>gate</code></td><td><code>spry check</code> → fast checks → <strong>affected</strong> tests. Every fast check runs even if one fails; the tests do not run after one, and a failing test step stops the gate</td><td>Once per slice, at close — or whenever a test's answer is what you need</td></tr>
 <tr><td>Full suite</td><td>Every test</td><td>CI on the main branch and nightly; <code>/spry:test-all</code> on request. Never by the agent as a routine step.</td></tr>
 </tbody></table></div>
 
@@ -75,6 +75,32 @@ after them, whatever code changed — and so does CI on a pull request.</p>
 by default matching "timed out", "timeout" or "ETIMEDOUT") run once more, quietly, with no
 parallelism. A machine under load is not a red gate; a real failure fails both runs. So the agent never
 re-runs the gate to get past a timeout.</p>
+
+<h3>When the gate is red</h3>
+<p>A red gate is cheap to read and cheap to iterate on. Measured on a real project, half the full gates
+failed, almost all in the affected tests, and the agent often cut the gate's output with
+<code>tail</code>, so it never saw which test failed and ran the whole gate again — minutes for the same
+answer. So:</p>
+<ul>
+  <li><strong>The full output is kept.</strong> A failing step's output goes to
+  <code>.spry/gate/last.log</code>, and the <em>last line</em> the gate prints names the failing test files
+  and that path — so even <code>gate | tail -1</code> says where the cause is. Test files are read from
+  vitest, jest and pytest output; an unknown runner still gets the path.</li>
+  <li><strong>The same code is not run twice for the same red.</strong> If the code and the commands are
+  the same as when a gate failed, the gate shows that failure instead of running again.
+  <code>gate --force</code> runs it all, for a flaky test, a busy machine, or a cause outside the code
+  (a service that was down, an install). A failure that looks like the machine (a timeout, a worker
+  that would not start, a port in use, a refused connection) is the exception: it runs again. The
+  list is <code>tests.load_when</code>.</li>
+  <li><strong>Every fast check runs.</strong> Format, lint and types are seconds each, so all of them
+  report in one go. The tests wait for them. <code>gate.keep_going</code> in the config:
+  <code>fast</code> (the default), <code>all</code> (the tests run even after a failed check, so one run
+  reports everything) or <code>off</code> (stop at the first failure).</li>
+  <li><strong><code>gate --failed</code></strong> reruns only the test files the red gate named, through
+  the same runners falsify uses. It stamps nothing, so the full gate stays the proof; when all of
+  them pass it marks the test steps cleared, so the full gate then runs. A check that is still red stays
+  red, and a file it could not find keeps it from counting as a pass. For fixing at seconds a try instead of minutes.</li>
+</ul>
 
 <h2>CI follows the same order</h2>
 <ol class="steps">

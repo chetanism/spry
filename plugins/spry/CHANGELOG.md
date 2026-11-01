@@ -949,3 +949,32 @@ Entry format:
   - Built before `/spry:pace` was tried on real slices: read its proposals as drafts until then.
 - **Adapt:** nothing.
 - **Migrate:** nothing.
+
+## CH-49 · A red gate says why
+
+- **Date:** 2026-11-02 · **Version:** 0.38.0
+- **Touches:** `tool/spry.py` (`gate`: the failure file, the unchanged-code message, every fast check
+  run, `--failed`; `pace` counts `gate --failed` as a fast gate), `process/slicing.md` (While building),
+  `process/templates/spry.config.json` (version only)
+- **Why:** on connect 35 of 68 full gates failed, 31 of them in the affected tests, and 46 of the
+  47 failed gate outputs in its session logs had been cut with `tail`, so the agent saw `✗ affected tests` and not which test:
+  it ran the gate again — 12 reruns on unchanged code cost 55 minutes. The gate also stopped at the
+  first failing fast check, so a second one cost another run.
+  - A failing step's full output goes to `.spry/gate/last.log` (`last.json` holds what a rerun needs);
+    the **last line** of a red gate names the failing steps, the failing test files (read from vitest,
+    jest and pytest output) and the log, so `gate | tail -1` still shows where the cause is.
+  - On the same code and the same commands the next gate does not run again: it shows the last
+    failure (per checkout). `gate --force` runs it. A failure that looks like the machine (a
+    timeout, `Failed to start forks worker`, a port in use, a refused connection, a missing command;
+    `tests.load_when` replaces that list) does run again.
+  - Every fast check runs even when one fails, and the tests wait for them. `gate.keep_going`: `fast`
+    (default), `all` (the tests run anyway) or `off` (stop at the first failure, as before).
+  - `gate --failed` reruns only the test files the red gate named, through the falsify runners. It
+    stamps nothing; when every file passes it marks the test steps cleared, so the full gate still
+    runs once before close, and a check that is still red stays red.
+  - Slicing says: after a red gate read the log, fix, `gate --failed`, then the full gate once; never
+    cut the gate's output.
+- **Adapt:** optionally `gate.keep_going` and `tests.load_when`. A project whose tests run through turbo may add `--continue`
+  to `tests.affected` so every failing package is reported in one run, and add its runner's
+  worker-start error to `tests.retry_when`.
+- **Migrate:** nothing.

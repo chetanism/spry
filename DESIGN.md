@@ -300,7 +300,9 @@ first so a slow one never runs only to be thrown away by a lint error.
   - the full suite in CI on `main` and nightly, and on demand — never by the agent as a routine
     step: not on a slice, not at close, not after a merge (the merge waits for CI on `main` only when `main` moved under the PR).
 - **`gate`** runs `spry check` → `checks.fast` (format, lint, types, cheapest first) → affected
-  tests, stopping at the first failure. A pass is stamped in `.spry/green` with a fingerprint of the
+  tests. Every fast check runs even if one fails, and the tests then do not run (`gate.keep_going`:
+  `fast`, the default; `all` runs the tests anyway; `off` stops at the first failure); a failing test
+  step stops the gate. A pass is stamped in `.spry/green` with a fingerprint of the
   code (every file outside `checks.docs`, default `spry/**` and `**/*.md`); while it matches, the
   gate runs `check` alone. So a document fixed after the tests never re-runs them. The gate also
   runs `check` alone when the branch — working tree included — changed only `checks.docs` since
@@ -316,6 +318,21 @@ first so a slow one never runs only to be thrown away by a lint error.
   `*.spec.*` — a conftest or a Go `_test.go` helper feeds tests that never name it), when any other
   file mentions one (a shared helper's importers), or when no runner takes one; `gate --full`
   always does. The changed tests get no quiet retry.
+- **A red gate says why** (CH-49). The full output of every failed step goes to `.spry/gate/last.log`
+  and `last.json` (git-ignored, per checkout), and the **last line** the gate prints names the failing
+  steps, the failing test files and the log — so `gate | tail -1` still shows the cause. Files are
+  read from vitest, jest and pytest output as the runner printed them; any other runner gets the
+  path only. On the same code fingerprint and the same commands, the next gate does not run again:
+  it shows that failure and says `--force` runs it. An output that looks like the machine
+  (`tests.retry_when`, and `tests.load_when` — default `Failed to start forks worker`, a port in use,
+  a refused connection, a missing command) is marked `load` and does run again. The record is per
+  checkout. A full pass forgets the red; a fast pass forgets only the steps it ran. **`gate --failed`**
+  reruns just the test files the red gate named, found in the project by their printed path and run
+  through the falsify runners; it stamps nothing, so the full gate stays the proof. When every file
+  passes it marks the test steps `cleared` — the full gate then runs on the same code — but a check
+  that is still red stays red, and a named file it could not find (or a failing run) leaves the record
+  as the red gate made it. From connect (§17): 35 of 68 full gates failed, 31 in the affected tests; 46 of
+  the 47 failed gate outputs in its session logs had been cut by `tail`, and 12 reruns on unchanged code cost 55 minutes.
 - **`tests.always`** — commands that run after the tests on every gate that runs tests, whatever code
   changed, and after the affected tests in CI: checks that read the whole code tree (banned words,
   licences), which the affected run picks up only when their own package changes.
@@ -588,7 +605,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `link <slice> [--branch] [--pr] [--issue] [--owner [name]]` | set them in the slice's front-matter; a bare `--owner` is the person at this clone |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
-| `gate [--force] [--fast] [--full]` | §15 |
+| `gate [--force] [--fast] [--full] [--failed]` | §15 |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
@@ -870,3 +887,7 @@ in `spry/history/writ.md`, then retires `canon/`.
   change, config change, bug, task or nothing per finding, each with its evidence; report only.
 - 2026-10-31 — `/spry:retro` (CH-48, 0.37.0): `spry pace` and `spry memory-check` read together by a
   fresh agent; a memory that bears on a pace finding sharpens its proposal, one that does not is a line.
+- 2026-11-02 — a red gate says why (CH-49, 0.38.0): the output kept in `.spry/gate/last.log` with the
+  failing files on the last line, no rerun on the same code, every fast check run, `gate --failed`.
+  From connect's pace data (§17); model tiers by role, a slice progress log and feature-level builds
+  were weighed the same day and parked: the agent's own time is 11-16% of a slice, checks 23-25%.

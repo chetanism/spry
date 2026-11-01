@@ -93,11 +93,17 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
   (`checks.fast`: format, lint, types — cheapest first), no tests. `spry.py gate` adds the affected
   tests — run it when a test's answer is what you need, not on every change: it costs minutes on a
   big project, and it runs once more at close, after the review, on the code that merges.
-- **The tool is the proof**, not the test commands by hand. The gate stops at the first failure. A
-  full pass is stamped against the code; while only documents change it runs `check` alone. So fix
-  lint before tests run, and write documents after the gate, never the reverse. With `tests.retry`
-  set, affected tests that fail on a timeout run once more, quietly; a real failure fails both
-  runs, so never re-run the gate to get past a timeout.
+- **The tool is the proof**, not the test commands by hand. The fast checks all run and the tests
+  wait for them; a failing test step stops the gate. A full pass is stamped against the code; while
+  only documents change it runs `check` alone. So fix lint before tests run, and write documents
+  after the gate, never the reverse. With `tests.retry` set, affected tests that fail on a timeout
+  run once more, quietly; a real failure fails both runs, so never re-run the gate to get past a
+  timeout.
+- **After a red gate read it, do not run it again.** Never cut the gate's output with `tail`, `head`
+  or `grep`: its last line names the failing test files and `.spry/gate/last.log`, which holds the
+  rest. Fix, rerun just those tests with `spry.py gate --failed`, and run the full gate once. On
+  unchanged code the gate shows the last failure instead of running again; `--force` is for a flaky
+  test or a busy machine.
 - **Never run the full suite** (`tests.all`). CI runs it on the main branch and nightly;
   `/spry:test-all` runs it when a person asks.
 - **Push only at close:** once for the review, once when it ends. Each push runs CI again.
