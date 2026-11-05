@@ -47,9 +47,11 @@ checked, so it goes stale. Its files are the person's, not the project's: this s
    - `[Found]` one bullet per change: the file, `update` or `delete`, the reason;
    - `FYI` — the memories kept, in one bullet, by count;
    - `ASK` 1 — the obvious changes, numbered in the bullets above:
-     a. apply them all (recommended) · b. apply all but the ones you name · c. apply none;
+     a. apply them all (recommended: each was classed obvious from the repository's own record) ·
+     b. apply all but the ones you name · c. apply none;
    - one further ask per tricky change, its current and proposed text quoted:
-     a. you edit it yourself, from the text proposed here (recommended) · b. I apply it as proposed ·
+     a. you edit it yourself, from the text proposed here (recommended: the memory is yours, and the
+     repository cannot settle it) · b. I apply it as proposed ·
      c. keep it as it is.
 5. **Apply only what was approved**, nothing else: edit or delete those memory files, and change only
    their lines in `MEMORY.md` — a deleted file's line removed, an approved line rewritten as

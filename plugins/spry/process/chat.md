@@ -49,6 +49,14 @@ Every bullet starts with one tag in brackets.
 - One line per option, saying why it is or is not the better choice.
 - Exactly one option marked `(recommended)` — except where config leaves the choice to the person
   without one (`slices.pick: ask`).
+- Recommend on the merits alone: the option best for the project — correct, meeting the ask, within
+  the plan's rules, at the project's lowest risk and cost. Never for the agent's sake: less work, a
+  smaller diff, fewer files, no rerun, a follow-up instead, keeping work already done, or the answer
+  the person seems to lean to.
+- The recommended option's line names the merit it rests on. When the best option is more work, it
+  is still recommended, with what it costs.
+- A skill's preset recommendation holds only for the case it names; when what was found differs,
+  recommend the option that fits it.
 
 ## Example — audience 2
 

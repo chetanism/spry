@@ -182,6 +182,9 @@ Tone (§7) sets the vocabulary; these set the shape, at every level.
   - `[Note]` for a fact.
 - Asks numbered from 1 each reply; options lettered `a`, `b`, `c`; one line per option saying why;
   exactly one `(recommended)`; the stem carries its own context so "2b" is a full answer.
+- The recommendation rests on the merits alone — the project's correctness, goal, rules, risk and
+  cost — never the agent's convenience: less work, a smaller diff, no rerun, a deferral, sunk work or
+  the person's apparent lean. Its line names the merit; a costlier best option is still recommended.
 
 ## 9. Writing rules (`process/writing.md`)
 
@@ -747,6 +750,13 @@ in `spry/history/writ.md`, then retires `canon/`.
   checkout, cannot start a proposal. A memory with no finding behind it is one line pointing at
   `/spry:memory-check`; retro never prunes. Built before a pilot had run `/spry:pace`, at the
   person's call; its proposals are to be read as drafts until one has.
+- 2026-11-05 — a recommendation rests on the merits alone (CH-50). `chat.md` asked for one
+  `(recommended)` and a reason per option but never said what a reason may be, so the agent's own
+  convenience — less work, a smaller diff, no rerun, a follow-up — passed as one. The project's cost
+  still counts; the agent's does not. Recommendations fixed in a skill before anything was found
+  (`/spry:pace` and `/spry:retro` recommending every proposal) now depend on what was found, as
+  `reviewing.md` already did; memory-check's presets hold because they follow from how a change was
+  classed, and now say so.
 
 ## 23. Built
 
@@ -891,3 +901,5 @@ in `spry/history/writ.md`, then retires `canon/`.
   failing files on the last line, no rerun on the same code, every fast check run, `gate --failed`.
   From connect's pace data (§17); model tiers by role, a slice progress log and feature-level builds
   were weighed the same day and parked: the agent's own time is 11-16% of a slice, checks 23-25%.
+- 2026-11-05 — recommendations on the merits (CH-50, 0.39.0): `chat.md` names what a recommendation
+  may and may not rest on; `/spry:pace` and `/spry:retro` recommend from what was found.

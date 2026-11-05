@@ -38,7 +38,8 @@ and writes nothing but what `spry pace` keeps under `.spry/`.
    - `[Found]` one bullet per finding: the evidence, then the proposal and the skill that carries it out;
    - `FYI` — what had too few slices to tell, and the flags that are only notes;
    - `ASK` 1 — which proposals to start: a. all the process and config changes, one after the other
-     (recommended) · b. only the ones you name · c. none.
+     · b. only the ones you name · c. none — recommend *a* when every proposal's evidence stands,
+     *b* naming the ones that do when some are thin, *c* when none does; the line says which evidence.
    A process change starts `/spry:process-change` with the finding as its sentence; a config
    change is made there too; a bug in spry or the project starts the skill named. Nothing starts
    before the answer.

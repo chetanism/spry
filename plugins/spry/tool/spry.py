@@ -78,7 +78,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field
 
-VERSION = "0.38.0"
+VERSION = "0.39.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",

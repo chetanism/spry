@@ -978,3 +978,15 @@ Entry format:
   to `tests.affected` so every failing package is reported in one run, and add its runner's
   worker-start error to `tests.retry_when`.
 - **Migrate:** nothing.
+
+## CH-50 · A recommendation rests on the merits
+
+- **Date:** 2026-11-05 · **Version:** 0.39.0
+- **Touches:** `process/chat.md` (Asks), `process/templates/agents.md` (Replies), `skills/pace`,
+  `skills/retro`, `skills/memory-check`, `process/templates/spry.config.json` (version only)
+- **Why:** `chat.md` asked for exactly one `(recommended)` with a reason per option but never said
+  what a reason may be, so the agent's own convenience — less work, a smaller diff, no rerun, a
+  follow-up, keeping work already done, the person's apparent lean — passed as one. `/spry:pace` and
+  `/spry:retro` recommended starting every proposal before any was found.
+- **Adapt:** nothing
+- **Migrate:** a project's `AGENTS.md` takes the new *Replies* line from the template.

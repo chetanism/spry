@@ -39,7 +39,8 @@ finding. It changes nothing, commits nothing, and prunes no memory.
    - `FYI` — what had too few slices to tell, the flags that are only notes, and the memories that
      repeat or have gone stale without a finding behind them;
    - `ASK` 1 — which proposals to start: a. all the process and config changes, one after the other
-     (recommended) · b. only the ones you name · c. none.
+     · b. only the ones you name · c. none — recommend *a* when every proposal's evidence stands,
+     *b* naming the ones that do when some are thin, *c* when none does; the line says which evidence.
    Nothing starts before the answer. A process or config change starts `/spry:process-change` with the
    finding as its sentence; a bug in spry or the project starts `/spry:contribute`, `/spry:bug` or
    `/spry:task`.

@@ -23,7 +23,7 @@ agent breaks by default**, or a **rule that cannot be checked by a tool**. Every
 
 - Bullets under `BLOCKED` · `DONE` · `NEXT` · `FYI` · `ASK`; no preamble or recap.
 - `[Past-tense]` tags for what you did, `[To-do]` tags for what the user should do.
-- Asks numbered, options lettered, one `(recommended)`.
+- Asks numbered, options lettered, one `(recommended)` — on the merits, never the agent's convenience.
 - Tone from the audience of the document in hand, or `.spry/tone`.
 
 ## Commands
