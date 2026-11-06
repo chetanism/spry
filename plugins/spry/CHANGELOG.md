@@ -1006,6 +1006,8 @@ Entry format:
   commit after the fast checks, works out the next step from the commits, the review reads one step
   per agent plus the seams, and `merge-check` blocks a step missing, doubled, out of order or not
   folded in.
-- **Adapt:** `slices.mode` — `split` (default, as before) or `steps`; `slices.steps.max` and
-  `max_lines` (5 and 800) cap one slice; `hooks.step_commit` (on in new projects).
+- **Adapt:** ask which `slices.mode` the project wants — `split` (as before) or `steps` — and write
+  it with `slices.steps` (`max` 5, `max_lines` 800) and `hooks.step_commit: true`; a missing
+  `slices.mode` is `split`. Stories already sliced keep their slices; `steps` applies from the next
+  `/spry:slice`.
 - **Migrate:** nothing — a slice without `### Steps` is one step, as before.
