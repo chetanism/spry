@@ -990,3 +990,24 @@ Entry format:
   `/spry:retro` recommended starting every proposal before any was found.
 - **Adapt:** nothing
 - **Migrate:** a project's `AGENTS.md` takes the new *Replies* line from the template.
+
+## CH-51 · Steps mode — a story's fixed costs paid once
+
+- **Date:** 2026-11-06 · **Version:** 0.40.0
+- **Touches:** `tool/spry.py` (`step`; steps in `check`, `check --base`, `merge-check`, `pr-body`,
+  `merge-message`, pace's review-agent flag; the `step_commit` hook and the `session` hook's step
+  line), `hooks/hooks.json`, `process/slicing.md` (*Steps*), `process/reviewing.md` (§2, §3a, §5a),
+  `process/merging.md`, `process/setup.md`, `process/templates/spry.config.json` (`slices.mode`,
+  `slices.steps`, `hooks.step_commit`), `skills/{slice,slice-open,slice-close,review}`
+- **Why:** each slice pays the same fixed costs whatever its size — a work order, a review agent,
+  falsify, a full gate, two CI runs and a merge wait — and the pilots spent 19–26% of active time in
+  checks and up to half the merge phase waiting. Connect tried one slice per story built commit by
+  commit as an instruction, and the agent did not always follow it. Now the tool makes each step's
+  commit after the fast checks, works out the next step from the commits, the review reads one step
+  per agent plus the seams, and `merge-check` blocks a step missing, doubled, out of order or not
+  folded in.
+- **Adapt:** ask which `slices.mode` the project wants — `split` (as before) or `steps` — and write
+  it with `slices.steps` (`max` 5, `max_lines` 800) and `hooks.step_commit: true`; a missing
+  `slices.mode` is `split`. Stories already sliced keep their slices; `steps` applies from the next
+  `/spry:slice`.
+- **Migrate:** nothing — a slice without `### Steps` is one step, as before.

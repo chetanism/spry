@@ -47,6 +47,8 @@ together. With no argument, the current branch's PR.
   - this file;
   - the output shape in §4.
 - **Leave out why the work was written as it was.** That reasoning is what the review is testing.
+- **A slice built in steps** (`slicing.md` *Steps*) gets one new agent per step and one for the
+  seams, all in parallel (§3a).
 - **An agent with no subagents:** ask the person to run `/spry:review <target>` in a new session.
 - **Another review after fixes** gets another new agent. It writes its own findings before it reads
   the earlier ones. Then it says which of the earlier ones still stand.
@@ -76,6 +78,21 @@ said not to do".
    `merge-check` and the merge's ask cover its rows: skip this check, and say so.
 6. **Conventions.** The areas the diff touches (`spry/knowledge/conventions/INDEX.md`).
 7. **Demo.** Run it when it can run locally. If you did not run it, say so.
+
+**A slice built in steps** has a `### Steps` section, and *For the reviewer* lists them. The
+scope stays one step per reviewer, and one more reads the seams between them:
+
+- **One agent per step.** `spry.py step SL-<n> --ranges` prints each step's `git diff <a> <b>` —
+  from the slice's branch on the remote when it is not checked out, so nothing is switched
+  (`--head <ref>` names another). A
+  step's agent gets only that diff, its step's heading, `Covers:` and plan, the slice's `Must not`,
+  and the criteria the step covers. It runs checks 2, 3, 4 and 6 above on its step alone: the plan
+  is the step's, the tests are for the step's criteria.
+- **One agent for the seams.** It gets the whole diff (the `seams` line) and the list of steps. It
+  looks only at what one step relies on from another — an interface, the shape of data, an order,
+  shared state, a name one step changes and another still uses — and at checks 5 and 7. It does
+  not repeat what a step's reviewer would find.
+- Their findings are verified and reported together (§4), each naming its step.
 
 ### b. Plan
 
@@ -228,8 +245,9 @@ The session that ran the review does this, not the reviewing agent.
      fixed code.
    - A PR already closed: falsify again when code changed (`merge-check` blocks a control with no
      row), then `spry.py gate`; the slice's *What changed* and the PR body when the diff did.
-4. **Commit** `fix(<SL-n>): review findings`. Reviewed at close: the close pushes, at its end.
-   Otherwise push once.
+4. **Commit** `fix(<SL-n>): review findings`. In a slice built in steps, each fix is instead
+   `git commit --fixup=<its step's commit>` (`step SL-<n> --ranges`), folded in before the gate
+   (`slicing.md` *Steps*). Reviewed at close: the close pushes, at its end. Otherwise push once.
 5. **Reviewed at close,** finish the close (`slicing.md` *Close*, from *Falsify*). A draft PR reviewed
    before its close: stop there; the close runs from step 1 when the build is done. **On *a*,** then
    run `/spry:merge` — every step. The answer was its step 6 yes, for the `!` items the

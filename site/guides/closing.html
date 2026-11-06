@@ -69,13 +69,16 @@ replay the branch's commits on top of the latest main branch.
     reads the PR against its work order. You answer its first question, one choice for what happens next:
     <em>a</em> post its comments, fix every blocker and should, then merge; <em>b</em> post and fix, but stop
     before the merge; <em>c</em> post only; <em>d</em> neither. Accepted fixes are applied before falsify; on
-    <em>c</em> or <em>d</em> the close goes on to falsify with nothing fixed.</p></li>
+    <em>c</em> or <em>d</em> the close goes on to falsify with nothing fixed. A slice
+    <a href="slicing.html#built-in-steps">built in steps</a> gets one reviewer per step and one for the seams,
+    and each fix is a fixup of its step.</p></li>
   <li><strong>Falsify.</strong>
     <p>Each safeguard the slice added is broken on purpose, one at a time, and the tests citing its
     criteria are run. They should fail. Details below.</p></li>
   <li><strong>Gate.</strong>
     <p><code>spry.py gate</code>: check, fast checks, affected tests. If it fails, fix and run again — it
-    repeats only what the fix could change.</p></li>
+    repeats only what the fix could change. In a slice built in steps, <code>spry.py step SL-n --squash</code>
+    first folds the fixups into their steps.</p></li>
   <li><strong>Mark it closed and ready.</strong>
     <p><code>state: closed</code> and <code>closed:</code> today's date, committed with a <code>Slice: SL-n</code>
     trailer (a labelled line at the end of the commit message), pushed; the PR body refreshed with both parts; the PR marked ready for review. With a GitHub
