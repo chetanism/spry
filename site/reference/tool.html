@@ -97,6 +97,21 @@ test step stops the gate.</p>
 </ul>
 <p>More: <a href="../design/gate.html">The gate and test speed</a>.</p>
 
+<h3 id="step">step</h3>
+<p>For a slice built in steps (<code>slices.mode: steps</code>): which step comes next, worked out from the
+commits already on the branch, and the commit that finishes it.</p>
+<pre><code>spry step [--commit] [--ranges] [--squash] [--base BASE] slice</code></pre>
+<ul>
+  <li>With no flag — the next step's title, the criteria it covers and its plan. A new session, or one
+  after a compaction, starts here.</li>
+  <li><code>--commit</code> — runs <code>gate --fast</code>, then commits everything as
+  <code>SL-n step k: title</code> with the trailer <code>Step: SL-n/k</code>. It refuses when the fast checks
+  are red, when nothing changed, when only documents changed, or when the steps so far are out of order.</li>
+  <li><code>--ranges</code> — each step's <code>git diff</code>, and the whole branch's, for the reviewers.</li>
+  <li><code>--squash</code> — folds <code>fixup!</code> commits (review fixes, falsify's new tests) into
+  their steps before the gate; a rebase that stops is undone.</li>
+</ul>
+
 <h3 id="changed">changed</h3>
 <p>For CI: prints <code>code=true</code> when any file outside <code>checks.docs</code> changed since
 <code>--base</code>, else <code>code=false</code>. CI skips the fast checks and tests when it is false;
@@ -109,9 +124,11 @@ test step stops the gate.</p>
 <p>It blocks (<code>✗</code>) when the slice is not closed or has no <code>closed:</code> date, owner or PR
 number, when a control the diff adds has no falsify row, when a survivor has no reason, when the branch
 changed a criterion and code together without <code>criteria_approved_by:</code> the story's owner,
-or when <code>check</code> is not clean. It warns (<code>!</code>) about things a person must accept
+when a slice built in steps has a step with no commit, one made twice or out of order, code committed
+without a <code>Step:</code> trailer, or a fixup not folded in, or when <code>check</code> is not clean. It warns (<code>!</code>) about things a person must accept
 at the merge — a survivor or skipped control with a reason, a covered criterion no test cites (QA
-checks it by hand after the merge), or one whose latest manual check failed.</p>
+checks it by hand after the merge), one whose latest manual check failed, or a steps slice over
+<code>slices.steps.max_lines</code>.</p>
 
 <h3 id="review-check">review-check</h3>
 <p>Would GitHub take this review as it stands? Exits 1 if not.</p>

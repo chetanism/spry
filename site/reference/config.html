@@ -100,10 +100,10 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
   "pace": { "away": 30, "logs": [], "flags": { … } },
   "hooks": {
     "session": true, "link_fields": true, "cited_criteria": true,
-    "check_edit": true, "merge": true, "check_stop": true
+    "check_edit": true, "merge": true, "check_stop": true, "step_commit": true
   },
   "memory": { "index_lines": 60, "index_bytes": 8000, "line_chars": 200, "stale_days": 30 },
-  "slices": { "issue": false, "pick": "offer" },
+  "slices": { "issue": false, "pick": "offer", "mode": "split", "steps": { "max": 5, "max_lines": 800 } },
   "main_branch": "main",
   "mint": "local"
 }</code></pre>
@@ -259,6 +259,7 @@ off, so a project set up before 0.34.0 has none until it takes them. New project
     <tr><td><code>hooks.check_edit</code></td><td>After an edit of a document, checks that one file and sends its errors back to the agent.</td></tr>
     <tr><td><code>hooks.merge</code></td><td>Runs <code>merge-check</code> before <code>gh pr merge</code> of a slice's pull request, made from its branch, and refuses the merge if anything blocks it.</td></tr>
     <tr><td><code>hooks.check_stop</code></td><td>Before the agent finishes with documents changed, runs <code>check</code>; on errors it goes back once to fix them, and the same documents are not checked again.</td></tr>
+    <tr><td><code>hooks.step_commit</code></td><td>On a slice built in steps, refuses a <code>git commit</code> of code and names <code>spry.py step --commit</code>, which runs the fast checks and marks the commit as its step. Fixups, amends and documents go through.</td></tr>
   </tbody>
 </table>
 
@@ -284,6 +285,9 @@ off, so a project set up before 0.34.0 has none until it takes them. New project
   <tbody>
     <tr><td><code>slices.issue</code></td><td><code>true</code>: each slice gets a GitHub issue when it opens, from its work order, for people who follow issues rather than the repository. The close summary is posted on it; the merge closes it.</td><td><code>false</code></td></tr>
     <tr><td><code>slices.pick</code></td><td>What <code>/spry:slice-open</code> with no ID does. <code>offer</code>: recommends the first ready slice, with two alternatives. <code>ask</code>: lists the first four and recommends none.</td><td><code>offer</code></td></tr>
+    <tr><td><code>slices.mode</code></td><td>How <code>/spry:slice</code> divides a story. <code>split</code>: one slice per reviewable change. <code>steps</code>: the same changes become <em>steps</em>, packed into as few slices as the cap allows, so the review set-up, falsify, the full gate, CI and the merge happen once per slice rather than once per change. Each step is still its own commit and its own reviewer. See <a href="../guides/slicing.html#built-in-steps">Built in steps</a>.</td><td><code>split</code></td></tr>
+    <tr><td><code>slices.steps.max</code></td><td>The most steps one slice may hold; <code>check</code> refuses more.</td><td><code>5</code></td></tr>
+    <tr><td><code>slices.steps.max_lines</code></td><td>Lines of code (documents not counted) one steps slice should change. Over it, <code>merge-check</code> lists the size for you to accept at the merge.</td><td><code>800</code></td></tr>
     <tr><td><code>main_branch</code></td><td>The repository's default branch — read from the repository at setup, never assumed.</td><td><code>main</code></td></tr>
     <tr><td><code>mint</code></td><td>Where IDs are taken and slices claimed. <code>local</code>: the next number in this tree; two branches can collide, and <code>check --base</code> names it before the merge. <code>main</code>: taken on the main branch on the remote, pushed at once — two sessions never take one number or one slice. Needs a main branch that accepts a direct commit of documents.</td><td><code>local</code></td></tr>
   </tbody>

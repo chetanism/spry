@@ -3331,6 +3331,141 @@ class Pace(Base):
         self.assertTrue(os.path.isfile(os.path.join(t.root, ".spry", "pace", "slices", "SL-1.json")))
 
 
+STEPS = ("### Steps\n\n#### Step 1 · Refuse a fifth book\n\nCovers: AC-1\n\n- `src/lend.ts` — the limit\n\n"
+         "#### Step 2 · Show the limit\n\nCovers: AC-2\n\n- `src/page.ts` — the count\n\n")
+
+
+class Steps(Base):
+    """Steps mode (DESIGN.md §15): one slice built in steps, one commit each, made and checked by the tool."""
+
+    def setUp(self):
+        text = slice_("SL-1", state="open", covers="[AC-1, AC-2]").replace("pr: 1\n", "pr: 1\nbranch: sl-1-a\n")
+        self.text = text.replace("### Plan\n\n\n", STEPS)
+        self.t = self.tree(**{f"{S}/README.md".replace("/", "__"): story("S-1", acs=("AC-1", "AC-2")),
+                              f"{S}/SL-1-a.md".replace("/", "__"): self.text,
+                              "src__b.test.ts": 'test("S-1/AC-2 shows it", () => {})\n', ".gitignore": ".spry/\n"})
+        self.doc = os.path.join(self.t.root, S, "SL-1-a.md")
+
+    def write(self, rel, text):
+        path = os.path.join(self.t.root, rel)
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w") as handle:
+            handle.write(text)
+
+    def with_steps(self, steps):
+        self.write(f"{S}/SL-1-a.md", self.text.replace(STEPS, steps))
+        return self.t.problems()
+
+    def say(self, *call, **given):
+        lines = []
+        code = spry.step_command(self.t.project(), "SL-1", "main", *call, say=lines.append, **given)
+        return code, "\n".join(lines)
+
+    def on_branch(self):
+        self.run_git = git_repo(self.t.root)
+        self.run_git("checkout", "-qb", "sl-1-a")
+
+    def test_steps_are_read_from_the_work_order(self):
+        steps = spry.slice_steps(self.text)
+        self.assertEqual([(s["n"], s["title"], s["covers"]) for s in steps],
+                         [(1, "Refuse a fifth book", ["AC-1"]), (2, "Show the limit", ["AC-2"])])
+        self.assertEqual(spry.slice_steps(slice_("SL-2")), [], "a slice without Steps is one step")
+        self.assertEqual(self.t.problems(), [])
+
+    def test_check_refuses_a_steps_section_that_does_not_add_up(self):
+        self.assertProblem(self.with_steps(STEPS.replace("Step 2", "Step 3")), "numbered 1, 2, 3")
+        self.assertProblem(self.with_steps(STEPS.replace("Covers: AC-2\n", "")), "step 2 has no `Covers:` line")
+        self.assertProblem(self.with_steps(STEPS.replace("Covers: AC-2", "Covers: AC-3")), "covers AC-3, which the slice")
+        self.assertProblem(self.with_steps(STEPS.replace("Covers: AC-2", "Covers: —")), "covers AC-2, but no step does")
+        many = "### Steps\n\n" + "".join(f"#### Step {k} · s{k}\n\nCovers: AC-1, AC-2\n\n" for k in range(1, 7))
+        self.assertProblem(self.with_steps(many), "6 steps, over `slices.steps.max` (5)")
+
+    def test_each_step_is_one_commit_made_by_the_tool(self):
+        self.on_branch()
+        code, out = self.say(False, False, False)
+        self.assertEqual(code, 0)
+        self.assertIn("SL-1 · step 1 of 2: Refuse a fifth book", out)
+        self.assertEqual(self.say(True, False, False)[0], 1, "nothing changed yet")
+        self.write("src/lend.ts", "export const limit = 4\n")
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 0, out)
+        log = subprocess.run(["git", "log", "-1", "--format=%s%n%b"], cwd=self.t.root, capture_output=True, text=True).stdout
+        self.assertIn("SL-1 step 1: Refuse a fifth book", log)
+        self.assertIn("Step: SL-1/1", log)
+        self.assertIn("step 2 of 2: Show the limit", self.say(False, False, False)[1])
+        self.write("src/page.ts", "export const shown = true\n")
+        self.assertEqual(self.say(True, False, False)[0], 0)
+        code, out = self.say(False, False, False)
+        self.assertIn("all 2 steps committed", out)
+        code, out = self.say(False, True, False)
+        self.assertRegex(out, r"step 1 · git diff \w+\^ \w+ · Refuse a fifth book · AC-1")
+        self.assertIn("seams · git diff", out)
+
+    def test_merge_check_wants_every_step_once_in_order_and_nothing_left_to_fold(self):
+        self.on_branch()
+        self.write("src/lend.ts", "export const limit = 4\n")
+        self.say(True, False, False)
+        blocks = [x for s, x in spry.step_merge_lines(self.t.project(), self.t.project().items["SL-1"], "main") if s == "block"]
+        self.assertTrue(any("step 2 \"Show the limit\" has no commit" in b for b in blocks), blocks)
+        self.write("src/page.ts", "export const shown = true\n")
+        self.say(True, False, False)
+        lines = spry.step_merge_lines(self.t.project(), self.t.project().items["SL-1"], "main")
+        self.assertIn(("ok", "steps: all 2 committed, one commit each, in order"), lines)
+        first = subprocess.run(["git", "log", "--format=%H", "--grep", "Step: SL-1/1"], cwd=self.t.root,
+                               capture_output=True, text=True).stdout.strip()
+        self.write("src/lend.ts", "export const limit = 3\n")
+        self.run_git("commit", "-qam", "fix the limit")
+        blocks = [x for s, x in spry.step_merge_lines(self.t.project(), self.t.project().items["SL-1"], "main") if s == "block"]
+        self.assertTrue(any("without a `Step:` trailer" in b for b in blocks), blocks)
+        self.run_git("reset", "-q", "--soft", "HEAD~1")
+        self.run_git("commit", "-q", f"--fixup={first}")
+        blocks = [x for s, x in spry.step_merge_lines(self.t.project(), self.t.project().items["SL-1"], "main") if s == "block"]
+        self.assertTrue(any("fixup commit not folded in" in b for b in blocks), blocks)
+        self.assertEqual(self.say(False, False, True)[0], 0)
+        lines = spry.step_merge_lines(self.t.project(), self.t.project().items["SL-1"], "main")
+        self.assertIn(("ok", "steps: all 2 committed, one commit each, in order"), lines)
+        with open(os.path.join(self.t.root, "src", "lend.ts")) as handle:
+            self.assertEqual(handle.read(), "export const limit = 3\n", "the fix is in step 1 now")
+
+    def test_a_slice_over_the_size_cap_is_the_person_s_call(self):
+        self.on_branch()
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "slices": {"steps": {"max_lines": 2}}}))
+        self.run_git("commit", "-qam", "docs: cap")
+        self.write("src/lend.ts", "a\nb\nc\n")
+        self.say(True, False, False)
+        lines = spry.step_merge_lines(self.t.project(), self.t.project().items["SL-1"], "main")
+        self.assertTrue(any(s == "warn" and "3 lines of code changed, over" in x for s, x in lines), lines)
+
+    def test_the_pull_request_and_the_squash_list_the_steps(self):
+        project = self.t.project()
+        self.assertIn("**Built in 2 steps**", spry.pr_body(project, "SL-1"))
+        self.assertIn("Steps:\n1. Refuse a fifth book\n2. Show the limit\n\nSlice: SL-1", spry.merge_message(project, "SL-1"))
+
+    def test_the_hook_sends_a_code_commit_to_the_tool(self):
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "main_branch": "main", "hooks": {"step_commit": True}}))
+        self.on_branch()
+
+        def hook(command):
+            code, reply = spry.agent_hook("step_commit", json.dumps({"cwd": self.t.root, "tool_name": "Bash",
+                                                                    "tool_input": {"command": command}}))
+            return (reply or {}).get("hookSpecificOutput", {}).get("permissionDecision")
+
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "main_branch": "main",
+                                                        "hooks": {"step_commit": True, "session": True}}))
+        told = spry.agent_hook("session", json.dumps({"cwd": self.t.root}))[1]
+        self.assertIn("SL-1 is built in 2 steps", told["hookSpecificOutput"]["additionalContext"])
+        self.write("src/lend.ts", "export const limit = 4\n")
+        self.assertEqual(hook("git add -A && git commit -m 'limit'"), "deny")
+        self.assertIsNone(hook("git commit --fixup=HEAD"))
+        self.assertIsNone(hook("git status"))
+        os.remove(os.path.join(self.t.root, "src", "lend.ts"))
+        self.write(f"{S}/SL-1-a.md", self.text + "\n")
+        self.assertIsNone(hook("git commit -am 'docs(slice): SL-1 work order'"), "documents alone")
+        self.run_git("checkout", "-q", "main")
+        self.write("src/lend.ts", "export const limit = 4\n")
+        self.assertIsNone(hook("git commit -am x"), "not a steps branch")
+
+
 class Issues(Base):
     def test_an_open_slice_needs_an_issue_only_when_the_switch_is_on(self):
         doc = f"{S}/SL-1-a.md".replace("/", "__")

@@ -1,6 +1,6 @@
 {
-  "spry": "0.39.0",
-  "spry_baseline": "CH-50",
+  "spry": "0.40.0",
+  "spry_baseline": "CH-51",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -75,12 +75,15 @@
     "cited_criteria": true,
     "check_edit": true,
     "merge": true,
-    "check_stop": true
+    "check_stop": true,
+    "step_commit": true
   },
   "memory": {"index_lines": 60, "index_bytes": 8000, "line_chars": 200, "stale_days": 30},
   "slices": {
     "issue": false,
-    "pick": "offer"
+    "pick": "offer",
+    "mode": "split",
+    "steps": {"max": 5, "max_lines": 800}
   },
   "main_branch": "main",
   "mint": "local"

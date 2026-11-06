@@ -30,6 +30,8 @@ from the argument (`SL-n` or a PR number), or from the current branch's `open` /
    `python3 spry/tool/spry.py merge-check SL-<n> --base origin/<main>`.
    `✗` → stop and say what to do. `!` → say it, and carry it to step 6. It blocks when:
    - a control the diff adds has no falsify row — the agent never leaves one out;
+   - a slice built in steps has a step with no commit, one committed twice or out of order, code
+     committed without a `Step:` trailer, or a fixup not folded in (`step SL-<n> --squash`);
    - the branch changes a criterion and code together, and the slice has no
      `criteria_approved_by: <name>` from the story's owner. Show them the old and new text; only
      their yes, in their words, puts that line in — never the agent's judgement.
@@ -46,7 +48,7 @@ from the argument (`SL-n` or a PR number), or from the current branch's `open` /
      (`next <type>` after merging the main branch in) and every place it is cited, then step 1 again.
 6. **Ask:** one line — what merges, the trailer it carries — and each `!` item as something the person
    accepts: a survivor or skipped control with its reason, a criterion with no test, a criterion
-   changed under its tests or scenarios, CI that did not run. Merge only on a yes given in this
+   changed under its tests or scenarios, CI that did not run, a steps slice over its size cap. Merge only on a yes given in this
    conversation, for this PR.
    - **Already answered** when the person chose *fix, then merge* in a review of this PR
    (`reviewing.md` §5a) and every `!` here was in that review's report. Anything new — a `!` the

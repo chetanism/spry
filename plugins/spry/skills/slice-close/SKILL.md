@@ -11,6 +11,9 @@ argument-hint: "[slice ID]"
 - **With an `issue:`,** post the close summary on it (`spry.py issue-body --close`); never edit its body.
 - **Order:** rebase and the review come before falsify and the gate, so those run once, on the code
   that merges. Review fixes are checked with `spry.py gate --fast` only.
+- **A slice built in steps:** one reviewer per step and one for the seams; review fixes and
+  falsify's new tests are `git commit --fixup=<step commit>`, folded in before the gate by
+  `spry.py step SL-<n> --squash` (`slicing.md` → *Steps*).
 - **Falsify with the tool** (`spry.py falsify suggest`, then `run`) — never by editing files by hand;
   the tool restores every file, even when interrupted. Keep every control the draft lists.
   Confirm `git status` is clean afterwards.

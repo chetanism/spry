@@ -128,6 +128,57 @@ Some signals — rules of thumb, not checked by spry:</p>
   </tbody>
 </table></div>
 
+<h2>Built in steps</h2>
+
+<p>Every slice pays the same fixed costs whatever its size: a work order, a review, falsify, the full gate,
+two CI runs and a merge. A story cut into four slices pays them four times. A project that wants them
+paid once can set <code>slices.mode</code> to <code>steps</code> in its <a href="../reference/config.html">config</a>.
+The default, <code>split</code>, works as described above.</p>
+
+<p>With <code>steps</code>, <code>/spry:slice</code> plans the story exactly as it would plan slices — each change
+reviewable, each one visible, each covering its criteria — but calls them <strong>steps</strong>, and packs
+them into as few slices as the cap allows: <code>slices.steps.max</code> steps (5) and about
+<code>slices.steps.max_lines</code> changed lines (800, documents not counted). A story that fits becomes one
+slice. Steps two people could build at the same time go into separate slices.</p>
+
+<p>Nothing about review or proof gets smaller. The tool keeps each step separate:</p>
+
+<div class="table-wrap"><table>
+  <thead><tr><th>What</th><th>How the tool keeps it</th></tr></thead>
+  <tbody>
+    <tr><td>One step at a time</td><td><code>spry.py step SL-n</code> names the next step and its plan, worked out from the commits made so far — a new session starts there too</td></tr>
+    <tr><td>Each step one commit</td><td><code>spry.py step SL-n --commit</code> runs the fast checks, then commits with the trailer <code>Step: SL-n/k</code>. The <code>step_commit</code> hook refuses a <code>git commit</code> of code made by hand</td></tr>
+    <tr><td>Tests once</td><td>Steps run the fast checks only; the full gate and falsify run once, at close, on the whole slice</td></tr>
+    <tr><td>Review one step at a time</td><td>One fresh reviewer per step, given only that step's diff, and one more for the seams between steps — all at once</td></tr>
+    <tr><td>Clean commits to read</td><td>Review fixes are fixups of their step, folded in by <code>spry.py step SL-n --squash</code> before the gate</td></tr>
+    <tr><td>Nothing missing</td><td><code>merge-check</code> blocks a step with no commit, one made twice or out of order, code without a trailer, or a fixup not folded in. Over the line cap, it asks you to accept the size</td></tr>
+  </tbody>
+</table></div>
+
+<p>The work order's <em>Plan</em> becomes <em>Steps</em>: one heading per step, the criteria it covers, then
+one bullet per file.</p>
+
+<pre data-label="SL-4-refuse-over-limit.md"><code>### Steps
+
+#### Step 1 · Refuse a fifth book
+
+Covers: AC-1
+
+- `src/lend.ts` — `lend` returns `AtLimit` at the limit
+
+#### Step 2 · Show the limit on the member page
+
+Covers: AC-2
+
+- `src/member-page.ts` — "3 of 4 books"</code></pre>
+
+<div class="callout">
+  <span class="callout-title">What it costs</span>
+  <p>A bigger pull request for a person to read, though they can read it commit by commit. A branch that
+  lives longer, so use it for stories whose files no other open slice touches. And nothing reaches the
+  main branch until the last step is done.</p>
+</div>
+
 <h2>What can go wrong</h2>
 
 <ul>

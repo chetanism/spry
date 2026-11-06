@@ -348,6 +348,80 @@ first so a slow one never runs only to be thrown away by a lint error.
   services (`stack`) only when they are down and stopping only what it started. Report only.
 - Fewer conflicts come from §4 (one file per item) and §13 (no generated files on branches).
 
+### Steps mode — one slice for a story, built in steps
+
+> **Status:** built in CH-51 (0.40.0). From connect's "catch-up mode", which was an instruction the
+> agent sometimes did not follow.
+
+Purpose: pay a slice's fixed costs once per story, not once per slice, while keeping one task in
+the agent's hands and in each reviewer's scope at a time. A slice pays the same costs whatever its
+size: a work order, a claim, a draft PR, a review agent, falsify, a full gate, two CI runs and a
+merge wait. In the pilots, checks took 19–26% of active time, review agents 17–19%, and waiting on
+the person took up to half of the merge phase (§17). Falsify costs the same in either mode, since
+it grows with the guards a diff adds, not with the number of slices.
+
+- **One kind of slice.** A slice holds one or more steps. A slice with one step is today's slice
+  and has no `### Steps` section. `slices.mode` only changes how `/spry:slice` splits a story:
+  - `split` (default): one step per slice, as today.
+  - `steps`: the story is planned as steps, as slices are today (a title, the criteria each
+    covers, one visible change each, in build order). Then consecutive steps are packed into the
+    fewest slices that fit `slices.steps.max` (default 5) and `slices.steps.max_lines` (default
+    800 lines changed, documents left out). A story over the cap gets several slices, and each of
+    those is a steps slice. Steps that could be built at the same time by different people go
+    into different slices, so the slices can run side by side.
+- **The work order.** In a steps slice, `### Plan` is replaced by `### Steps`. Each
+  `#### Step <k> · <title>` has a `Covers:` line (the slice's criteria it covers, or `—` for a
+  step that only prepares) and one plan bullet per file. `check` refuses steps that are not
+  numbered from 1, more steps than `slices.steps.max`, a criterion that is in `covers` but in no
+  step, and a step that covers a criterion outside `covers`.
+- **One commit per step, made by the tool.** `spry.py step SL-<n>` prints the next step (its
+  title, covers and plan), worked out from the commits already on the branch. So a new session
+  or a compacted context continues where the last one stopped, and nothing depends on the agent
+  remembering. `spry.py step SL-<n> --commit` runs `gate --fast` and commits the working tree as
+  `SL-<n> step <k>: <title>` with the trailer `Step: SL-<n>/<k>`. It refuses when the fast gate is
+  red, when nothing changed, or when step `k` is already committed. Commits that change only
+  documents (the work order, the close summary) carry no trailer.
+- **Checked, not written:**
+  - `check --base` warns about a code commit on a steps branch that has no `Step:` trailer and is
+    not a `fixup!` of a step commit, and about steps committed out of order or twice.
+  - `merge-check` blocks unless every step has exactly one commit, in order, with no `fixup!` left.
+  - A slice over `slices.steps.max_lines` at close is listed in the merge's ask, for the person to
+    accept, as survivors are.
+  - The `session` hook (§18) names the step the branch is on. A `step_commit` hook, filtered to
+    `Bash(git commit *)` on a steps branch, refuses a commit without the trailer and names
+    `spry.py step --commit`. As with every hook, it fails open, and the rule stays in `check` and
+    `merge-check`.
+- **Tests once per story.** Each step runs `gate --fast` (lint, types, no tests). The affected
+  tests run while building only when their answer is needed, as today. The full gate and falsify
+  run once, at close, on the whole slice. Pushes happen only at close, so CI runs twice per slice
+  rather than twice per step.
+- **Review, step by step.** At close, `/spry:review` on a steps slice starts one fresh agent per
+  step, all in parallel. Each agent gets only its step's diff (from the step before, or from the
+  work-order commit for step 1), the step's plan, its criteria and the slice's `Must not`. One
+  more agent reads the whole diff for the **seams** only: what one step relies on from another
+  (an interface, the shape of data, ordering, shared state), which no single step's review can
+  see. `spry.py step SL-<n> --ranges` gives each agent its diff. Findings are verified and merged
+  into the usual single ask (`reviewing.md`). Accepted fixes are `git commit --fixup=<step commit>`.
+  So are tests added for falsify survivors. `spry.py step SL-<n> --squash` folds them in (an
+  autosquash rebase, undone if it stops) before the gate, so every step is still one clean commit when a
+  person reviews the PR commit by commit. Falsify keys controls by file and line at `HEAD`, which
+  the rebase leaves alone.
+- **The PR and the merge.** `pr-body` lists the steps under *For the reviewer*, each linked to its
+  commit. The merge stays a squash: every commit on the main branch passed the full gate, so
+  bisect never stops on a commit that only passed `gate --fast`. `merge-message` adds the step
+  titles to the body.
+- **Pace** (§17) reads a steps slice like any other. The config commit that turns the mode on is a
+  dated change, so the page compares slices before and after it. The review-agent flag counts
+  agents per step.
+- **What it costs, and when not to use it:**
+  - A larger PR for a person to read. The cap and the step commits limit this.
+  - A branch that lives longer, with more rebases. Use the mode for stories whose files no open
+    slice touches (`spry.py related`).
+  - Nothing reaches the main branch until the last step, so it is wrong for a story whose parts
+    should ship separately.
+  - The agent holds one story in context for longer. The pace flag for compactions shows whether
+    the cap is too high.
+
 ## 16. Falsify (kept, optimised)
 
 Purpose: prove a slice's tests notice its safeguards — remove each, expect a failure.
@@ -563,6 +637,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `cited_criteria` | an Edit or Write of a story | asks the person when a criterion that a test cites (`git grep`) changes or is dropped |
 | `check_edit` | after an Edit or Write of a document `check` reads | `check` of that one file by its text — front-matter, budget, placeholders, links, glossary — errors sent back to the agent |
 | `merge` | `gh pr merge`, from the slice's branch | runs `merge-check` against `origin/<main>` for the slice whose `pr` or branch it names; refuses the merge on a block. From another branch the tree holds another copy of the slice, so it says nothing |
+| `step_commit` | `git commit`, on a branch whose slice has `### Steps` | refuses a commit of code that is not a `--fixup`, `--squash` or `--amend`, naming `spry.py step --commit`; documents alone go through |
 | `check_stop` | the agent is about to stop | with documents changed (uncommitted, or on the branch), `check`; errors send it back once; each state checked is stamped in `.spry/hooks/` and not checked again, passing or not |
 
 - **One switch each**, `hooks.<key>` in `spry.config.json`, off when missing — a project that has
@@ -609,6 +684,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
+| `step <slice> [--commit] [--ranges] [--squash] [--base]` | steps mode (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` and commits it with its `Step:` trailer; `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
@@ -757,6 +833,16 @@ in `spry/history/writ.md`, then retires `canon/`.
   (`/spry:pace` and `/spry:retro` recommending every proposal) now depend on what was found, as
   `reviewing.md` already did; memory-check's presets hold because they follow from how a change was
   classed, and now say so.
+- 2026-11-06 — steps mode (§15, CH-51). The mode is called `steps`, after what it does. "Fast
+  lane" and "catch-up" were rejected because they suggest a lower bar or say nothing to a
+  newcomer. It is a project default, with `/spry:slice` packing steps per story under a size cap,
+  so one switch cannot make a story into one unreadable PR. A story over the cap gets several
+  steps slices: there is one kind of slice, and today's slice is a slice with one step. Review is
+  one agent per step in parallel at close plus one for the seams. Reviewing each step while the
+  next is built was rejected, because a fix would land on code a later step already builds on.
+  The merge stays a squash, so no commit on the main branch skipped the full gate. Being an
+  instruction was not enough in connect, so the tool makes the step commits and `merge-check`
+  checks them.
 
 ## 23. Built
 
@@ -903,3 +989,8 @@ in `spry/history/writ.md`, then retires `canon/`.
   were weighed the same day and parked: the agent's own time is 11-16% of a slice, checks 23-25%.
 - 2026-11-05 — recommendations on the merits (CH-50, 0.39.0): `chat.md` names what a recommendation
   may and may not rest on; `/spry:pace` and `/spry:retro` recommend from what was found.
+- 2026-11-06 — steps mode (CH-51, 0.40.0): `slices.mode: steps` packs a story's steps into as few
+  slices as `slices.steps` allows; `spry step` makes each step's commit after `gate --fast` and
+  names the next; review is one agent per step plus the seams; `merge-check` blocks steps missing,
+  doubled, out of order, untrailered or not folded in; the `step_commit` hook. From connect's
+  catch-up mode.

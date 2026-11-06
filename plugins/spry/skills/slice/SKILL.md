@@ -11,5 +11,8 @@ argument-hint: "<story, task or bug ID>"
   (`python3 spry/tool/spry.py status`) and ask.
 - Every criterion of a story must be covered by its slices between them; say which slice covers each.
 - A slice that needs an earlier one names it in `blocked_by`; one that merely comes after it does not.
+- **With `slices.mode: steps`,** plan the story as steps and pack them into the fewest slices under
+  `slices.steps` (`slicing.md` → *Steps*); each slice's file gets its `### Steps` headings and
+  `Covers:` lines.
 - Creates `planned` slices only, all in one `spry.py new slice` with a `--title` each — no branch,
   no code. `/spry:slice-open` comes next.

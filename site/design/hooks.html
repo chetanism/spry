@@ -37,7 +37,7 @@ the mistake is one edit old. spry ships six, and you turn each one on or off by 
 </ul>
 <p>Each hook below answers one of these.</p>
 
-<h2>The six hooks</h2>
+<h2>The seven hooks</h2>
 
 <div class="table-wrap"><table>
 <thead><tr><th>Key</th><th>When it runs</th><th>What it does</th></tr></thead>
@@ -47,6 +47,7 @@ the mistake is one edit old. spry ships six, and you turn each one on or off by 
 <tr><td><code>cited_criteria</code></td><td>An edit of a story</td><td>When a criterion that a test cites changes or is dropped, <strong>asks you</strong> first. The story's owner decides a criterion. If code changes on the same branch, the slice still needs their approval before <code>merge-check</code> passes.</td></tr>
 <tr><td><code>check_edit</code></td><td>After an edit of a document <code>check</code> reads</td><td>Checks that one file: front-matter, budget, leftover placeholders, links, banned words. Any errors go straight back to the agent.</td></tr>
 <tr><td><code>merge</code></td><td><code>gh pr merge</code>, from the slice's branch</td><td>Runs <code>merge-check</code> for the slice whose pull request or branch it names, and refuses the merge if anything blocks it. It does not look at CI: <code>/spry:merge</code> still checks that first. Run from another branch, it says nothing, because the files there hold another copy of the slice.</td></tr>
+<tr><td><code>step_commit</code></td><td><code>git commit</code>, on a branch whose slice is built in steps</td><td>Refuses a commit of code and names <code>spry.py step --commit</code>, which runs the fast checks first and marks the commit as its step. A <code>--fixup</code>, an amend, or a commit of documents alone goes through. See <a href="../guides/slicing.html#built-in-steps">Built in steps</a>.</td></tr>
 <tr><td><code>check_stop</code></td><td>The agent is about to finish</td><td>If documents changed (uncommitted, or on the branch), runs <code>check</code>. On errors the agent goes back once to fix them or say why they stay. The same documents are not checked twice, whether they passed or not.</td></tr>
 </tbody>
 </table></div>
@@ -54,11 +55,12 @@ the mistake is one edit old. spry ships six, and you turn each one on or off by 
 <h2>Turning them on</h2>
 
 <p>Each hook has a key under <code>hooks</code> in <code>spry/spry.config.json</code>. New projects
-start with all six on; setup names each and asks which to turn off. A missing key is off, so a
+start with all seven on; setup names each and asks which to turn off. A missing key is off, so a
 project set up before 0.34.0 sees nothing until <code>/spry:update</code> offers them.</p>
 <pre><code>"hooks": {
   "session": true, "link_fields": true, "cited_criteria": true,
-  "check_edit": true, "merge": true, "check_stop": false
+  "check_edit": true, "merge": true, "check_stop": false,
+  "step_commit": true
 }</code></pre>
 <p>To turn every hook off for one session, start Claude Code with <code>SPRY_HOOKS=off</code> in its
 environment.</p>
