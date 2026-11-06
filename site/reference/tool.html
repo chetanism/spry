@@ -100,14 +100,16 @@ test step stops the gate.</p>
 <h3 id="step">step</h3>
 <p>For a slice built in steps (<code>slices.mode: steps</code>): which step comes next, worked out from the
 commits already on the branch, and the commit that finishes it.</p>
-<pre><code>spry step [--commit] [--ranges] [--squash] [--base BASE] slice</code></pre>
+<pre><code>spry step [--commit] [--ranges [--head REF]] [--squash] [--base BASE] slice</code></pre>
 <ul>
   <li>With no flag — the next step's title, the criteria it covers and its plan. A new session, or one
   after a compaction, starts here.</li>
   <li><code>--commit</code> — runs <code>gate --fast</code>, then commits everything as
   <code>SL-n step k: title</code> with the trailer <code>Step: SL-n/k</code>. It refuses when the fast checks
   are red, when nothing changed, when only documents changed, or when the steps so far are out of order.</li>
-  <li><code>--ranges</code> — each step's <code>git diff</code>, and the whole branch's, for the reviewers.</li>
+  <li><code>--ranges</code> — each step's <code>git diff</code>, and the whole branch's, for the reviewers.
+  Off the slice's branch it reads <code>origin/&lt;branch&gt;</code>, so nothing is checked out;
+  <code>--head REF</code> names another place.</li>
   <li><code>--squash</code> — folds <code>fixup!</code> commits (review fixes, falsify's new tests) into
   their steps before the gate; a rebase that stops is undone.</li>
 </ul>

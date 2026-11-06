@@ -82,7 +82,9 @@ said not to do".
 **A slice built in steps** has a `### Steps` section, and *For the reviewer* lists them. The
 scope stays one step per reviewer, and one more reads the seams between them:
 
-- **One agent per step.** `spry.py step SL-<n> --ranges` prints each step's `git diff <a> <b>`. A
+- **One agent per step.** `spry.py step SL-<n> --ranges` prints each step's `git diff <a> <b>` —
+  from the slice's branch on the remote when it is not checked out, so nothing is switched
+  (`--head <ref>` names another). A
   step's agent gets only that diff, its step's heading, `Covers:` and plan, the slice's `Must not`,
   and the criteria the step covers. It runs checks 2, 3, 4 and 6 above on its step alone: the plan
   is the step's, the tests are for the step's criteria.

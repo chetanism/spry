@@ -259,7 +259,7 @@ off, so a project set up before 0.34.0 has none until it takes them. New project
     <tr><td><code>hooks.check_edit</code></td><td>After an edit of a document, checks that one file and sends its errors back to the agent.</td></tr>
     <tr><td><code>hooks.merge</code></td><td>Runs <code>merge-check</code> before <code>gh pr merge</code> of a slice's pull request, made from its branch, and refuses the merge if anything blocks it.</td></tr>
     <tr><td><code>hooks.check_stop</code></td><td>Before the agent finishes with documents changed, runs <code>check</code>; on errors it goes back once to fix them, and the same documents are not checked again.</td></tr>
-    <tr><td><code>hooks.step_commit</code></td><td>On a slice built in steps, refuses a <code>git commit</code> of code and names <code>spry.py step --commit</code>, which runs the fast checks and marks the commit as its step. Fixups, amends and documents go through.</td></tr>
+    <tr><td><code>hooks.step_commit</code></td><td>On a slice built in steps, refuses a <code>git commit</code> of code and names <code>spry.py step --commit</code>, which runs the fast checks and marks the commit as its step. A <code>--fixup</code>, an amend, or a commit of staged documents goes through.</td></tr>
   </tbody>
 </table>
 

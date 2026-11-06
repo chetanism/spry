@@ -3441,6 +3441,72 @@ class Steps(Base):
         self.assertIn("**Built in 2 steps**", spry.pr_body(project, "SL-1"))
         self.assertIn("Steps:\n1. Refuse a fifth book\n2. Show the limit\n\nSlice: SL-1", spry.merge_message(project, "SL-1"))
 
+    def wrong(self):
+        return spry.step_state(self.t.project(), self.t.project().items["SL-1"], "main")["wrong"]
+
+    def test_a_step_committed_twice_or_out_of_order_is_wrong(self):
+        self.on_branch()
+        self.write("src/lend.ts", "a\n")
+        self.run_git("add", "-A")
+        self.run_git("commit", "-qm", "two first", "-m", "Step: SL-1/2")
+        self.assertTrue(any("out of order: 2" in w for w in self.wrong()), self.wrong())
+        self.run_git("reset", "-q", "--hard", "main")
+        self.write("src/lend.ts", "a\n")
+        self.say(True, False, False)
+        self.write("src/lend.ts", "b\n")
+        self.run_git("commit", "-qam", "again", "-m", "Step: SL-1/1")
+        self.assertTrue(any("step 1 committed twice" in w for w in self.wrong()), self.wrong())
+        self.assertEqual(self.say(True, False, False)[0], 1, "--commit refuses while the steps are wrong")
+
+    def test_a_squash_fold_is_not_a_fixup(self):
+        self.on_branch()
+        self.write("src/lend.ts", "a\n")
+        self.say(True, False, False)
+        self.write("src/lend.ts", "b\n")
+        self.run_git("commit", "-qa", "--squash=HEAD", "-m", "more")
+        self.assertTrue(any("without a `Step:` trailer" in w for w in self.wrong()), self.wrong())
+
+    def test_check_base_warns_on_the_slice_s_branch(self):
+        self.on_branch()
+        self.write("src/lend.ts", "a\n")
+        self.run_git("add", "-A")
+        self.run_git("commit", "-qm", "by hand")
+        project = self.t.project()
+        spry.step_warnings(project, "main")
+        self.assertTrue(any(p.level == "warning" and "without a `Step:` trailer" in p.message for p in project.problems))
+
+    def test_commit_and_squash_only_on_the_slice_s_branch(self):
+        self.run_git = git_repo(self.t.root)
+        self.write("src/lend.ts", "a\n")
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 1)
+        self.assertIn("not SL-1's branch", out)
+        self.assertIn("not SL-1's branch", self.say(False, False, True)[1])
+
+    def test_ranges_read_the_branch_without_checking_it_out(self):
+        self.on_branch()
+        self.write("src/lend.ts", "a\n")
+        self.say(True, False, False)
+        self.run_git("checkout", "-q", "main")
+        code, out = self.say(False, True, False, head="sl-1-a")
+        self.assertEqual(code, 0, out)
+        self.assertIn("· Refuse a fifth book · AC-1", out)
+        self.assertIn("cannot find SL-1's branch", self.say(False, True, False)[1], "no remote to fall back on")
+
+    def test_related_reads_the_steps_plan(self):
+        self.assertEqual(spry.plan_paths(self.text), {"src/lend.ts", "src/page.ts"})
+
+    def test_pace_allows_a_reviewer_per_step(self):
+        project = self.t.project()
+        s = {"id": "SL-1", "kinds": {}, "phases": {}, "gates": [], "reviews": [{}] * 5}
+        self.assertFalse(any("review agents" in f for f in spry.pace_flags(project, s)), "3 + 2 steps")
+        s["reviews"] = [{}] * 6
+        self.assertTrue(any("6 review agents" in f for f in spry.pace_flags(project, s)))
+
+    def test_slices_mode_is_split_or_steps(self):
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "slices": {"mode": "step"}}))
+        self.assertProblem(self.t.problems(), "`slices.mode` is `step`")
+
     def test_the_hook_sends_a_code_commit_to_the_tool(self):
         self.write("spry/spry.config.json", json.dumps({**CONFIG, "main_branch": "main", "hooks": {"step_commit": True}}))
         self.on_branch()
@@ -3460,6 +3526,11 @@ class Steps(Base):
         self.assertIsNone(hook("git status"))
         os.remove(os.path.join(self.t.root, "src", "lend.ts"))
         self.write(f"{S}/SL-1-a.md", self.text + "\n")
+        self.write("src/lend.ts", "export const limit = 4\n")
+        self.run_git("add", f"{S}/SL-1-a.md")
+        self.assertIsNone(hook("git commit -m 'docs(slice): SL-1 work order'"), "only documents are staged")
+        self.assertEqual(hook("git commit -am 'docs(slice): SL-1 work order'"), "deny", "-a takes the code too")
+        os.remove(os.path.join(self.t.root, "src", "lend.ts"))
         self.assertIsNone(hook("git commit -am 'docs(slice): SL-1 work order'"), "documents alone")
         self.run_git("checkout", "-q", "main")
         self.write("src/lend.ts", "export const limit = 4\n")

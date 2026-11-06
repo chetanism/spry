@@ -76,7 +76,7 @@ import threading
 import time
 import urllib.parse
 from datetime import date
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 VERSION = "0.40.0"
 
@@ -886,6 +886,10 @@ def check(project: Project):
                 project.problem(path, line, message)
         check_text(project, path, text, fm or {}, banned_res, budgets, gloss_path)
 
+    mode = (project.config.get("slices") or {}).get("mode")
+    if mode not in (None, "split", "steps"):
+        project.problem(os.path.join(project.spry, "spry.config.json"), 1,
+                        f"`slices.mode` is `{mode}` — `split` or `steps`")
     known = set(project.items) | set(project.decisions)
     for item in project.items.values():
         for key in ("blocked_by", "related"):
@@ -4703,7 +4707,9 @@ def merge_message(project: Project, slice_id: str, ci_local: str | None = None) 
 STEP_HEAD = re.compile(r"^Step\s+(\d+)\s*(?:·|—|–|-|:)\s*(\S.*)$")
 STEP_COVERS = re.compile(r"^\s*(?:-\s*)?Covers:\s*(.*)$", re.I)
 STEP_DEFAULTS = {"max": 5, "max_lines": 800}
-FIXUP_SUBJECT = ("fixup! ", "squash! ", "amend! ")
+# Only `fixup!`: a `squash!` fold keeps its own message after the step's, so `Step:` is no longer
+# the last paragraph and git stops reading it as a trailer.
+FIXUP_SUBJECT = ("fixup! ",)
 
 
 def steps_config(project: Project) -> dict:
@@ -4780,13 +4786,13 @@ def step_base(project: Project, base: str | None = None) -> str:
     return remote if found else main_branch(project)
 
 
-def step_commits(project: Project, item: Item, base: str) -> list:
+def step_commits(project: Project, item: Item, base: str, head: str = "HEAD") -> list:
     """[{sha, subject, kind, step}] — the branch's own commits since it left `base`, oldest first;
     commits merged in from the main branch left out. `kind`: `step` (its `Step:` trailer names this
     slice), `fixup` (`fixup!` and the like, folded in before the gate), `docs` (only `checks.docs`
     changed) or `stray` (code without a trailer)."""
-    fork = fork_point(project, base)
-    span = ("--first-parent", "--no-merges", "--reverse", f"{fork}..HEAD")
+    fork = git(project.root, "merge-base", base, head).stdout.strip() or base
+    span = ("--first-parent", "--no-merges", "--reverse", f"{fork}..{head}")
     log = git(project.root, "log", *span, "--format=%H%x1f%s%x1f%(trailers:key=Step,valueonly,separator=%x1d)%x1e")
     names = git(project.root, "log", *span, "--format=%x1e%H", "--name-only", "--no-renames", "--relative")
     if log.returncode != 0 or names.returncode != 0:
@@ -4814,10 +4820,10 @@ def step_commits(project: Project, item: Item, base: str) -> list:
     return out
 
 
-def step_state(project: Project, item: Item, base: str) -> dict:
+def step_state(project: Project, item: Item, base: str, head: str = "HEAD") -> dict:
     """The steps of a slice against its commits: what is done, what comes next, what is wrong."""
     steps = [s for s in slice_steps(item.text) if s["n"]]
-    commits = step_commits(project, item, base)
+    commits = step_commits(project, item, base, head)
     done = [c for c in commits if c["kind"] == "step"]
     wrong, seen = [], {}
     for c in done:
@@ -4897,34 +4903,68 @@ def step_warnings(project: Project, base: str) -> None:
         project.problem(item.doc, 1, "steps: " + w, "warning")
 
 
-def step_ranges(project: Project, item: Item, base: str) -> list:
+def step_ranges(project: Project, item: Item, base: str, head: str = "HEAD") -> list:
     """[(step, sha, title, covers)] for each step committed, for a review one step at a time."""
-    state = step_state(project, item, base)
+    state = step_state(project, item, base, head)
     by_n = {s["n"]: s for s in state["steps"]}
     return [(c["step"], c["sha"], by_n.get(c["step"], {}).get("title", "?"), by_n.get(c["step"], {}).get("covers") or [])
             for c in state["done"]]
 
 
+def step_head(project: Project, item: Item, head: str | None) -> str | None:
+    """Where the slice's commits are: `head` as given; HEAD on the slice's branch; else the branch on
+    the remote — a reviewer never checks the branch out. None when it cannot be found."""
+    if head:
+        return head
+    if current_branch(project) in (branch_of(item), slice_branch(item)):
+        return "HEAD"
+    for name in (branch_of(item), slice_branch(item)):
+        ref = f"{REMOTE}/{name}"
+        if name and git(project.root, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}").returncode == 0:
+            return ref
+    return None
+
+
 def step_command(project: Project, slice_id: str, base: str | None, commit: bool, ranges: bool,
-                 squash: bool, say=print) -> int:
+                 squash: bool, say=print, head: str | None = None) -> int:
     item = project.items.get(slice_id)
     if item is None or item.type != "slice":
         raise SystemExit(f"no slice {slice_id}")
+    on_branch = current_branch(project) in (branch_of(item), slice_branch(item))
+    if ranges:
+        head = step_head(project, item, head)
+        if head is None:
+            say(f"cannot find {item.id}'s branch here or on {REMOTE} — `git fetch {REMOTE}`, or pass --head <ref>")
+            return 1
+        if head != "HEAD":  # the slice as the branch has it: the work order there may differ from this tree's
+            there = git(project.root, "show", f"{head}:./{project.rel(item.doc)}")
+            if there.returncode == 0:
+                item = replace(item, text=there.stdout)
+    elif head:
+        say("--head goes with --ranges; --commit and --squash work on the slice's branch, checked out")
+        return 1
+    elif (commit or squash) and not on_branch:
+        say(f"this is not {item.id}'s branch (`{slice_branch(item)}`)")
+        return 1
+    head = head or "HEAD"
     if not slice_steps(item.text):
         say(f"{item.id} has no `### Steps` — it is one step: commit as usual")
         return 1
     base = step_base(project, base)
     try:
-        state = step_state(project, item, base)
+        state = step_state(project, item, base, head)
     except PlanError as e:
         say(str(e))
         return 2
     total = len(state["steps"])
     if ranges:
-        fork = fork_point(project, base)
-        for n, sha, title, covers in step_ranges(project, item, base):
+        fork = git(project.root, "merge-base", base, head).stdout.strip() or base
+        tip = git(project.root, "rev-parse", "--short=12", head).stdout.strip() or head
+        for n, sha, title, covers in step_ranges(project, item, base, head):
             say(f"step {n} · git diff {sha[:12]}^ {sha[:12]} · {title} · " + (", ".join(covers) or "—"))
-        say(f"seams · git diff {fork[:12]} HEAD")
+        if not state["done"]:
+            say(f"no step committed yet on {head}")
+        say(f"seams · git diff {fork[:12]} {tip}")
         return 0
     if squash:
         if not state["fixups"]:
@@ -4937,7 +4977,10 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
                    env={**os.environ, "GIT_EDITOR": ":"})
         if done.returncode != 0:
             git(project.root, "rebase", "--abort")
-            say(f"the rebase stopped, so it was undone — {last_line(done)}; fold the fixups in by hand")
+            merged = git(project.root, "rev-list", "--merges", f"{fork_point(project, base)}..HEAD").stdout.strip()
+            hint = (f"the branch merged {base} in: rebase onto it instead (`git rebase {base}`), then --squash again"
+                    if merged else "fold the fixups in by hand")
+            say(f"the rebase stopped, so it was undone — {last_line(done)}; {hint}")
             return 1
         say(f"folded {len(state['fixups'])} fixup commit{'s' if len(state['fixups']) != 1 else ''} into their steps")
         return 0
@@ -4957,9 +5000,6 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
             say(line)
         say(f"Build it, then `spry.py step {item.id} --commit`: the fast checks, then the step's commit.")
         return 0
-    if current_branch(project) not in (branch_of(item), slice_branch(item)):
-        say(f"this is not {item.id}'s branch (`{slice_branch(item)}`)")
-        return 1
     tracked = git(project.root, "diff", "--relative", "--name-only", "--no-renames", "HEAD", "--", ".")
     untracked = git(project.root, "ls-files", "-o", "--exclude-standard", "--", ".")
     paths = sorted(set(filter(None, (tracked.stdout + "\n" + untracked.stdout).split("\n"))))
@@ -4973,7 +5013,7 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
     if code:
         say(f"step {k} not committed: the fast checks are red")
         return code
-    added = git(project.root, "add", "-A")
+    added = git(project.root, "add", "-A", "--", ".")
     made = git(project.root, "commit", "-q", "-m", f"{item.id} step {k}: {step['title']}", "-m", f"Step: {item.id}/{k}") \
         if added.returncode == 0 else added
     if made.returncode != 0:
@@ -7020,7 +7060,10 @@ def hook_merge(project: Project, payload: dict) -> dict | None:
 
 
 GIT_COMMIT = re.compile(r"(?:^|[;&|(]\s*|\s)git\s+(?:-[cC]\s+\S+\s+)*commit\b")
-FOLDS = re.compile(r"\s--(?:fixup|squash|amend)\b")
+FOLDS = re.compile(r"\s--(?:fixup(?!=(?:amend|reword):)|amend)\b")
+# A commit that takes more than what is staged: `-a`/`--all` (also in a cluster such as `-am`),
+# `-i`/`--include`, `-o`/`--only`, a pathspec, or files staged by `git add` in the same command.
+COMMIT_TAKES_MORE = re.compile(r"(?:^|\s)-(?:[a-zA-Z]*[aio][a-zA-Z]*|-all|-include|-only)(?=\s|$)|\s--(?:\s|$)|\bgit\s+add\b")
 
 
 def hook_step_commit(project: Project, payload: dict) -> dict | None:
@@ -7038,11 +7081,15 @@ def hook_step_commit(project: Project, payload: dict) -> dict | None:
     if len(named) != 1 or not slice_steps(names.read(named[0][1]) or ""):
         return None
     ident = named[0][0]
-    tracked = git(project.root, "diff", "--relative", "--name-only", "--no-renames", "HEAD", "--", ".")
-    untracked = git(project.root, "ls-files", "-o", "--exclude-standard", "--", ".")
+    if COMMIT_TAKES_MORE.search(command):  # unsure what it takes: everything changed, untracked included
+        tracked = git(project.root, "diff", "--relative", "--name-only", "--no-renames", "HEAD", "--", ".")
+        untracked = git(project.root, "ls-files", "-o", "--exclude-standard", "--", ".").stdout
+    else:  # it commits what is staged, and only that
+        tracked = git(project.root, "diff", "--cached", "--relative", "--name-only", "--no-renames", "--", ".")
+        untracked = ""
     if tracked.returncode != 0:
         return None
-    paths = sorted(set(filter(None, (tracked.stdout + "\n" + untracked.stdout).split("\n"))))
+    paths = sorted(set(filter(None, (tracked.stdout + "\n" + untracked).split("\n"))))
     if documents_only(project, paths):
         return None  # the work order, the close summary — or nothing to commit, which git says itself
     return deny(f"{ident} is built in steps: commit code with `python3 spry/tool/spry.py step {ident} --commit` "
@@ -7245,6 +7292,8 @@ def main(argv=None) -> int:
     p.add_argument("--ranges", action="store_true", help="each committed step's diff, and the whole one, for the review")
     p.add_argument("--squash", action="store_true", help="fold `fixup!` commits into their steps")
     p.add_argument("--base", help="the ref the branch merges into (default origin/<main>)")
+    p.add_argument("--head", help="with --ranges: where the slice's commits are (default HEAD on its branch, "
+                                  "else origin/<branch>)")
     p = sub.add_parser("gate", help="spry check, fast checks, affected tests — skipped while no code changed since green")
     p.add_argument("--force", action="store_true", help="run everything even if the code is unchanged")
     p.add_argument("--fast", action="store_true", help="spry check and the fast checks only, no tests; stamps nothing")
@@ -7515,7 +7564,7 @@ def main(argv=None) -> int:
         print("ready to merge" if not blocks else f"{blocks} thing{'s block' if blocks != 1 else ' blocks'} the merge")
         return 1 if blocks else 0
     if args.command == "step":
-        return step_command(project, args.slice, args.base, args.commit, args.ranges, args.squash)
+        return step_command(project, args.slice, args.base, args.commit, args.ranges, args.squash, head=args.head)
     if args.command == "gate":
         return gate(project, args.force, fast=args.fast, full=args.full, failed=args.failed)
     if args.command == "changed":

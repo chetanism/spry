@@ -132,7 +132,8 @@ that merges.
 1. **Rebase:** working tree committed; `git fetch`, and when `origin/<main>` has moved, rebase onto
    it — the gate stands for the code that merges, so a rebase after it means a second gate.
    `spry.py gate --fast` passes.
-2. **What changed:** compare the diff (`git diff <main>...HEAD`) with `Plan`; write only the
+2. **What changed:** compare the diff (`git diff <main>...HEAD`) with `Plan` (a steps slice: each
+   step's plan under `### Steps`); write only the
    differences and why. Delete the section if none.
 3. **Proof:** every criterion in `covers` has a citing test, or tell QA which need a manual check
    (`[Test]` under `NEXT`).
@@ -232,12 +233,15 @@ file, keeps that so (DESIGN.md §15 *Steps mode*).
   (`spry.py gate`), as in any slice.
 - **Close.** As *Close* above, with three differences:
   - **Review** (step 5): `/spry:review SL-<n>` starts one reviewer per step and one for the seams
-    (`reviewing.md` §3a). `spry.py step SL-<n> --ranges` gives each one its diff.
+    (`reviewing.md` §3a). `spry.py step SL-<n> --ranges` gives each one its diff, from any branch.
   - **Fixes and falsify's new tests** are `git commit --fixup=<the step's commit>` — the step the
-    code belongs to. Nothing else is committed until the gate.
-  - **Before the gate** (step 7): `spry.py step SL-<n> --squash` folds the fixups into their steps,
-    then push with `--force-with-lease`. Every step is one clean commit again, for a person who
-    reads the PR commit by commit.
+    code belongs to; never `--squash`, whose message would bury the step's trailer. Nothing but
+    documents is committed until the gate.
+  - **Before the gate** (step 7): commit the Falsify table, then `spry.py step SL-<n> --squash`
+    folds the fixups into their steps. Every step is one clean commit again, for a person who reads
+    the PR commit by commit. Step 8's push is `git push --force-with-lease`, so CI still runs twice.
+    With `mint: main` the main branch may have been merged in at step 4; when `--squash` stops on
+    that merge, rebase onto `origin/<main>` and run it again.
 - **Merge.** `merge-check` blocks a step with no commit, one committed twice or out of order, code
   committed without a trailer, and a fixup not folded in. A slice over `slices.steps.max_lines`
   is a `!` the person accepts. The squash keeps the step titles in its body.

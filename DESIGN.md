@@ -382,8 +382,10 @@ it grows with the guards a diff adds, not with the number of slices.
   red, when nothing changed, or when step `k` is already committed. Commits that change only
   documents (the work order, the close summary) carry no trailer.
 - **Checked, not written:**
-  - `check --base` warns about a code commit on a steps branch that has no `Step:` trailer and is
-    not a `fixup!` of a step commit, and about steps committed out of order or twice.
+  - `check --base`, run locally on the slice's branch, warns about a code commit with no `Step:`
+    trailer that is not a `fixup!` of a step commit, and about steps committed out of order or
+    twice. CI checks out a detached merge ref, so it never sees these; `merge-check` does.
+  - `check` refuses a `slices.mode` other than `split` or `steps`, so a typo is not quietly `split`.
   - `merge-check` blocks unless every step has exactly one commit, in order, with no `fixup!` left.
   - A slice over `slices.steps.max_lines` at close is listed in the merge's ask, for the person to
     accept, as survivors are.
@@ -393,17 +395,19 @@ it grows with the guards a diff adds, not with the number of slices.
     `merge-check`.
 - **Tests once per story.** Each step runs `gate --fast` (lint, types, no tests). The affected
   tests run while building only when their answer is needed, as today. The full gate and falsify
-  run once, at close, on the whole slice. Pushes happen only at close, so CI runs twice per slice
-  rather than twice per step.
+  run once, at close, on the whole slice. Pushes happen only at close — for the review, and at its
+  end with `--force-with-lease` after the fixups are folded in — so CI runs twice per slice rather
+  than twice per step.
 - **Review, step by step.** At close, `/spry:review` on a steps slice starts one fresh agent per
-  step, all in parallel. Each agent gets only its step's diff (from the step before, or from the
-  work-order commit for step 1), the step's plan, its criteria and the slice's `Must not`. One
+  step, all in parallel. Each agent gets only its step's diff (its step's own commit), the step's plan, its criteria and the slice's `Must not`. One
   more agent reads the whole diff for the **seams** only: what one step relies on from another
   (an interface, the shape of data, ordering, shared state), which no single step's review can
-  see. `spry.py step SL-<n> --ranges` gives each agent its diff. Findings are verified and merged
+  see. `spry.py step SL-<n> --ranges` gives each agent its diff, from `origin/<branch>` when the
+  branch is not checked out, since a reviewer never switches branch. Findings are verified and merged
   into the usual single ask (`reviewing.md`). Accepted fixes are `git commit --fixup=<step commit>`.
-  So are tests added for falsify survivors. `spry.py step SL-<n> --squash` folds them in (an
-  autosquash rebase, undone if it stops) before the gate, so every step is still one clean commit when a
+  So are tests added for falsify survivors. Never `--squash`: its message lands after the step's and
+  buries the `Step:` trailer. `spry.py step SL-<n> --squash` folds the fixups in (an autosquash
+  rebase, undone if it stops) before the gate, so every step is still one clean commit when a
   person reviews the PR commit by commit. Falsify keys controls by file and line at `HEAD`, which
   the rebase leaves alone.
 - **The PR and the merge.** `pr-body` lists the steps under *For the reviewer*, each linked to its
@@ -637,7 +641,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `cited_criteria` | an Edit or Write of a story | asks the person when a criterion that a test cites (`git grep`) changes or is dropped |
 | `check_edit` | after an Edit or Write of a document `check` reads | `check` of that one file by its text — front-matter, budget, placeholders, links, glossary — errors sent back to the agent |
 | `merge` | `gh pr merge`, from the slice's branch | runs `merge-check` against `origin/<main>` for the slice whose `pr` or branch it names; refuses the merge on a block. From another branch the tree holds another copy of the slice, so it says nothing |
-| `step_commit` | `git commit`, on a branch whose slice has `### Steps` | refuses a commit of code that is not a `--fixup`, `--squash` or `--amend`, naming `spry.py step --commit`; documents alone go through |
+| `step_commit` | `git commit`, on a branch whose slice has `### Steps` | refuses a commit of code that is not a `--fixup` or `--amend`, naming `spry.py step --commit`; a commit of what is staged is judged by what is staged, so documents alone go through |
 | `check_stop` | the agent is about to stop | with documents changed (uncommitted, or on the branch), `check`; errors send it back once; each state checked is stamped in `.spry/hooks/` and not checked again, passing or not |
 
 - **One switch each**, `hooks.<key>` in `spry.config.json`, off when missing — a project that has
@@ -684,7 +688,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
-| `step <slice> [--commit] [--ranges] [--squash] [--base]` | steps mode (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` and commits it with its `Step:` trailer; `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps |
+| `step <slice> [--commit] [--ranges [--head]] [--squash] [--base]` | steps mode (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` and commits it with its `Step:` trailer; `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
