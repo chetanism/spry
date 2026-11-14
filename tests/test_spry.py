@@ -10,6 +10,8 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 import unittest.mock
 
@@ -2431,6 +2433,101 @@ class Falsify(unittest.TestCase):
         self.gate()
         self.assertEqual(self.ran(log), ["f", "t", "f", "t"], "a code change runs everything")
 
+    def lock_on(self):
+        """`checks.lock` on, with a lock file of the test's own. Returns its path."""
+        lock = os.path.join(tempfile.mkdtemp(), "heavy.lock")
+        self.addCleanup(shutil.rmtree, os.path.dirname(lock))
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config.setdefault("checks", {}).update({"lock": True, "lock_path": lock})
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        return lock
+
+    def hold(self, lock, seconds=None):
+        """Another run holds the lock; it lets go after `seconds`, or when the test ends."""
+        import fcntl
+        handle = open(lock, "w")
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
+        handle.write(json.dumps({"pid": 4242, "what": "falsify run", "root": "/work/other", "at": time.time() - 125}))
+        handle.flush()
+        self.addCleanup(handle.close)
+        if seconds is not None:
+            timer = threading.Timer(seconds, handle.close)
+            timer.start()
+            self.addCleanup(timer.join)
+
+    @unittest.skipIf(os.name == "nt", "holds the lock with flock")
+    def test_a_gate_waits_for_the_lock_and_says_who_holds_it(self):
+        log = self.gate_config("echo f >> LOG")
+        lock = self.lock_on()
+        self.hold(lock, 0.3)
+        with unittest.mock.patch.object(spry, "LOCK_POLL", 0.05):
+            code, said = self.gate()
+        self.assertEqual(code, 0, said)
+        waiting = [x for x in said if "waiting for the lock" in x]
+        self.assertEqual(len(waiting), 1, "one line, however long the wait")
+        self.assertTrue(waiting[0].startswith("– waiting for the lock: falsify run in /work/other (pid 4242) "
+                                              "has held it for 2m0"), waiting)
+        self.assertLess(said.index(waiting[0]), next(i for i, x in enumerate(said) if "lint" in x), "spry check does not wait")
+        self.assertEqual(self.ran(log), ["f", "t"])
+        self.assertNotIn("SPRY_LOCK_HELD", os.environ)
+        with open(os.path.join(spry.pace_home(spry.Project(self.root)), "steps.jsonl")) as handle:
+            step = json.loads(handle.read().strip().split("\n")[-1])
+        self.assertGreaterEqual(step["waited"], 0.2)
+        self.assertLess(step["seconds"], step["waited"] + 5, "the wait is not the gate's own time")
+
+    @unittest.skipIf(os.name == "nt", "holds the lock with flock")
+    def test_a_call_under_a_held_lock_runs_directly(self):
+        log = self.gate_config("echo f >> LOG")
+        self.hold(self.lock_on())
+        with unittest.mock.patch.dict(os.environ, {"SPRY_LOCK_HELD": "1"}):
+            code, said = self.gate()
+        self.assertEqual(code, 0, said)
+        self.assertFalse([x for x in said if "lock" in x], said)
+        self.assertEqual(self.ran(log), ["f", "t"])
+
+    def test_the_gate_s_commands_see_that_the_lock_is_held(self):
+        log = self.gate_config("echo held=$SPRY_LOCK_HELD >> LOG")
+        lock = self.lock_on()
+        self.assertEqual(self.gate()[0], 0)
+        self.assertEqual(self.ran(log), [f"held={lock}", "t"])
+        with open(lock) as handle:
+            self.assertEqual(handle.read(), "", "nobody holds it after the run")
+
+    def test_the_lock_is_off_unless_asked_for_and_one_per_clone(self):
+        project = spry.Project(self.root)
+        self.assertIsNone(spry.lock_path(project))
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        with open(path, "w") as handle:
+            json.dump({**config, "checks": {"lock": True}}, handle)
+        self.commit("lock")
+        other = os.path.join(tempfile.mkdtemp(), "wt")
+        self.addCleanup(shutil.rmtree, os.path.dirname(other))
+        self.git("worktree", "add", "-q", other, "-b", "sl-2")
+        here, there = spry.lock_path(spry.Project(self.root)), spry.lock_path(spry.Project(other))
+        self.assertEqual(here, there, "every worktree of a clone shares one lock")
+        self.assertTrue(here.startswith(tempfile.gettempdir()), here)
+        with open(path, "w") as handle:
+            json.dump({**config, "checks": {"lock": "yes"}}, handle)
+        with self.assertRaises(SystemExit):
+            spry.lock_path(spry.Project(self.root))
+
+    def test_falsify_run_holds_the_lock(self):
+        lock = self.lock_on()
+        self.commit("lock")
+        with unittest.mock.patch.object(spry, "heavy_lock", wraps=spry.heavy_lock) as taken:
+            results = self.run_plan([self.guard("    if count >= 3:", ["S-1/AC-1"])])
+        self.assertEqual([r for _e, r, _n in results], ["caught"])
+        self.assertEqual(taken.call_args[0][1], "falsify run")
+        self.assertTrue(os.path.exists(lock))
+        with unittest.mock.patch.object(spry, "heavy_lock", wraps=spry.heavy_lock) as taken:
+            self.run_plan([self.guard("    if count >= 3:", ["S-1/AC-1"])], dry=True)
+        taken.assert_not_called()
+
     def red_config(self, log, output="FAIL  tests/test_limit.py > nothing"):
         """The affected tests fail with this output, and count their runs as `r`."""
         path = os.path.join(self.root, "spry", "spry.config.json")
@@ -3606,6 +3703,38 @@ class Steps(Base):
         self.say(True, False, False)
         lines = spry.step_merge_lines(self.t.project(), self.t.project().items["SL-1"], "main")
         self.assertTrue(any(s == "warn" and "3 lines of code changed, over" in x for s, x in lines), lines)
+
+    def test_generated_files_are_counted_beside_the_size_not_in_it(self):
+        self.on_branch()
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "checks": {"generated": ["src/client/**"]},
+                                                        "slices": {"steps": {"max_lines": 2}}}))
+        self.run_git("commit", "-qam", "docs: cap")
+        self.write("src/client/api.ts", "x\n" * 50)
+        self.say(True, False, False)
+        project = self.t.project()
+        self.assertEqual(spry.code_lines(project, "main"), (0, 50), "a slice that only regenerates a client")
+        lines = spry.step_merge_lines(project, project.items["SL-1"], "main")
+        self.assertIn(("ok", "steps: 0 lines of code changed (50 generated, not counted)"), lines)
+        self.assertFalse([x for s, x in lines if s == "warn"], lines)
+        self.write("src/lend.ts", "a\nb\nc\n")
+        self.say(True, False, False)
+        lines = spry.step_merge_lines(self.t.project(), self.t.project().items["SL-1"], "main")
+        self.assertTrue(any(s == "warn" and "3 lines of code changed (50 generated, not counted), over" in x
+                            for s, x in lines), lines)
+
+    def test_pace_counts_generated_lines_apart(self):
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "checks": {"generated": ["src/client/**"]}}))
+        self.run_git = git_repo(self.t.root)
+        self.write("src/client/api.ts", "x\n" * 40)
+        self.write("src/lend.ts", "a\nb\nc\n")
+        self.run_git("add", "-A")
+        self.run_git("commit", "-qm", "feat: lend\n\nSlice: SL-1")
+        self.write("src/client/api.ts", "y\n" * 40)
+        self.run_git("commit", "-qam", "chore: client\n\nSlice: SL-2")
+        self.assertEqual(spry.pace_lines(self.t.project()), {"SL-1": (3, 40), "SL-2": (0, 80)})
+        self.assertEqual(spry.pace_size({"lines": 0, "generated": 80}), ", 0 lines changed and 80 generated")
+        self.assertEqual(spry.pace_size({"lines": 3, "generated": 0}), ", 3 lines changed")
+        self.assertEqual(spry.pace_size({"lines": None}), "")
 
     def test_the_pull_request_and_the_squash_list_the_steps(self):
         project = self.t.project()

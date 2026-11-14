@@ -1117,3 +1117,41 @@ Entry format:
     every citing test;
   - the project's copy of `slicing.md` *Close* step 6 takes the three new bullets (`write one`,
     `files`, what is not drafted).
+
+## CH-55 · One heavy run at a time, and a size that leaves generated files out
+
+- **Date:** 2026-11-14 · **Version:** 0.44.0
+- **Touches:** `tool/spry.py` (`gate`, `falsify run`, `merge-check`, `pace`), `process/slicing.md`,
+  `templates/spry.config.json` (`checks.lock`, `checks.generated`)
+- **Why:** two reports from one project (issue #20).
+  - **Sessions in separate worktrees started a gate or a falsify run at the same moment.** On a
+    16 GB machine that filled swap and pushed the load past 26; gates timed out and were retried —
+    60 retries in ten days, 4.8 hours. With `checks.lock: true`, the gate's checks and tests and
+    `falsify run` take one lock for as long as they run. Every worktree of a clone shares it. A run
+    that has to wait says once who holds the lock and for how long, then runs. `spry check` and a
+    gate skipped on its stamp never wait.
+  - **The size of a slice counted generated output.** One slice read 7,443 lines, 4,710 of them a
+    regenerated client, so the `slices.steps.max_lines` warning fired on slices that were not
+    large. Files matching `checks.generated` are now counted apart: `merge-check` and `pace` print
+    "n generated" beside the size, never inside it.
+- **Adapt:**
+  - `checks.lock` is off by default; nothing changes until it is turned on;
+  - `checks.lock_path` names the lock file. The default is a file in the system's temporary folder
+    named after the clone's common git directory. Give two clones the same path to order their
+    runs too;
+  - the lock is the system's own (`flock`, or a locked byte on Windows), so it goes when the
+    process dies — there is no stale lock to clear;
+  - a wait is over before any command starts: it does not count against `falsify.timeout`, and
+    the step log records it as `waited`, outside the run's `seconds`;
+  - every command the run starts sees `SPRY_LOCK_HELD`. A `spry.py gate` or `falsify run` started
+    with it set runs directly, so a script that takes the lock itself can set it;
+  - spry only orders the runs: a project keeps its own caps on worker counts;
+  - `checks.generated` is a list of globs, empty by default — a generated client, a schema dump,
+    a package manager's lock file.
+- **Migrate:**
+  - nothing is required;
+  - a project that runs sessions side by side sets `"lock": true` under `checks`;
+  - a project with generated files in the repository lists them under `checks.generated`, and
+    drops any local rule to subtract them by hand;
+  - the project's copy of `slicing.md` takes the line on the lock under *At the same time*, and
+    "generated files not counted" beside `slices.steps.max_lines`.

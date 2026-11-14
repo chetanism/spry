@@ -67,7 +67,8 @@ written rules into rules that are actually enforced.</p>
 <h3 id="gate">gate</h3>
 <p>The one command that says "this code is good to go": <code>spry check</code>, then the fast checks
 (format, lint, types — cheapest first), then the affected tests. Every fast check runs even if one fails; a failing
-test step stops the gate.</p>
+test step stops the gate. With <code>checks.lock</code> on, the checks and tests wait for any gate or falsify
+run in another worktree to finish.</p>
 <pre><code>spry gate [--force] [--fast] [--full] [--failed]</code></pre>
 <ul>
   <li>A pass is stamped in <code>.spry/green</code> against a fingerprint of the code. While the code
@@ -130,7 +131,8 @@ when a slice built in steps has a step with no commit, one made twice or out of 
 without a <code>Step:</code> trailer, or a fixup not folded in, or when <code>check</code> is not clean. It warns (<code>!</code>) about things a person must accept
 at the merge — a survivor or skipped control with a reason, a covered criterion no test cites (QA
 checks it by hand after the merge), one whose latest manual check failed, or a steps slice over
-<code>slices.steps.max_lines</code>.</p>
+<code>slices.steps.max_lines</code>. Lines in <code>checks.generated</code> files are not part of that size;
+they are printed beside it.</p>
 
 <h3 id="review-check">review-check</h3>
 <p>Would GitHub take this review as it stands? Exits 1 if not.</p>
@@ -227,7 +229,7 @@ search is <code>find</code>; the <a href="#pace">pace</a> page is at <code>/-/pa
   <li>each category's share of the time</li>
   <li>before and after each dated change</li>
   <li>flags</li>
-  <li>a row per slice</li>
+  <li>a row per slice, with its lines changed — and, apart from them, the lines in <code>checks.generated</code> files</li>
   <li>gate steps</li>
   <li>the slowest calls</li>
 </ul>

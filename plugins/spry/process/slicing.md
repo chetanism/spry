@@ -210,8 +210,8 @@ file, keeps that so (DESIGN.md §15 *Steps mode*).
 - **Split.** Plan the story as steps exactly as you would plan slices — a title, the criteria each
   covers, one visible change each, in build order, `—` for a step that only prepares. Then pack
   consecutive steps into the **fewest slices** that keep to `slices.steps.max` (default 5 steps)
-  and, by your estimate, `slices.steps.max_lines` (default 800 changed lines, documents not
-  counted). Steps that two people could build at the same time go into different slices. A story
+  and, by your estimate, `slices.steps.max_lines` (default 800 changed lines, documents and
+  `checks.generated` files not counted). Steps that two people could build at the same time go into different slices. A story
   that fits is one slice.
 - **Work order.** `### Steps` replaces `### Plan`:
 
@@ -248,7 +248,8 @@ file, keeps that so (DESIGN.md §15 *Steps mode*).
     that merge, rebase onto `origin/<main>` and run it again.
 - **Merge.** `merge-check` blocks a step with no commit, one committed twice or out of order, code
   committed without a trailer, and a fixup not folded in. A slice over `slices.steps.max_lines`
-  is a `!` the person accepts. The squash keeps the step titles in its body.
+  is a `!` the person accepts; generated lines (`checks.generated`) are printed beside the size,
+  not counted in it. The squash keeps the step titles in its body.
 
 ## Slices side by side
 
@@ -259,6 +260,8 @@ worktree and agent session:
 - `spry.py claim SL-<n> --no-switch`, then `git worktree add ../<repo>-sl-<n> sl-<n>-<slug>`, and
   start a session there.
 - Each worktree has its own `.spry/green`, so one gate never vouches for the other.
+- With `checks.lock: true`, gates and falsify runs in different worktrees run one after the
+  other: a run that waits prints who holds the lock, then goes on. Do not stop or retry it.
 - They merge one at a time; the second rebases if the first touched anything it touches
   (`merging.md` step 5).
 

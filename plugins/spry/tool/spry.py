@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import argparse
 import collections
+import contextlib
 import filecmp
 import glob
 import hashlib
@@ -81,7 +82,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.43.0"
+VERSION = "0.44.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -3058,6 +3059,97 @@ def test_failed(runner: dict, output: str) -> bool:
     return any(re.search(p, text, re.MULTILINE) for p in FAILED_PATTERNS)
 
 
+LOCK_ENV = "SPRY_LOCK_HELD"
+LOCK_POLL = 1.0
+LOCK_BYTE = 1 << 30  # Windows locks a byte, and a locked byte cannot be read: far past what the holder writes
+LOCK_WAITED = [0.0]  # seconds this process spent waiting, for the step log
+
+
+def lock_path(project: Project) -> str | None:
+    """The file `gate` and `falsify run` lock while they run, or None with `checks.lock` off. By
+    default one file per clone, named after its common git directory, so every worktree shares it."""
+    checks = project.config.get("checks") or {}
+    on = checks.get("lock", False)
+    if not isinstance(on, bool):
+        raise SystemExit(f"spry.config.json: checks.lock is `{on}` — use true or false")
+    if not on:
+        return None
+    given = str(checks.get("lock_path") or "")
+    if given:
+        return os.path.abspath(os.path.join(project.root, os.path.expanduser(given)))
+    done = git(project.root, "rev-parse", "--path-format=absolute", "--git-common-dir")
+    common = done.stdout.strip() if done.returncode == 0 and done.stdout.strip() else project.root
+    key = hashlib.sha1(os.path.realpath(common).encode("utf-8")).hexdigest()[:12]
+    return os.path.join(tempfile.gettempdir(), f"spry-{key}.lock")
+
+
+def lock_try(handle) -> bool:
+    """Take the lock without waiting. The system holds it, so it goes when the process dies."""
+    try:
+        if os.name == "nt":
+            import msvcrt
+            handle.seek(LOCK_BYTE)
+            msvcrt.locking(handle.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(handle.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        return False
+    return True
+
+
+def lock_holder(path: str) -> str:
+    """Who holds the lock and for how long, as the holder wrote it."""
+    try:
+        with open(native(path), encoding="utf-8") as handle:
+            held = json.loads(handle.read(4096))
+        return (f"{held['what']} in {held['root']} (pid {held['pid']}) has held it for "
+                f"{pace_time(max(0.0, time.time() - float(held['at'])))}")
+    except (OSError, ValueError, KeyError, TypeError):
+        return f"another run holds {path}"
+
+
+@contextlib.contextmanager
+def heavy_lock(project: Project, what: str, say=print):
+    """One heavy run at a time on this machine (`checks.lock`): wait for the lock, hold it for the
+    body, yield the seconds waited. `SPRY_LOCK_HELD` in the environment means a caller holds it —
+    a gate a test command starts, a wrapper script — so the body runs directly."""
+    path = None if os.environ.get(LOCK_ENV) else lock_path(project)
+    if path is None:
+        yield 0.0
+        return
+    os.makedirs(native(os.path.dirname(path)), exist_ok=True)
+    handle = os.fdopen(os.open(native(path), os.O_RDWR | os.O_CREAT, 0o666), "r+", encoding="utf-8")
+    started, told = time.time(), False
+    try:
+        while not lock_try(handle):
+            if not told:
+                say(f"– waiting for the lock: {lock_holder(path)}")
+                told = True
+            time.sleep(LOCK_POLL)
+        waited = time.time() - started
+        LOCK_WAITED[0] += waited
+        if told:
+            say(f"– the lock is free after {pace_time(waited)}")
+        handle.seek(0)
+        handle.truncate()
+        handle.write(json.dumps({"pid": os.getpid(), "what": what, "root": project.root, "at": round(time.time(), 1)}))
+        handle.flush()
+        os.environ[LOCK_ENV] = path
+        try:
+            yield waited
+        finally:
+            os.environ.pop(LOCK_ENV, None)
+            try:
+                handle.seek(0)
+                handle.truncate()
+                handle.flush()
+            except OSError:
+                pass
+    finally:
+        handle.close()  # closing the file gives the lock back
+
+
 def run_command(command: str, cwd: str, timeout: int, env: dict | None = None):
     """(exit code, or None on a timeout; output). Its own process group, so a timeout or Ctrl-C
     stops the command's children too (pnpm → vitest workers) — none may keep running against a
@@ -3351,10 +3443,12 @@ def falsify_run(project: Project, plan_path: str, dry: bool = False, say=print, 
 
     signal.signal(signal.SIGTERM, interrupt)
     try:
-        if jobs > 1:
-            results = falsify_parallel(project, plan, table, timeout, groups, jobs, say)
-        else:
-            results = falsify_serial(project, plan, table, timeout, groups, say)
+        # The wait is before the first command starts, so it never counts against `falsify.timeout`.
+        with heavy_lock(project, "falsify run", say):
+            if jobs > 1:
+                results = falsify_parallel(project, plan, table, timeout, groups, jobs, say)
+            else:
+                results = falsify_serial(project, plan, table, timeout, groups, say)
     finally:
         signal.signal(signal.SIGTERM, previous)
     dirty = [e["file"] for e in plan if not git_clean(project.root, e["file"])]
@@ -5332,15 +5426,35 @@ def step_state(project: Project, item: Item, base: str, head: str = "HEAD") -> d
             "next": len(numbers) + 1 if numbers == list(range(1, len(numbers) + 1)) else None}
 
 
-def code_lines(project: Project, base: str) -> int:
-    """Lines added and removed outside `checks.docs` since the branch left `base`."""
+def generated_globs(project: Project) -> list:
+    """`checks.generated`: files a command writes — a client, a schema dump, a lock file. Their lines
+    are counted apart, so a size reads as what a person wrote."""
+    given = (project.config.get("checks") or {}).get("generated") or []
+    if not isinstance(given, list) or not all(isinstance(g, str) for g in given):
+        raise SystemExit("spry.config.json: checks.generated is a list of globs")
+    return [glob_regex(g) for g in given]
+
+
+def numstat_lines(text: str, generated: list, skip=None) -> tuple:
+    """(lines changed, of generated files) from `git --numstat` output; `skip(path)` leaves a file out."""
+    lines = made = 0
+    for row in text.split("\n"):
+        parts = row.split("\t")
+        if len(parts) != 3 or not (parts[0].isdigit() and parts[1].isdigit()):
+            continue
+        if any(g.match(parts[2]) for g in generated):
+            made += int(parts[0]) + int(parts[1])
+        elif not (skip and skip(parts[2])):
+            lines += int(parts[0]) + int(parts[1])
+    return lines, made
+
+
+def code_lines(project: Project, base: str) -> tuple:
+    """(lines, generated lines) added and removed since the branch left `base`: `lines` outside
+    `checks.docs` and `checks.generated`, `generated` in the files `checks.generated` names."""
     done = git(project.root, "diff", "--numstat", "--no-renames", "--relative", f"{fork_point(project, base)}..HEAD")
-    total = 0
-    for line in done.stdout.split("\n") if done.returncode == 0 else []:
-        parts = line.split("\t")
-        if len(parts) == 3 and parts[0].isdigit() and parts[1].isdigit() and not documents_only(project, [parts[2]]):
-            total += int(parts[0]) + int(parts[1])
-    return total
+    return numstat_lines(done.stdout if done.returncode == 0 else "", generated_globs(project),
+                         lambda path: documents_only(project, [path]))
 
 
 def step_merge_lines(project: Project, item: Item, base: str) -> list:
@@ -5360,10 +5474,13 @@ def step_merge_lines(project: Project, item: Item, base: str) -> list:
                              f"not folded in — `spry.py step {item.id} --squash`, then the gate"))
     if not out:
         out.append(("ok", f"steps: all {len(state['steps'])} committed, one commit each, in order"))
-    lines, limit = code_lines(project, base), steps_config(project)["max_lines"]
+    (lines, made), limit = code_lines(project, base), steps_config(project)["max_lines"]
+    aside = f" ({made} generated, not counted)" if made else ""
     if lines > limit:
-        out.append(("warn", f"steps: {lines} lines of code changed, over `slices.steps.max_lines` ({limit}) — a "
+        out.append(("warn", f"steps: {lines} lines of code changed{aside}, over `slices.steps.max_lines` ({limit}) — a "
                             f"person accepts the size at the merge, or it is split"))
+    elif made:
+        out.append(("ok", f"steps: {lines} lines of code changed{aside}"))
     return out
 
 
@@ -5675,10 +5792,13 @@ def gate(project: Project, force: bool = False, say=print, fast: bool = False, f
     started, seen = time.time(), {"steps": []}
     if failed:
         code = rerun_failed(project, say, seen)
-        pace_log(project, "gate", time.time() - started, ok=code == 0, fast=True, failed=True, **seen)
+        pace_log(project, "gate", time.time() - started - seen.get("waited", 0), ok=code == 0, fast=True,
+                 failed=True, **seen)
         return code
     code = run_gate(project, force, say, fast, full, seen)
-    pace_log(project, "gate", time.time() - started, ok=code == 0, fast=fast, full=full, force=force, **seen)
+    # A wait for the lock is another run's time: `waited` records it, `seconds` leaves it out.
+    pace_log(project, "gate", time.time() - started - seen.get("waited", 0), ok=code == 0, fast=fast, full=full,
+             force=force, **seen)
     return code
 
 
@@ -5715,17 +5835,20 @@ def rerun_failed(project: Project, say, seen: dict) -> int:
         say(str(e))
         return 1
     table, failed = runners(project), []
-    for (index, cwd), group in groups.items():
-        command = runner_command(project, table[index], cwd, group)
-        label = f"failed files{'' if cwd == project.root else ' in ' + os.path.relpath(cwd, project.root).replace(os.sep, '/')}"
-        started = time.time()
-        done = subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True)
-        say(f"{'✓' if done.returncode == 0 else '✗'} {label} · {time.time() - started:.1f}s")
-        seen["steps"].append([label, round(time.time() - started, 1), done.returncode == 0])
-        if done.returncode != 0:
-            output = done.stdout + done.stderr
-            say("\n".join("  " + line for line in output.rstrip().split("\n")[-40:]))
-            failed.append((label, command, output))
+    with heavy_lock(project, "gate --failed", say) as waited:
+        if waited >= 0.1:
+            seen["waited"] = round(waited, 1)
+        for (index, cwd), group in groups.items():
+            command = runner_command(project, table[index], cwd, group)
+            label = f"failed files{'' if cwd == project.root else ' in ' + os.path.relpath(cwd, project.root).replace(os.sep, '/')}"
+            started = time.time()
+            done = subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True)
+            say(f"{'✓' if done.returncode == 0 else '✗'} {label} · {time.time() - started:.1f}s")
+            seen["steps"].append([label, round(time.time() - started, 1), done.returncode == 0])
+            if done.returncode != 0:
+                output = done.stdout + done.stderr
+                say("\n".join("  " + line for line in output.rstrip().split("\n")[-40:]))
+                failed.append((label, command, output))
     if failed:
         # The record keeps the code and steps of the gate that went red: this run did not check the rest.
         output = "\n".join(o for _n, _c, o in failed)
@@ -5821,27 +5944,30 @@ def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: d
         return 1
     fast_count = len(project.config.get("checks", {}).get("fast") or [])
     failed, left_out = [], False
-    for n, (name, command, cwd) in enumerate(steps):
-        if failed and keep != "all" and (keep == "off" or n >= fast_count):
-            left_out = keep == "fast" and any(f[0] in {s[0] for s in steps[:fast_count]} for f in failed)
-            break
-        seen["tests"] = seen["tests"] or "test" in name
-        started = time.time()
-        done = subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True)
-        say(f"{'✓' if done.returncode == 0 else '✗'} {name} · {time.time() - started:.1f}s")
-        if done.returncode != 0 and name == "affected tests" and retry and retry_when.search(done.stdout + done.stderr):
-            # A test that times out under load and passes on a quiet machine is load, not code.
-            # A real failure fails both runs, so the retry never turns red into green.
-            say(f"  timed out under load — once more, quietly: {retry}")
+    with heavy_lock(project, "gate", say) as waited:
+        if waited >= 0.1:
+            seen["waited"] = round(waited, 1)
+        for n, (name, command, cwd) in enumerate(steps):
+            if failed and keep != "all" and (keep == "off" or n >= fast_count):
+                left_out = keep == "fast" and any(f[0] in {s[0] for s in steps[:fast_count]} for f in failed)
+                break
+            seen["tests"] = seen["tests"] or "test" in name
             started = time.time()
-            done = subprocess.run(retry, shell=True, cwd=project.root, capture_output=True, text=True)
-            say(f"{'✓' if done.returncode == 0 else '✗'} {name}, quiet retry · {time.time() - started:.1f}s")
-            seen["retried"] = True
-        seen["steps"].append([name, round(time.time() - started, 1), done.returncode == 0])
-        if done.returncode != 0:
-            output = done.stdout + done.stderr
-            say("\n".join("  " + line for line in output.rstrip().split("\n")[-40:]))
-            failed.append((name, command, output))
+            done = subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True)
+            say(f"{'✓' if done.returncode == 0 else '✗'} {name} · {time.time() - started:.1f}s")
+            if done.returncode != 0 and name == "affected tests" and retry and retry_when.search(done.stdout + done.stderr):
+                # A test that times out under load and passes on a quiet machine is load, not code.
+                # A real failure fails both runs, so the retry never turns red into green.
+                say(f"  timed out under load — once more, quietly: {retry}")
+                started = time.time()
+                done = subprocess.run(retry, shell=True, cwd=project.root, capture_output=True, text=True)
+                say(f"{'✓' if done.returncode == 0 else '✗'} {name}, quiet retry · {time.time() - started:.1f}s")
+                seen["retried"] = True
+            seen["steps"].append([name, round(time.time() - started, 1), done.returncode == 0])
+            if done.returncode != 0:
+                output = done.stdout + done.stderr
+                say("\n".join("  " + line for line in output.rstrip().split("\n")[-40:]))
+                failed.append((name, command, output))
     if failed:
         record_gate_failure(project, failed, fingerprint, fast, load)
         if left_out:
@@ -6457,14 +6583,15 @@ def pace_branch_map(project: Project) -> dict:
 
 
 def pace_lines(project: Project) -> dict:
-    """{slice ID: lines changed}, from the `Slice:` trailer of each squash commit on the main branch."""
-    done = git(project.root, "log", main_branch(project), "--format=%x1e%B", "--shortstat")
-    out = {}
+    """{slice ID: (lines changed, generated lines)}, from the `Slice:` trailer of each squash commit on
+    the main branch. Files under `checks.generated` are counted apart."""
+    done = git(project.root, "log", main_branch(project), "--format=%x1e%B", "--numstat", "--no-renames", "--relative")
+    out, generated = {}, generated_globs(project)
     for chunk in done.stdout.split("\x1e") if done.returncode == 0 else []:
         named = re.search(r"^Slice:\s*(\S+)\s*$", chunk, re.M)
-        stat = re.search(r"(\d+) insertions?\(\+\)", chunk), re.search(r"(\d+) deletions?\(-\)", chunk)
-        if named and (stat[0] or stat[1]):
-            out[named.group(1)] = sum(int(s.group(1)) for s in stat if s)
+        lines, made = numstat_lines(chunk, generated)
+        if named and (lines or made):
+            out[named.group(1)] = (lines, made)
     return out
 
 
@@ -6527,7 +6654,7 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
             s["gates"] = [{"fast": g["fast"], "ok": g["ok"], "tests": g["tests"], "retried": g["retried"],
                            "steps": [[n, v, True] for n, v in g["steps"].items()], "at": g["at"]} for g in s["log_gates"]]
         del s["log_gates"]
-        s["lines"] = lines.get(slice_id)
+        s["lines"], s["generated"] = lines.get(slice_id) or (None, None)
     kept = glob.glob(os.path.join(glob.escape(folder), "*.json"))
     for path in kept:
         slice_id = os.path.basename(path)[:-5]
@@ -6538,7 +6665,8 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
         except (OSError, ValueError):
             continue
         if slice_id not in slices or pace_active(stored) > pace_active(slices[slice_id]):
-            stored["lines"] = stored.get("lines") or lines.get(slice_id)
+            if slice_id in lines:
+                stored["lines"], stored["generated"] = lines[slice_id]
             slices[slice_id] = stored
     for slice_id, s in slices.items():
         item = project.items.get(slice_id)
@@ -6717,13 +6845,21 @@ def pace_compare(slices: list, at: float, label: str) -> list:
     return rows + [""]
 
 
+def pace_size(s: dict) -> str:
+    """The slice's size, with its generated lines beside it and never inside it."""
+    made = s.get("generated") or 0
+    if not s.get("lines") and not made:
+        return ""
+    return f", {s.get('lines') or 0} lines changed" + (f" and {made} generated" if made else "")
+
+
 def pace_slice_lines(s: dict, flags: list) -> list:
     """Markdown for one slice."""
     active = pace_active(s)
     rows = [f"## {s['id']}", "",
             f"- {pace_time(active)} active over {s['sessions']} session{'s' if s['sessions'] != 1 else ''}, "
             f"{s['prompts']} prompt{'s' if s['prompts'] != 1 else ''}, {s['questions']} question{'s' if s['questions'] != 1 else ''}"
-            + (f", {s['lines']} lines changed" if s.get("lines") else ""), ""]
+            + pace_size(s), ""]
     rows += ["| | time | share |", "|---|---:|---:|"]
     for kind, label in PACE_KINDS:
         if s["kinds"].get(kind, 0) >= 1:
@@ -8099,7 +8235,9 @@ def main(argv=None) -> int:
             started = time.time()
             results = falsify_run(project, args.plan, dry=args.dry_run, jobs=args.jobs)
             if not args.dry_run:
-                pace_log(project, "falsify", time.time() - started, controls=len(results),
+                waited = round(LOCK_WAITED[0], 1)
+                pace_log(project, "falsify", time.time() - started - waited, controls=len(results),
+                         **({"waited": waited} if waited >= 0.1 else {}),
                          **{r: sum(1 for _, x, _ in results if x == r) for r in ("caught", "survived", "unreliable")})
         except PlanError as e:
             print("plan refused: " + str(e), file=sys.stderr)

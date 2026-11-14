@@ -335,6 +335,16 @@ first so a slow one never runs only to be thrown away by a lint error.
   affected tests fail on a timeout (`tests.retry_when`) and `tests.retry` is set, the gate runs that
   once — the same tests with no parallelism — so load on a busy machine is not a red gate; a real
   failure fails both runs.
+- **One heavy run at a time** (`checks.lock`, off by default). Sessions in separate worktrees that
+  start a gate or a falsify run together fill a laptop's memory, and the timeouts that follow are
+  retried. With the switch on, the gate's checks and tests and `falsify run` hold one lock for as
+  long as they run — a file in the system's temporary folder named after the clone's common git
+  directory (`checks.lock_path` names another), so every worktree shares it. The system holds the
+  lock, so it goes when the process dies. A run that waits says once who holds it and for how
+  long; the wait is over before any command starts, so it never counts against a timeout, and the
+  step log keeps it apart as `waited`. Commands the run starts see `SPRY_LOCK_HELD`, and a spry
+  started with it set runs directly. `spry check` and a gate skipped on its stamp never wait. spry
+  orders the runs; worker counts stay the project's.
 - **A branch that changed only test files** (and documents) runs those files through their falsify
   runners instead of the affected tests — a test file cannot break another package's tests — and
   stamps green, marked `tests-only`, so it stands in for CI at a merge like any pass. It takes the
@@ -387,7 +397,7 @@ it grows with the guards a diff adds, not with the number of slices.
   - `steps`: the story is planned as steps, as slices are today (a title, the criteria each
     covers, one visible change each, in build order). Then consecutive steps are packed into the
     fewest slices that fit `slices.steps.max` (default 5) and `slices.steps.max_lines` (default
-    800 lines changed, documents left out). A story over the cap gets several slices, and each of
+    800 lines changed, documents and `checks.generated` files left out). A story over the cap gets several slices, and each of
     those is a steps slice. Steps that could be built at the same time by different people go
     into different slices, so the slices can run side by side.
 - **The work order.** In a steps slice, `### Plan` is replaced by `### Steps`. Each
@@ -409,7 +419,8 @@ it grows with the guards a diff adds, not with the number of slices.
   - `check` refuses a `slices.mode` other than `split` or `steps`, so a typo is not quietly `split`.
   - `merge-check` blocks unless every step has exactly one commit, in order, with no `fixup!` left.
   - A slice over `slices.steps.max_lines` at close is listed in the merge's ask, for the person to
-    accept, as survivors are.
+    accept, as survivors are. Files matching `checks.generated` (a client, a schema dump, a lock
+    file) are not counted: their lines are printed beside the size, never silently dropped.
   - The `session` hook (§18) names the step the branch is on. A `step_commit` hook, filtered to
     `Bash(git commit *)` on a steps branch, refuses a commit without the trailer and names
     `spry.py step --commit`. As with every hook, it fails open, and the rule stays in `check` and
@@ -604,7 +615,8 @@ changes anything.
     against summed time, and each category's share.
   - **A row per slice:** active time; the agent; tools; full gates (failed) and fast gates;
     falsify; tests outside the gate; review agents (count, time); you; other sessions; sessions;
-    prompts; questions asked; compactions; lines changed.
+    prompts; questions asked; compactions; lines changed, with generated lines
+    (`checks.generated`) beside them and not in them.
   - **By phase:** each category's share.
   - **Gate steps:** runs, total, median and max for each step; quiet retries.
   - The slowest single calls, and the calls that ran to the agent's time limit.
@@ -1057,3 +1069,8 @@ in `spry/history/writ.md`, then retires `canon/`.
   source file, and `files: []` is `survived` with nothing run. `merge-check` follows the draft.
   From one project's ten days (issue #17): 16.1 hours of falsify over 101 slices, 1,100 of 5,106
   controls `unreliable`.
+- 2026-11-14 — one heavy run at a time, and a size without generated files (CH-55, 0.44.0):
+  `checks.lock` makes the gate's checks and tests and `falsify run` take one lock shared by every
+  worktree of a clone; `checks.generated` names files whose lines `merge-check` and `pace` count
+  apart. From the same project (issue #20): 60 gate retries and 4.8 hours in ten days from runs
+  that overlapped, and a slice of 7,443 lines of which 4,710 were generated.
