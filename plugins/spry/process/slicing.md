@@ -182,6 +182,8 @@ that merges.
      a person accepts it at the merge. A bare `survived` blocks the merge.
      `unreliable` → the baseline was red or timed out, or the run broke before any test failed
      (its note says `failed, but no test did`): fix that first.
+     `slot <n> left out` → that worktree's baseline was red while another's was green; the other
+     slots ran its controls. The line names the command and its last line: fix it for the next run.
    - Falsify comes after the review and before the gate: a review fix changes code falsify would
      have proved, and a test added for a survivor changes code a gate already passed. It runs its
      own baseline, so it needs no gate first.

@@ -1155,3 +1155,31 @@ Entry format:
     drops any local rule to subtract them by hand;
   - the project's copy of `slicing.md` takes the line on the lock under *At the same time*, and
     "generated files not counted" beside `slices.steps.max_lines`.
+
+## CH-56 · A slot whose baseline is red says why once and hands its controls on
+
+- **Date:** 2026-11-14 · **Version:** 0.45.0
+- **Touches:** `tool/spry.py` (`falsify run`: `baseline`, `slot_baselines`), `process/slicing.md`
+- **Why:** with `falsify.parallel`, the baseline ran in the first worktree only (issue #23). A slot
+  that was not ready — one sharing a database with its checkout, a set-up that did half its work,
+  a dependency it lacked — was found by its controls, one at a time: each read `unreliable`, with
+  no word on what broke the slot. One slice had 129 of 171 controls `unreliable` this way; the
+  serial rerun took 61 minutes.
+  - The baseline now runs in every slot, all at once, before any control.
+  - A slot red where another slot is green is named once — `slot 2 left out — baseline broken ·
+    12 test files · <the runner's command> — <its last line>` — and not used again. The other
+    slots run its controls; no row reads `unreliable` for it.
+  - A group red in every slot is the tests' own failure, as before: its controls are `unreliable`,
+    and the baseline line now carries the runner's command and its last line — in a serial run too.
+  - With every slot green, the run says and records what it did before.
+- **Adapt:**
+  - nothing to set;
+  - the baseline costs one run per slot instead of one, at the same time — about the same wait,
+    more load for its length;
+  - a runner with `"parallel": false` shares something between slots, so its baseline still runs
+    once, in one slot;
+  - a slot left out makes the run slower, not wrong: fix what the line names, then the next run
+    uses every slot again.
+- **Migrate:**
+  - nothing is required;
+  - the project's copy of `slicing.md` *Close* step 6 takes the line on a slot `left out`.

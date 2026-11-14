@@ -82,7 +82,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.44.0"
+VERSION = "0.45.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -3297,14 +3297,56 @@ def run_control(project: Project, entry: dict, table: list, timeout: int, red: d
 
 
 def baseline(project: Project, groups: dict, table: list, timeout: int, root: str, say, env: dict | None = None) -> dict:
-    """{group key: why it is red} for every group whose tests fail before anything is changed."""
+    """{group key: why it is red} for every group whose tests fail before anything is changed.
+    A red group is said with the runner's command and the last line it printed."""
     red = {}
     for key, files in groups.items():
         outcome, tail = run_tests(project, table[key[0]], in_tree(project, root, key[1]), files, timeout, root, env)
+        last = tail.splitlines()[-1] if tail else ""
+        why = ""
         if outcome != "pass":
-            red[key] = f"baseline {outcome}" + (f": {tail.splitlines()[-1]}" if tail else "")
-        say(f"baseline {'green' if outcome == 'pass' else outcome} · {len(files)} test files")
+            red[key] = f"baseline {outcome}" + (f": {last}" if last else "")
+            why = f" · `{table[key[0]]['command']}`" + (f" — {last}" if last else "")
+        say(f"baseline {'green' if outcome == 'pass' else outcome} · {len(files)} test files{why}")
     return red
+
+
+def slot_baselines(project: Project, groups: dict, table: list, timeout: int, trees: list, envs: dict, say) -> tuple:
+    """(the slots to use, {slot: {group key: why it is red}}). The baseline runs in every slot, all
+    at once, so a slot that is not ready is found before a control is given to it.
+
+    A group red in every slot is the tests' own failure: its controls are `unreliable`, as in a
+    serial run. A slot red where another is green is broken itself (its set-up, a dependency it
+    lacks): it is named once and left out, and the other slots run its controls. A runner with
+    `"parallel": false` shares something between slots, so its baseline runs once, in one slot."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    apart = {key: files for key, files in groups.items() if table[key[0]].get("parallel") is not False}
+    said = {tree: [] for tree in trees}
+    with ThreadPoolExecutor(max_workers=len(trees)) as pool:
+        futures = [pool.submit(baseline, project, apart, table, timeout, tree, said[tree].append, envs[tree])
+                   for tree in trees]
+        try:
+            reds = {tree: future.result() for tree, future in zip(trees, futures)}
+        except BaseException:
+            pool.shutdown(wait=True, cancel_futures=True)
+            raise
+    everywhere = set.intersection(*(set(red) for red in reds.values()))
+    live = [tree for tree in trees if set(reds[tree]) == everywhere]
+    if not live:  # each slot red on something of its own: none is a reference for the others
+        live = list(trees)
+    for line in said[live[0]]:
+        say(line)
+    for tree in trees:
+        if tree not in live:
+            line = next(l for key, l in zip(apart, said[tree]) if key in reds[tree] and key not in everywhere)
+            say(f"slot {envs[tree]['SPRY_FALSIFY_SLOT']} left out — {line} — its controls run in the other slots")
+    together = {key: files for key, files in groups.items() if key not in apart}
+    if together:
+        red = baseline(project, together, table, timeout, live[0], say, envs[live[0]])
+        for tree in live:
+            reds[tree] = {**reds[tree], **red}
+    return live, reds
 
 
 DEFAULT_SHARE = ("node_modules", ".venv", "venv")
@@ -3579,9 +3621,9 @@ def registered_worktrees(project: Project) -> set:
 def falsify_parallel(project: Project, plan: list, table: list, timeout: int, groups: dict, jobs: int, say) -> list:
     """Controls spread over `jobs` git worktrees of HEAD. This tree is never written to.
 
-    The baseline runs inside a worktree, not here: a worktree missing something the tests need
-    (a dependency not shared, a generated file) must show as a red baseline — `unreliable` —
-    never as every control `caught`.
+    The baseline runs inside the worktrees, not here: something every worktree lacks that the tests
+    need (a dependency not shared, a generated file) must show as a red baseline — `unreliable` —
+    never as every control `caught`. A worktree red by itself is left out (`slot_baselines`).
 
     The worktrees are kept between runs (`falsify.keep_worktrees`) and reset at the start of each:
     a fresh one is cold — a virus scanner reads every file it holds on the first run."""
@@ -3630,14 +3672,14 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
         say(f"{jobs} worktrees{kept} · sharing {', '.join(share) or 'nothing'}")
         for tree in trees:
             prepare_slot(project, tree, envs[tree], timeout, say)
-        red = baseline(project, groups, table, timeout, trees[0], say, envs[trees[0]])
+        live, reds = slot_baselines(project, groups, table, timeout, trees, envs, say)
 
         def serial_only(entry):
             keys = group_files(project, entry["_tests"])
             return any(table[index].get("parallel") is False for index, _cwd in keys)
 
         free = queue.Queue()
-        for tree in trees:
+        for tree in live:
             free.put(tree)
 
         def one(entry):
@@ -3648,7 +3690,7 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
                     original = handle.read()
                 writer.put(target, mutate(entry, original))
                 try:
-                    return run_control(project, entry, table, timeout, red, tree, envs[tree])
+                    return run_control(project, entry, table, timeout, reds[tree], tree, envs[tree])
                 finally:
                     writer.put(target, original)
             finally:
@@ -3656,7 +3698,7 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
 
         results: dict = {}
         pool_entries = [(i, e) for i, e in enumerate(plan) if not serial_only(e)]
-        with ThreadPoolExecutor(max_workers=jobs) as pool:
+        with ThreadPoolExecutor(max_workers=len(live)) as pool:
             futures = {pool.submit(one, e): (i, e) for i, e in pool_entries}
             try:
                 for future in futures:

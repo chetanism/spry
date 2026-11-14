@@ -497,7 +497,8 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   no citing test names the file — is reported `survived — no test names <file>` with nothing run,
   and `merge-check` blocks on that row. Without `files`, the naming tests run first and the rest
   only if those miss it; more than 20 is named `wide:` at the run.
-- **Baseline once** for the union of files; a red baseline marks the group `unreliable`.
+- **Baseline once** for the union of files; a red baseline marks the group `unreliable`, and is
+  said with the runner's command and its last line.
 - **`caught` only when a test failed**, by the runner's own report — a summary line such as
   `1 failed` (pytest, vitest, jest, mocha, go, cargo, unittest, rspec, `node --test`), or the
   runner's `failed` pattern; a turbo or docker compose prefix on the line is fine. A run that exits
@@ -510,8 +511,12 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   each worker has a detached worktree of `HEAD` outside the repository, so this tree is never
   written to. Installed dependencies (`node_modules`, `.venv`, `venv`, plus `falsify.share`) are
   symlinked in — except a pnpm package's own `node_modules`, whose links are copied so a workspace
-  sibling resolves to the worktree's mutated copy, not the main tree's. **The baseline runs in a worktree**, so anything a worktree lacks shows as
-  `unreliable`, never as every control `caught`. Falls back to serial when tracked files have
+  sibling resolves to the worktree's mutated copy, not the main tree's. **The baseline runs in every worktree**, all at once, so anything the worktrees lack shows as
+  `unreliable`, never as every control `caught`. **A slot red where another is green is left out**:
+  it is broken itself, so it is named once — its command and last line — and the other slots run
+  its controls; marking each of them `unreliable` said nothing about why (129 of 171 in one slice).
+  A group red in every slot is the tests' own. A `"parallel": false` runner's baseline runs once,
+  in one slot. Falls back to serial when tracked files have
   uncommitted changes or a cited test file is not committed. A runner with `"parallel": false`
   (integration tests on a shared database, fixed ports) runs its controls one at a time.
   Commands in a worktree run with pnpm's `verify-deps-before-run` off: pnpm 11 judges borrowed
@@ -1074,3 +1079,8 @@ in `spry/history/writ.md`, then retires `canon/`.
   worktree of a clone; `checks.generated` names files whose lines `merge-check` and `pace` count
   apart. From the same project (issue #20): 60 gate retries and 4.8 hours in ten days from runs
   that overlapped, and a slice of 7,443 lines of which 4,710 were generated.
+- 2026-11-14 — a slot whose baseline is red says why once and hands its controls on (CH-56,
+  0.45.0): the baseline runs in every worktree at once; a slot red where another is green is named
+  with its command and last line and left out, and the others run its controls. Red in every slot
+  is still `unreliable`. From issue #23: 129 of 171 controls `unreliable` in one slice, and a
+  61-minute serial rerun.
