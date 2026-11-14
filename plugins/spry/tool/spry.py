@@ -80,7 +80,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.41.0"
+VERSION = "0.42.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -259,6 +259,13 @@ def section_lines(text: str, title: str):
         if name.lower() == title.lower():
             return [(i, lines[i]) for i in range(at + 1, end)]
     return None
+
+
+def falsify_record_lines(text: str) -> int:
+    """How many lines of a slice's `### Falsify` section are its table — the lines a line budget leaves out.
+    Only table lines: prose written under the heading still counts."""
+    found = section_lines(text, "Falsify")
+    return sum(1 for _i, line in found if line.lstrip().startswith("|")) if found else 0
 
 
 def table_rows(lines):
@@ -644,6 +651,12 @@ class Project:
                             else:
                                 found.setdefault(key, []).append((rel, n, line[span[0]:span[1]].strip()))
                     triple = triple_after
+        # a folder is walked in the file system's order, which differs between machines; `index` writes
+        # these lists into READMEs, so they are sorted here or a clean tree is rewritten on another machine
+        for tests in (*found.values(), *self.item_tests.values()):
+            tests.sort(key=lambda t: (t[0], t[1]))
+        self.unproving.sort(key=lambda t: (t[0], t[1]))
+        self.item_unproving.sort(key=lambda t: (t[0], t[1]))
         return found
 
     def _manual_checks(self, story: Item):
@@ -828,9 +841,13 @@ def check_text(project: Project, path: str, text: str, fm: dict, banned_res: lis
     rel = project.rel(path)
     lines = text.split("\n")
 
+    # a slice's Falsify table is a record the tool writes, one row per control: no prose to move out of it
+    record = falsify_record_lines(text) if project.slice_file.match(os.path.basename(path)) else 0
+    counted = len(lines) - record
     for regex, limit, pattern in budgets:
-        if regex.match(rel) and len(lines) > limit:
-            project.problem(path, len(lines), f"{len(lines)} lines, budget {limit} ({pattern}) — /spry:compact moves sections to the files that own them")
+        if regex.match(rel) and counted > limit:
+            size = f"{counted} lines counted ({record} of the Falsify table not counted)" if record else f"{len(lines)} lines"
+            project.problem(path, len(lines), f"{size}, budget {limit} ({pattern}) — /spry:compact moves sections to the files that own them")
 
     unfinished_ok = fm.get("state") in ("draft", "planned")
     if not unfinished_ok:
@@ -7451,6 +7468,10 @@ def find_root(start: str):
 
 
 def main(argv=None) -> int:
+    # a cp1252 console (Windows PowerShell) cannot print ✓ and ✗: speak UTF-8 whatever the console says
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
     parser = argparse.ArgumentParser(prog="spry", description="spry project tool")
     parser.add_argument("--root", help="project root (default: nearest folder holding spry/spry.config.json)")
     parser.add_argument("--version", action="version", version=VERSION)

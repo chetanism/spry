@@ -1052,3 +1052,27 @@ Entry format:
     A slice's old `issue:` stays as history;
   - open issues no slice made are requests: list them for the person to take into the plan
     (`/spry:bug #n` …) or close — never decide one alone.
+
+## CH-53 · The tool on Windows, and a budget that leaves the Falsify table out
+
+- **Date:** 2026-11-14 · **Version:** 0.42.0
+- **Touches:** `tool/spry.py` (`main`; `_scan_tests`; the budget in `check_text`),
+  `process/writing.md` (*Size*), `process/templates/spry.config.json` (version only)
+- **Why:** three things a project could only patch or work around.
+  - On a cp1252 console (Windows PowerShell) the gate crashed with `UnicodeEncodeError` printing `✓`
+    and `✗` unless `PYTHONIOENCODING` was set by hand. The tool now writes UTF-8 whatever the
+    console says.
+  - Test citations were listed in the order the file system walks a folder, which differs between
+    NTFS and Linux: `index` on Windows rewrote 251 READMEs of a clean main branch on pulse-v2
+    (*Proven by*, *Cited at*). They are now sorted by path and line.
+  - `check` counted the tool-written `### Falsify` table against a slice's line budget. `falsify run
+    --record` writes one row per control and `merge-check` needs every row, so a slice with many
+    safeguards went over on the table alone — 357 rows, 620 lines against 350 in one project — and
+    nothing a person writes could bring it back: `/spry:compact` has no prose to move. The table's
+    lines are now left out of the count, and the message says how many: `310 lines counted (359 of
+    the Falsify table not counted), budget 350`. Prose under the heading still counts.
+- **Adapt:** nothing
+- **Migrate:**
+  - a project that patched `spry/tool/spry.py` for the console or the citation order drops the patch;
+  - a project that raised `budgets` for `SL-*.md` because of Falsify tables sets it back;
+  - the first `index` after updating may reorder *Proven by* and *Cited at* lists once.
