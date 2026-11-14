@@ -121,18 +121,48 @@ worktree and its own agent session:</p>
 <p>The backlog helps here: a slice is listed as ready only when the slices it needs are closed, so a pair
 that can't be built side by side never shows up as two ready rows.</p>
 
-<h2>GitHub issues per slice</h2>
+<h2 id="requests">Requests in GitHub issues</h2>
 
-<p>People outside the repository often follow issues, not files. Turn on <code>slices.issue</code> and every
-slice gets one:</p>
+<p>People outside the team — support, sales, a clinic manager — don't read the plan. They can ask for
+work where they already are: a GitHub issue. Anyone who cares can join the discussion there. When it is
+agreed, a developer or product owner asks spry to plan it, and from then on the issue shows where the
+work stands.</p>
 
-<ul>
-  <li>Created at open, from the work order <em>as agreed</em>. Its body is frozen and says so — the slice file
-  goes on changing, and the difference is the record.</li>
-  <li>At close, the close summary is posted as a comment.</li>
-  <li>The merge commit's <code>Closes #n</code> closes it.</li>
-  <li><code>spry check</code> refuses an open slice without one.</li>
-</ul>
+<ol class="steps">
+  <li><p><strong>Someone asks.</strong> Two plain-words forms, <em>Ask for something new</em> and <em>Report a
+  problem</em>, go in <code>.github/ISSUE_TEMPLATE/</code> at setup. They ask what is needed, who for, and an
+  example — and warn against pasting anyone's private details.</p></li>
+  <li><p><strong>People discuss it</strong> in the issue's comments until it is agreed.</p></li>
+  <li><p><strong>spry plans it:</strong> <code>/spry:story #42</code>, <code>/spry:bug #42</code>,
+  <code>/spry:feature #42</code> — any planning skill takes an issue. It reads the issue and every comment as
+  the starting draft, asks only what the discussion left open, leaves out anything private, writes the item
+  and links it: <code>issues: [42]</code>. One issue can become several items; if part of it waits, the issue
+  is told.</p></li>
+  <li><p><strong>The issue follows the work.</strong> One label at a time, and a short comment naming the
+  items when it changes:</p>
+    <table>
+      <thead><tr><th>Label</th><th>Means</th></tr></thead>
+      <tbody>
+        <tr><td><code>spry:accepted</code></td><td>Taken into the plan; the details are being agreed.</td></tr>
+        <tr><td><code>spry:ready</code></td><td>Planned and ready to be built.</td></tr>
+        <tr><td><code>spry:in-progress</code></td><td>Being built.</td></tr>
+        <tr><td><code>spry:done</code></td><td>Built and merged — ready to test once deployed.</td></tr>
+        <tr><td><code>spry:declined</code></td><td>The plan dropped it; the item says why.</td></tr>
+      </tbody>
+    </table>
+  </li>
+  <li><p><strong>QA closes it</strong> after testing. spry never closes an issue. If testing finds a problem,
+  <code>/spry:bug #42</code> records it against the same issue, which goes back to in progress.</p></li>
+</ol>
+
+<p>The labels are worked out from the plan, like every other status, by <code>spry issues --sync</code>. It
+only changes what is out of step, so it runs wherever it is cheap: CI on the main branch, after every
+<code>/spry:merge</code>, or on a schedule — a merge made some other way still reaches its issue.
+<code>spry issues</code> on its own shows each issue's stage. After the item is written, <strong>the plan is
+the record</strong>: a change asked for on the issue goes through the item's owner.</p>
+
+<p>spry knows when work is merged, not when it is deployed. A project whose deploy script knows what
+it shipped can post on those issues itself — <code>spry issues --json</code> lists each one's items and stage.</p>
 
 <h2>Picking the next slice</h2>
 

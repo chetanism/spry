@@ -291,8 +291,10 @@ The branch itself is left for its owner to delete.</p>
 <pre><code>spry release slice</code></pre>
 
 <h3 id="link">link</h3>
-<p>Sets a slice's <code>branch</code>, <code>pr</code>, <code>issue</code> or <code>owner</code> in its front-matter.</p>
-<pre><code>spry link [--branch BRANCH] [--pr PR] [--issue ISSUE] [--owner [OWNER]] slice</code></pre>
+<p>Sets a slice's <code>branch</code>, <code>pr</code> or <code>owner</code> in its front-matter — or, on a plan
+item, adds the GitHub issue it was asked for in to its <code>issues:</code>.</p>
+<pre><code>spry link [--branch BRANCH] [--pr PR] [--owner [OWNER]] slice
+spry link --issue ISSUE item</code></pre>
 <p><code>--owner</code> alone is the person git says is at this clone: their <code>team.members</code> name,
 matched by git's <code>user.name</code> or the start of <code>user.email</code> — or, with no members,
 <code>user.name</code>. <code>/spry:slice-open</code> runs it, so a slice's owner is who built it.</p>
@@ -312,10 +314,18 @@ copied from the slice file, never edited by hand.</p>
 <pre><code>spry pr-body [--base BASE] slice</code></pre>
 <p><code>--base BASE</code> — the ref the PR merges into, to show criteria the branch changed.</p>
 
-<h3 id="issue-body">issue-body</h3>
-<p>A slice's GitHub issue (with <code>slices.issue</code> on): the work order as agreed, saying it is
-never updated — or, with <code>--close</code>, the close summary for a comment on it.</p>
-<pre><code>spry issue-body [--close] slice</code></pre>
+<h3 id="issues">issues</h3>
+<p>The GitHub issues plan items were asked for in (<code>issues:</code>), each with its stage —
+<code>accepted</code>, <code>ready</code>, <code>in-progress</code>, <code>done</code> or <code>declined</code>, worked out from
+the plan — and whether its <code>spry:</code> label shows it. See
+<a href="../guides/team.html#requests">Requests in GitHub issues</a>.</p>
+<pre><code>spry issues [--sync [--dry-run]] [--offline] [--json]
+spry issues --legacy [--close]</code></pre>
+<p><code>--sync</code> — on each open issue out of step, set the label, and comment when the stage changed.
+Creates the labels it needs. Never closes an issue, and leaves a closed one alone. <code>--dry-run</code> says
+what it would do. <code>--offline</code> — the stages alone, without asking GitHub. <code>--legacy</code> — the
+issues spry made per slice before 0.41.0 that are still open; <code>--close</code> closes them, each with a
+comment.</p>
 
 <h3 id="merge-message">merge-message</h3>
 <p>The squash commit for a slice: subject, summary, and the <code>Slice:</code>, <code>Parent:</code>

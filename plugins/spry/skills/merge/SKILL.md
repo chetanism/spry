@@ -18,5 +18,7 @@ argument-hint: "[PR number or slice ID]"
 - After merging, check whether the main branch moved under the PR (`spry.py changed --base <PR head>`):
   `code=false` → run nothing; `code=true` → wait for CI on the main branch, or with no CI on push,
   run the full suite once.
+- **Request issues:** after the merge, `spry.py issues --sync` — the issues the work came from show
+  its stage (`merging.md` step 8).
 - **Progress tables:** after the merge, `spry.py index --check` on the main branch; stale with no CI
   run left to write them → `index`, commit only those files, push (`merging.md` step 8).

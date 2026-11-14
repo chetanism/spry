@@ -131,9 +131,10 @@ spry/
   is at the clone (their `team.members` name; solo, git's `user.name`), and required by
   `merge-check`. Work is counted by it (`work`, §19); slices older than CH-40 get theirs once from
   their pull request's author (`owners --from-prs`).
-- Slices add `covers: [AC-1, AC-2]`, `branch`, `pr` — and `issue` with `slices.issue` on: a GitHub
-  issue made at open from the work order, frozen and saying so; the close summary is a comment on
-  it, and the merge commit's `Closes #n` closes it. `check` refuses an open slice without one.
+- Slices add `covers: [AC-1, AC-2]`, `branch`, `pr`. A slice gets no GitHub issue (CH-52); an
+  `issue:` on an older one is history.
+- Plan items may add `issues: [42]` — the GitHub issues they were asked for in (§14), set by
+  `link <ID> --issue 42`. `check` refuses a value that is not a number, and `issues` on a slice.
 - **A slice file has two parts:** the **Work order** (written at `slice-open`, before any code —
   summary, covers, plan, must-not, tests, demo, conflict check) and the **Close summary** (written at
   `slice-close` — what changed, falsify, follow-ups). The file is the source; the PR body is copied
@@ -290,6 +291,26 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
 
 - Empty `members` = solo: nothing is routed for review.
 - `CODEOWNERS` is generated from `review`. Skills read roles to decide who an item goes to.
+
+### Requests in GitHub issues
+
+- **Anyone asks, anyone discusses.** People outside the team ask for work in GitHub issues, through
+  plain-words forms (`templates/issue-forms/`). Once the discussion has settled it, a planning skill
+  takes the issue (`/spry:story #42`), reads it with its comments as the starting draft, leaves out
+  anything private, writes the item and names the issue in `issues:`. One issue may become several
+  items, and part of one may wait — said on the issue.
+- **The plan is the record** from then on; a change asked for on the issue goes through the item's
+  owner, never copied across.
+- **The issue shows the stage** — one label, `spry:accepted` · `ready` · `in-progress` · `done` ·
+  `declined`, derived from §6 like everything else, and a plain comment (audience 2–3, IDs with
+  titles, links to the items) when it changes. Several items: done when every live one is.
+- **spry never closes an issue**; QA closes it after testing, and a closed issue is left alone. A
+  problem found then is a new bug naming the same issue.
+- **`issues --sync` is idempotent**, so it runs wherever is cheap: CI on the main branch,
+  `/spry:merge`, a schedule. A merge made outside the skill still reaches its issue — the per-slice
+  issue it replaces depended on `/spry:merge`'s trailer, and 32 issues on the pilots stayed open.
+- **Deploys are the project's:** spry knows merged, not deployed; a deploy script may post on the
+  issues it shipped (`issues --json`).
 
 ## 15. Test speed
 
@@ -637,7 +658,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | Key under `hooks` | When | Does |
 |---|---|---|
 | `session` | session start, resume, clear, compaction | tells the agent where the config and tool are, the slice this branch builds, the person's tone, which hooks are on |
-| `link_fields` | an Edit or Write of a slice file; a `sed -i` or `perl -i` naming one | refuses a change to `branch`, `pr`, `issue` or `owner`, naming the `link` command that sets it |
+| `link_fields` | an Edit or Write of a slice file; a `sed -i` or `perl -i` naming one | refuses a change to `branch`, `pr` or `owner`, naming the `link` command that sets it |
 | `cited_criteria` | an Edit or Write of a story | asks the person when a criterion that a test cites (`git grep`) changes or is dropped |
 | `check_edit` | after an Edit or Write of a document `check` reads | `check` of that one file by its text — front-matter, budget, placeholders, links, glossary — errors sent back to the agent |
 | `merge` | `gh pr merge`, from the slice's branch | runs `merge-check` against `origin/<main>` for the slice whose `pr` or branch it names; refuses the merge on a block. From another branch the tree holds another copy of the slice, so it says nothing |
@@ -684,7 +705,8 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `next <type>` | next free ID |
 | `new <type> --parent --title…` · `new --batch <file>` | create items from their templates, next IDs, right folders — several in one call, all or none; with `mint: main` the IDs are taken on the main branch in one push (§22) |
 | `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it, with its `owner` — and cut its branch; give it back |
-| `link <slice> [--branch] [--pr] [--issue] [--owner [name]]` | set them in the slice's front-matter; a bare `--owner` is the person at this clone |
+| `link <slice> [--branch] [--pr] [--owner [name]]` · `link <item> --issue <n>` | set them in the slice's front-matter; a bare `--owner` is the person at this clone. On a plan item, add an issue to its `issues:` |
+| `issues [--sync [--dry-run]] [--offline] [--json]` · `issues --legacy [--close]` | each issue plan items name, its stage (§14) and whether its label shows it; `--sync` sets the label and comments when the stage changes, never closing one; `--legacy` the per-slice issues from before CH-52 still open, `--close` closes them with a comment |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
@@ -737,7 +759,8 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `adopt` | 5 | Put spry around an existing codebase: survey, seed knowledge from what exists, plan from the next work; a writ project is planned from its mapping file (`process/from-writ.md`) — built with `init` |
 
 `milestone` / `epic` / `feature` / `story` share one procedure (`process/planning.md`); each skill
-only names its template and level.
+only names its template and level. Each of them, `bug` and `task` take a GitHub issue, `#42`, to plan
+from (§14).
 
 ## 21. From writ
 
@@ -998,3 +1021,8 @@ in `spry/history/writ.md`, then retires `canon/`.
   names the next; review is one agent per step plus the seams; `merge-check` blocks steps missing,
   doubled, out of order, untrailered or not folded in; the `step_commit` hook. From connect's
   catch-up mode.
+- 2026-11-14 — issues are requests, not slices (CH-52, 0.41.0): `slices.issue`, `issue-body` and the
+  `Closes #n` trailer are gone; plan items name the issues they were asked for in `issues:`, and
+  `spry issues --sync` labels and comments each open one with its stage, never closing it; issue
+  forms for people outside the team; `--legacy --close` for the per-slice issues left open. From
+  pulse-v2 and connect, where 32 per-slice issues outlived their slices and requests went unanswered.

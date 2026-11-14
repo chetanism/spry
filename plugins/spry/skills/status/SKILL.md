@@ -20,4 +20,7 @@ argument-hint: "[ID, or a level such as feature]"
 4. When the person asks what to work on next, what is blocked, or what still needs planning, run
    `python3 spry/tool/spry.py backlog` and answer from it — *Ready to build* for developers,
    *Needs planning* for product.
-5. Never invent progress: everything comes from the tool's output.
+5. When the person asks about requests or GitHub issues, run `python3 spry/tool/spry.py issues` and
+   answer from it — each issue's stage and the items it became; any out of step → offer
+   `issues --sync`.
+6. Never invent progress: everything comes from the tool's output.

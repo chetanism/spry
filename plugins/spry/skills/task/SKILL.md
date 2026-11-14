@@ -1,7 +1,7 @@
 ---
 name: task
 description: Record technical work no story asks for — set-up, upgrades, refactors, infrastructure — under the milestone or epic it serves, with why, what changes and how to tell it is done. Use when developers need work planned that is not a user-facing story.
-argument-hint: "[milestone or epic ID] [the work]"
+argument-hint: "[#issue] [milestone or epic ID] [the work]"
 ---
 
 # spry — task
@@ -13,4 +13,6 @@ argument-hint: "[milestone or epic ID] [the work]"
   `spry.py new task --parent <ID> --title "<the work>"`.
   With `mint: main` it takes the ID on the main branch and merges it into this one — on a slice
   branch too.
+- **From a GitHub issue** (`#<n>` in `$ARGUMENTS`): read it and its discussion first, and link the
+  item to it — `planning.md` → *From a GitHub issue*.
 - **Is it really a task?** If a user would notice the result, offer `/spry:story` instead.

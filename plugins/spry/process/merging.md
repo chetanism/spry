@@ -81,6 +81,9 @@ from the argument (`SL-n` or a PR number), or from the current branch's `open` /
      any other reason — a protected branch → `git reset --keep origin/<main>`, stop, and say the
      tables stay stale until CI runs. Never leave the tables stale: the backlog and the Done page on the main
      branch are what people read.
+   - **Request issues:** `python3 spry/tool/spry.py issues --sync` — an issue the merged work came
+     from shows its new stage (`planning.md` → *From a GitHub issue*). It changes only what is out of
+     step, so CI's own run afterwards changes nothing. Nothing names an issue → it says so; go on.
    - Report: what merged; what is unblocked now (items whose `blocked_by` named this slice or its
      parent, and the next `planned` slice); each `!` from step 2 as a `[Test]` for QA.
 9. **Never:** force-push the main branch, merge with `--admin` to skip checks, or merge a PR the

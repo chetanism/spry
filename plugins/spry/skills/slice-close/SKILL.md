@@ -8,7 +8,6 @@ argument-hint: "[slice ID]"
 
 - **Procedure:** `spry/process/slicing.md` → *Close*. Read `chat.md` and `writing.md` beside it.
 - **Slice:** `$ARGUMENTS`; without one, the `open` slice whose `branch` is the current branch.
-- **With an `issue:`,** post the close summary on it (`spry.py issue-body --close`); never edit its body.
 - **Order:** rebase and the review come before falsify and the gate, so those run once, on the code
   that merges. Review fixes are checked with `spry.py gate --fast` only.
 - **A slice built in steps:** one reviewer per step and one for the seams; review fixes and

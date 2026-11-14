@@ -382,15 +382,16 @@ class Index(Base):
 class Link(Base):
     def test_link_sets_and_adds_fields_and_refuses_a_non_number(self):
         t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): slice_("SL-1", state="open")})
-        path = spry.link_slice(t.project(), "SL-1", {"pr": "#42", "issue": "7", "branch": "sl-1-a"})
+        path = spry.link_slice(t.project(), "SL-1", {"pr": "#42", "branch": "sl-1-a"})
         with open(path) as handle:
             head = handle.read().split("\n---\n")[0]
         self.assertIn("pr: 42\n", head + "\n")
-        self.assertIn("issue: 7", head)
         self.assertIn("branch: sl-1-a", head)
         self.assertEqual(head.count("pr:"), 1)
         with self.assertRaises(SystemExit):
             spry.link_slice(t.project(), "SL-1", {"pr": "next"})
+        with self.assertRaisesRegex(SystemExit, "link S-1 --issue"):
+            spry.link_slice(t.project(), "SL-1", {"issue": "7"})
 
     def test_covers_under_a_bug_says_what_to_do(self):
         bug = item("B-1").replace("state: ready", "state: ready")
@@ -3538,31 +3539,121 @@ class Steps(Base):
 
 
 class Issues(Base):
-    def test_an_open_slice_needs_an_issue_only_when_the_switch_is_on(self):
-        doc = f"{S}/SL-1-a.md".replace("/", "__")
-        t = self.tree(**{doc: slice_("SL-1", state="open")})
-        self.assertFalse([p for p in t.problems() if "issue" in str(p)])
-        on = json.dumps(dict(CONFIG, slices={"issue": True}))
-        t = self.tree(**{doc: slice_("SL-1", state="open"), "spry__spry.config.json": on})
-        self.assertProblem(t.problems(), "open without an `issue:` number")
-        t = self.tree(**{doc: slice_("SL-1", state="open").replace("pr: 1\n", "pr: 1\nissue: 12\n"),
-                         "spry__spry.config.json": on})
-        self.assertFalse([p for p in t.problems() if "issue" in str(p)])
-        t = self.tree(**{doc: slice_("SL-1"), "spry__spry.config.json": on})
-        self.assertFalse([p for p in t.problems() if "issue" in str(p)], "a closed slice is history")
+    """GitHub issues are requests: a plan item names the ones it came from, and spry shows them its stage."""
 
-    def test_issue_body_is_the_frozen_work_order_and_the_close_summary(self):
-        text = slice_("SL-1").replace("pr: 1\n", "pr: 1\nissue: 12\n") + "\n## Close summary\n\n### Summary\n\n- Lent.\n"
-        p = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): text}).project()
-        opened = spry.issue_body(p, "SL-1")
-        self.assertIn("never updated", opened.split("\n")[0])
-        self.assertIn("## Work order", opened)
-        self.assertNotIn("## Close summary", opened)
-        closed = spry.issue_body(p, "SL-1", close=True)
-        self.assertIn("- Lent.", closed)
-        self.assertNotIn("## Work order", closed)
-        self.assertTrue(spry.merge_message(p, "SL-1").rstrip().endswith("Closes #12"))
-        self.assertIn("· issue #12", spry.pr_body(p, "SL-1").split("\n")[0])
+    def named(self, text, numbers="[5]"):
+        return text.replace("audience: 3\n", f"audience: 3\nissues: {numbers}\n", 1)
+
+    def key(self, rel):
+        return rel.replace("/", "__")
+
+    def test_check_names_a_bad_issues_list_and_the_removed_switch(self):
+        t = self.tree(**{self.key(f"{S}/README.md"): self.named(story("S-1"), "[5, #6]")})
+        self.assertFalse([p for p in t.problems() if "issue" in p])
+        t = self.tree(**{self.key(f"{S}/README.md"): self.named(story("S-1"), "[soon]")})
+        self.assertProblem(t.problems(), "`issues` names 'soon'")
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): slice_("SL-1").replace("pr: 1\n", "pr: 1\nissues: [5]\n")})
+        self.assertProblem(t.problems(), "a slice names no issue")
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): slice_("SL-1").replace("pr: 1\n", "pr: 1\nissue: 12\n")})
+        self.assertFalse([p for p in t.problems() if "issue" in p], "an old slice's issue is history")
+        on = json.dumps(dict(CONFIG, slices={"issue": True}))
+        warned = [str(p) for p in spry.check(self.tree(**{"spry__spry.config.json": on}).project())]
+        self.assertTrue(any("`slices.issue` is gone" in p for p in warned))
+
+    def test_link_adds_an_issue_to_a_plan_item_once(self):
+        t = self.tree()
+        spry.link_issue(t.project(), "S-1", "#5")
+        path = spry.link_issue(t.project(), "S-1", "5")
+        spry.link_issue(t.project(), "S-1", "6")
+        with open(path) as handle:
+            self.assertIn("issues: [5, 6]\n", handle.read())
+        with self.assertRaises(SystemExit):
+            spry.link_issue(t.project(), "S-1", "next")
+        with self.assertRaisesRegex(SystemExit, "no item"):
+            spry.link_issue(t.project(), "S-9", "5")
+
+    def test_an_items_stage_is_derived_from_the_plan(self):
+        stage = lambda **files: spry.issue_stages(self.tree(**files).project())[5]["stage"]  # noqa: E731
+        sk, sl = self.key(f"{S}/README.md"), self.key(f"{S}/SL-1-a.md")
+        self.assertEqual(stage(**{sk: self.named(story("S-1"))}), "done", "closed slice, criterion proven")
+        self.assertEqual(stage(**{sk: self.named(story("S-1")), sl: slice_("SL-1", state="open")}), "in-progress")
+        self.assertEqual(stage(**{sk: self.named(story("S-1")), sl: slice_("SL-1", state="planned", check=False)}), "ready")
+        self.assertEqual(stage(**{sk: self.named(story("S-1", state="draft", check=False)), sl: None}), "accepted")
+        self.assertEqual(stage(**{sk: self.named(story("S-1", state="dropped")), sl: None}), "declined")
+        self.assertEqual(stage(**{self.key(f"{F}/README.md"): self.named(item("F-1"))}), "done", "every story done")
+
+    def test_an_issue_several_items_name_is_done_when_all_of_them_are(self):
+        other = "spry/plan/M-1-m/E-1-e/F-1-f/S-2-t/README.md"
+        files = {self.key(f"{S}/README.md"): self.named(story("S-1")),
+                 self.key(other): self.named(story("S-2", state="draft", check=False))}
+        entry = spry.issue_stages(self.tree(**files).project())[5]
+        self.assertEqual(entry["stage"], "in-progress", "one built, one still being planned")
+        self.assertEqual([(i.id, s) for i, s in entry["items"]], [("S-1", "done"), ("S-2", "accepted")])
+        files[self.key(other)] = self.named(story("S-2", state="dropped"))
+        self.assertEqual(spry.issue_stages(self.tree(**files).project())[5]["stage"], "done", "dropped ones do not count")
+
+    def test_sync_labels_open_issues_and_comments_only_when_the_stage_changes(self):
+        stages = {n: {"stage": "done", "items": []} for n in (1, 2, 3, 4, 5, 6)}
+        current = {1: {"state": "open", "labels": ["bug"]},
+                   2: {"state": "open", "labels": ["spry:done"]},
+                   3: {"state": "open", "labels": ["spry:in-progress", "phase:A"]},
+                   4: {"state": "closed", "labels": ["spry:in-progress"]},
+                   5: None,
+                   6: {"state": "open", "labels": ["spry:done", "spry:ready"]}}
+        got = {a["n"]: a for a in spry.issue_actions(stages, current)}
+        self.assertEqual((got[1]["add"], got[1]["remove"], got[1]["comment"]), ("spry:done", [], True))
+        self.assertNotIn(2, got, "already shows its stage")
+        self.assertEqual((got[3]["remove"], got[3]["comment"]), (["spry:in-progress"], True), "other labels stay")
+        self.assertNotIn(4, got, "a person closed it: left alone")
+        self.assertIn("no such issue", got[5]["skip"])
+        self.assertEqual((got[6]["remove"], got[6]["comment"]), (["spry:ready"], False), "the stage did not change")
+
+    def test_the_comment_is_plain_and_never_closes_the_issue(self):
+        files = {self.key(f"{S}/README.md"): self.named(story("S-1"))}
+        p = self.tree(**files).project()
+        text = spry.issue_comment(p, spry.issue_stages(p)[5], "https://github.com/o/r")
+        self.assertIn("**Built.**", text)
+        self.assertIn("Close this issue once it has been tested", text)
+        self.assertIn("[S-1 Title of S-1](https://github.com/o/r/blob/main/", text)
+        self.assertIn("— built", text)
+        self.assertNotRegex(text, r"(?i)\b(closes|fixes|resolves) #")
+
+    def test_a_merge_closes_no_issue(self):
+        text = slice_("SL-1").replace("pr: 1\n", "pr: 1\nissue: 12\n")
+        p = self.tree(**{self.key(f"{S}/SL-1-a.md"): text}).project()
+        self.assertNotIn("Closes", spry.merge_message(p, "SL-1"))
+        self.assertNotIn("issue", spry.pr_body(p, "SL-1").split("\n")[0])
+        self.assertEqual([(s.id, n) for s, n in spry.legacy_issues(p)], [("SL-1", 12)])
+        titles = {12: "SL-1 Slice SL-1", 30: "SL-1 again", 31: "SL-9 not in this plan", 32: "Lend more books"}
+        self.assertEqual([(s.id, n) for s, n in spry.legacy_issues(p, titles)], [("SL-1", 12), ("SL-1", 30)],
+                         "a slice still on its branch has its issue: there; its title names it")
+
+    def test_issues_sync_edits_then_comments_through_gh(self):
+        p = self.tree(**{self.key(f"{S}/README.md"): self.named(story("S-1"))}).project()
+        calls = []
+
+        def gh(_project, *args, input=None):
+            calls.append(args)
+            out = "[]" if args[:2] == ("label", "list") else ""
+            return subprocess.CompletedProcess(args, 0, out, "")
+
+        args = spry.argparse.Namespace(legacy=False, close=False, sync=True, dry_run=False, offline=False, json=False)
+        with unittest.mock.patch.object(spry, "gh_run", gh), \
+                unittest.mock.patch.object(spry, "issue_states", lambda *_: {5: {"state": "open", "labels": []}}), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            self.assertEqual(spry.issues_command(p, args), 0)
+        self.assertEqual(sum(1 for c in calls if c[:2] == ("label", "create")), len(spry.ISSUE_STAGES))
+        self.assertIn(("issue", "edit", "5", "--add-label", "spry:done"), calls)
+        self.assertEqual(calls[-1][:3], ("issue", "comment", "5"))
+        self.assertIn("#5 done: S-1 Title of S-1 — set spry:done", out.getvalue())
+        calls.clear()
+        args.dry_run = True
+        with unittest.mock.patch.object(spry, "gh_run", gh), \
+                unittest.mock.patch.object(spry, "issue_states", lambda *_: {5: {"state": "open", "labels": []}}), \
+                contextlib.redirect_stdout(io.StringIO()) as out:
+            spry.issues_command(p, args)
+        self.assertEqual(calls, [], "a dry run changes nothing")
+        self.assertIn("would set spry:done", out.getvalue())
 
 
 class ReviewCheck(unittest.TestCase):

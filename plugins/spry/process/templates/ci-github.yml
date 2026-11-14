@@ -3,7 +3,8 @@
 # (checks.docs in spry.config.json) runs spry check and nothing else.
 # Pull requests: affected tests, then tests.always; check --base refuses generated blocks the branch changed. It runs on
 # the PR merged into the main branch, so an ID both took shows as a duplicate.
-# Main branch: every test, then spry index commits the progress tables. Nightly: every test.
+# Main branch: every test, then spry index commits the progress tables, and the request issues plan
+# items name get their stage (planning.md → From a GitHub issue). Nightly: every test.
 name: spry
 on:
   pull_request:
@@ -67,6 +68,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      issues: write
     steps:
       - uses: actions/checkout@v4
       # Slice branches, so the backlog lists a slice someone is building as in progress.
@@ -78,3 +80,7 @@ jobs:
           git config user.email "spry@users.noreply.github.com"
           git commit -am "chore(spry): refresh progress [skip ci]"
           git push
+      # Changes only what is out of step; nothing to do when no plan item names an issue.
+      - run: python3 spry/tool/spry.py issues --sync
+        env:
+          GH_TOKEN: ${{ github.token }}

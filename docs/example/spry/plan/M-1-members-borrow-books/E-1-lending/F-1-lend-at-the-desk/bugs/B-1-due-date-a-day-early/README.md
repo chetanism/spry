@@ -8,6 +8,7 @@ severity: major
 breaks: [S-1/AC-2]
 blocked_by: []
 related: [SL-1]
+issues: [3]
 ---
 # B-1 · Due date a day early on evening receipts
 

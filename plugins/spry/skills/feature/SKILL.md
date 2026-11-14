@@ -1,7 +1,7 @@
 ---
 name: feature
 description: Define one feature with the product owner — how it works step by step and its numbered rules — in plain words, then check it for conflicts. Does not write its stories.
-argument-hint: "[parent ID] [title]"
+argument-hint: "[#issue] [parent ID] [title]"
 ---
 
 # spry — feature
@@ -11,6 +11,8 @@ argument-hint: "[parent ID] [title]"
 - **Template:** `spry/process/templates/feature.md` — its `audience` sets the tone of the document
   and of this conversation.
 - Parent: an epic, or a milestone when `levels` has no epic. Without one in `$ARGUMENTS`, list them and ask.
+- **From a GitHub issue** (`#<n>` in `$ARGUMENTS`): read it and its discussion first, and link the
+  item to it — `planning.md` → *From a GitHub issue*.
 - **Rules** are numbered `R-1…` so stories can cite them; one rule per line.
 - Several features named at once → create their drafts in one `spry.py new` (`planning.md` §3),
   then define each in turn.

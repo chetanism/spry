@@ -1,7 +1,7 @@
 ---
 name: bug
 description: Record a bug against the feature or story it breaks — what happens, what should, how to reproduce it, its impact and severity — checked against open bugs for duplicates. Use when someone reports something not working as the plan says.
-argument-hint: "[feature or story ID] [what goes wrong]"
+argument-hint: "[#issue] [feature or story ID] [what goes wrong]"
 ---
 
 # spry — bug
@@ -13,4 +13,6 @@ argument-hint: "[feature or story ID] [what goes wrong]"
   story it is about. Create with `spry.py new bug --parent <ID> --title "<what goes wrong>"`.
   With `mint: main` it takes the ID on the main branch and merges it into this one — on a slice
   branch too.
+- **From a GitHub issue** (`#<n>` in `$ARGUMENTS`): read it and its discussion first, and link the
+  item to it — `planning.md` → *From a GitHub issue*.
 - **Duplicates first:** read the open bugs under the same feature before writing anything.
