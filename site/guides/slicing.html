@@ -147,7 +147,7 @@ slice. Steps two people could build at the same time go into separate slices.</p
   <thead><tr><th>What</th><th>How the tool keeps it</th></tr></thead>
   <tbody>
     <tr><td>One step at a time</td><td><code>spry.py step SL-n</code> names the next step and its plan, worked out from the commits made so far — a new session starts there too</td></tr>
-    <tr><td>Each step one commit</td><td><code>spry.py step SL-n --commit</code> runs the fast checks, then commits with the trailer <code>Step: SL-n/k</code>. The <code>step_commit</code> hook refuses a <code>git commit</code> of code made by hand</td></tr>
+    <tr><td>Each step one commit</td><td><code>spry.py step SL-n --commit</code> runs the fast checks, then commits with the trailer <code>Step: SL-n/k</code>. With <code>slices.steps.tests</code> on, it first runs the test files the step added or changed, and a failing one stops the commit. The <code>step_commit</code> hook refuses a <code>git commit</code> of code made by hand</td></tr>
     <tr><td>Tests once</td><td>Steps run the fast checks only; the full gate and falsify run once, at close, on the whole slice</td></tr>
     <tr><td>Review one step at a time</td><td>One fresh reviewer per step, given only that step's diff, and one more for the seams between steps — all at once</td></tr>
     <tr><td>Clean commits to read</td><td>Review fixes are fixups of their step, folded in by <code>spry.py step SL-n --squash</code> before the gate</td></tr>

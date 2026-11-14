@@ -1223,3 +1223,29 @@ Entry format:
     on a long project;
   - a closed slice whose session logs Claude Code has already deleted keeps its time and shows
     `–` for tokens.
+
+## CH-58 · A step's commit can run the test files the step touched
+
+- **Date:** 2026-11-15 · **Version:** 0.47.0
+- **Touches:** `tool/spry.py` (`step --commit`, `gate`), `process/slicing.md` (*Steps* → *Build*),
+  `templates/spry.config.json` (`slices.steps.tests`, `slices.steps.tests_skip`)
+- **Why:** in a slice built in steps, `step --commit` runs the fast checks and no tests, so a
+  step's tests first run at the full gate, at close (issue #27). In one project's ten days, 29% of
+  the affected-test runs were red and 54 of 91 repeated full gates followed a red test run. Each
+  repeat is a full gate, about four minutes, and a turn at the context the close has by then.
+  - With `slices.steps.tests` on, `step --commit` runs the test files the step **added or
+    changed**, after the fast checks, through their `falsify.runners`. A red one refuses the
+    commit and names the file, so a failing test is found in the step that wrote it.
+  - Only those files. Not the affected tests, which still run once, at close. Not a file matching
+    `slices.steps.tests_skip`: list there the tests that need the stack.
+  - A test file no runner takes is left to the gate, and the output says so. A step that touched
+    no test file runs none.
+  - `gate --failed` reruns a red step test alone, as it does after any red gate.
+- **Adapt:**
+  - `slices.steps.tests` is off by default; turn it on when full gates at close often go red on
+    the slice's own tests. `spry pace` shows that as *full gates repeated* and gates that failed;
+  - it needs `falsify.runners`: with the switch on and none set, `step --commit` refuses and says so;
+  - put the integration tests' glob in `slices.steps.tests_skip`, unless the stack is always up.
+- **Migrate:**
+  - nothing is required;
+  - the project's copy of `slicing.md` *Steps* → *Build* takes the sentence on `slices.steps.tests`.

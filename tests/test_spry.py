@@ -3832,6 +3832,66 @@ class Steps(Base):
         with open(os.path.join(self.t.root, "src", "lend.ts")) as handle:
             self.assertEqual(handle.read(), "export const limit = 3\n", "the fix is in step 1 now")
 
+    def step_tests_on(self, **steps):
+        runner = {"match": ["src/**"], "cwd": "root", "command": "! grep -l BROKEN {files}"}
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "falsify": {"runners": [runner]},
+                                                        "slices": {"steps": {"tests": True, **steps}}}))
+        self.run_git("commit", "-qam", "docs: step tests")
+
+    def commits(self):
+        return subprocess.run(["git", "rev-list", "--count", "HEAD"], cwd=self.t.root, capture_output=True, text=True).stdout.strip()
+
+    def test_a_step_runs_the_test_files_it_added_or_changed(self):
+        self.on_branch()
+        self.step_tests_on()
+        before = self.commits()
+        self.write("src/lend.ts", "export const limit = 4\n")
+        self.write("src/lend.test.ts", 'test("S-1/AC-1 refuses a fifth", () => BROKEN)\n')
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 1, out)
+        self.assertIn("– the step's tests: src/lend.test.ts", out)
+        self.assertIn("✗ step tests", out)
+        self.assertIn("step 1 not committed: its tests are red — src/lend.test.ts", out)
+        self.assertEqual(self.commits(), before, "a red test is found in the step that wrote it")
+        self.write("src/lend.test.ts", 'test("S-1/AC-1 refuses a fifth", () => {})\n')
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 0, out)
+        self.assertIn("✓ step tests", out)
+        self.assertIn("fast checks and the step's tests green — the affected tests not run", out)
+        self.assertNotIn("b.test.ts", out, "only the files the step touched, not the affected set")
+        with open(os.path.join(self.t.root, ".spry", "pace", "steps.jsonl")) as handle:
+            line = json.loads(handle.read().strip().split("\n")[-1])
+        self.assertTrue(line["fast"] and ["step tests", line["steps"][-1][1], True] == line["steps"][-1], line)
+        self.write("src/page.ts", "export const shown = true\n")
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("step tests", out, "a step that touched no test file runs none")
+
+    def test_step_tests_are_off_by_default_and_leave_out_what_the_config_skips(self):
+        self.on_branch()
+        self.write("src/lend.ts", "export const limit = 4\n")
+        self.write("src/lend.test.ts", 'test("S-1/AC-1 refuses a fifth", () => BROKEN)\n')
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("step tests", out, "off: the fast checks only, as before")
+        self.step_tests_on(tests_skip=["**/*.int.test.ts"])
+        self.write("src/page.ts", "export const shown = true\n")
+        self.write("src/page.int.test.ts", 'test("S-1/AC-2 shows it", () => BROKEN)\n')
+        self.write("lib/other.test.ts", 'test("S-1/AC-2 shows it too", () => BROKEN)\n')
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("step tests", out, "a skipped file needs the stack: the gate runs it")
+        self.assertIn("– left to the gate, no falsify runner takes them: lib/other.test.ts", out)
+
+    def test_step_tests_without_a_runner_refuse_the_commit(self):
+        self.on_branch()
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "slices": {"steps": {"tests": True}}}))
+        self.run_git("commit", "-qam", "docs: step tests")
+        self.write("src/lend.test.ts", 'test("S-1/AC-1 refuses a fifth", () => {})\n')
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 2, out)
+        self.assertIn("`slices.steps.tests` is on, but spry.config.json has no falsify.runners", out)
+
     def test_a_slice_over_the_size_cap_is_the_person_s_call(self):
         self.on_branch()
         self.write("spry/spry.config.json", json.dumps({**CONFIG, "slices": {"steps": {"max_lines": 2}}}))
