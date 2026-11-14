@@ -285,7 +285,8 @@ and spry checks you stick to it.</p>
 
   <dt>Pace</dt>
   <dd><code>spry pace</code>'s page: where slices' time went — the agent, checks, background tasks, another
-  session, or you — and whether a process change helped. Local to your clone, never committed.
+  session, or you — what each slice spent in tokens, and whether a process change helped. Local to
+  your clone, never committed.
   <a href="../guides/maintaining.html">Keep spry yours</a>.</dd>
 
   <dt>Planned</dt>
@@ -348,6 +349,11 @@ and spry checks you stick to it.</p>
   <dd>One reviewable change with one visible result: a work order, a branch, a pull request, covering
   one or more criteria of one story — or the work of a task or bug (<code>SL-1</code>). A slice is a
   file, not a folder. <a href="../guides/slicing.html">Split a story into slices</a>.</dd>
+
+  <dt>Spend</dt>
+  <dd>What a slice cost in tokens on the pace page, in input-token equivalents: each
+  token counted at what it costs against one fresh input token (<code>pace.token_weights</code>). It
+  compares slices; it is not a price. <a href="../guides/maintaining.html">Keep spry yours</a>.</dd>
 
   <dt>Squash merge</dt>
   <dd>Merging a pull request as one single commit. <code>/spry:merge</code> always squashes, with a commit

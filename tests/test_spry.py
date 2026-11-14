@@ -2992,6 +2992,10 @@ class Falsify(unittest.TestCase):
         code, said = self.gate()
         self.assertEqual(code, 0, said)
         self.assertEqual(self.ran(log), ["r"], "the quiet retry ran, once")
+        with open(os.path.join(self.root, ".spry", "pace", "steps.jsonl")) as handle:
+            line = [json.loads(x) for x in handle][-1]
+        self.assertTrue(line["retried"])
+        self.assertGreaterEqual(line["retry_lost"], 0, "the first attempt's seconds stand in the step log")
         self.write({"src/loans.py": "broken(\n"})
         code, said = self.gate()
         self.assertEqual(code, 1)
@@ -3266,6 +3270,13 @@ def result(t, ident, out="", branch="sl-1-a"):
 def reply(t, branch="sl-1-a"):
     return {"type": "assistant", "timestamp": at(t), "gitBranch": branch,
             "message": {"stop_reason": "end_turn", "content": [{"type": "text", "text": "done"}]}}
+
+
+def used(record, request, **usage):
+    """`record`, an assistant record, as part of the request `request` that used these tokens."""
+    record["requestId"] = request
+    record["message"]["usage"] = usage
+    return record
 
 
 GATE_OUT = "✓ spry check · 1.0s\n✗ lint · 20.0s\n"
@@ -3624,6 +3635,105 @@ class Pace(Base):
         self.log(t, "a", self.session())
         spry.pace_on_merge_check(t.project(), "SL-1")
         self.assertTrue(os.path.isfile(os.path.join(t.root, ".spry", "pace", "slices", "SL-1.json")))
+
+    def spent(self):
+        """A session of three requests — the second written as two records — and one subagent."""
+        return [said(0, "go"),
+                used(reply(10), "r1", input_tokens=1000, output_tokens=100),
+                said(20, "<command-name>/spry:slice-close</command-name>"),
+                used(tool(30, "g", command="git status"), "r2", input_tokens=10, cache_read_input_tokens=50_000,
+                     cache_creation={"ephemeral_1h_input_tokens": 2000, "ephemeral_5m_input_tokens": 400}, output_tokens=200),
+                used(tool(31, "h", command="git diff"), "r2", input_tokens=10, cache_read_input_tokens=50_000,
+                     cache_creation={"ephemeral_1h_input_tokens": 2000, "ephemeral_5m_input_tokens": 400}, output_tokens=200),
+                result(32, "g"), result(33, "h"),
+                used(reply(40), "r3", input_tokens=5, cache_read_input_tokens=60_000, cache_creation_input_tokens=1000,
+                     output_tokens=10)]
+
+    def test_tokens_are_counted_once_a_request_with_the_subagents_apart(self):
+        t = self.tree()
+        path = self.log(t, "a", self.spent())
+        os.makedirs(os.path.join(path[:-6], "subagents"))
+        with open(os.path.join(path[:-6], "subagents", "agent-1.jsonl"), "w") as handle:
+            handle.write("".join(json.dumps(r) + "\n" for r in [
+                said(34, "build step 1", origin=None), used(reply(36), "s1", input_tokens=3000, output_tokens=400)]))
+        d = spry.pace_read_log(path, 1800, [])["branches"]["sl-1-a"]
+        self.assertEqual(d["tokens"], {"input": 1015, "cache_read": 110_000, "cache_write_5m": 1400,
+                                       "cache_write_1h": 2000, "output": 310})
+        self.assertEqual((d["requests"], d["peak"], d["close"][1]), (3, 61_005, 52_410),
+                         "a request written as two records counts once; close starts at the request after the skill")
+        p = t.project()
+        s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
+        s["lines"] = 400
+        weights = spry.pace_config(p)["weights"]
+        n = spry.pace_token_numbers(s, weights)
+        self.assertEqual(n["main"], 1015 + 110_000 * 0.1 + 1400 * 1.25 + 2000 * 2 + 310 * 5)
+        self.assertEqual((n["sub"], n["agents"], n["requests"]), (3000 + 400 * 5, 1, 3))
+        self.assertEqual(n["per100"], (n["main"] + n["sub"]) / 4)
+        lines = "\n".join(spry.pace_slice_lines(s, [], spry.pace_config(p)))
+        self.assertIn("- tokens: 24k spend, in input-token equivalents — the main session 19k over 3 requests, "
+                      "1 subagent 5k (21%); peak context 61k, 52k entering close; 6k per 100 lines", lines)
+        self.assertIn("- size: 300–699 lines; ", lines)
+
+    def test_token_weights_and_size_buckets_come_from_the_config(self):
+        t = self.tree(**{"spry__spry.config.json": json.dumps({**CONFIG, "pace": {"token_weights": {"output": 4}, "buckets": [100, 50]}})})
+        conf = spry.pace_config(t.project())
+        self.assertEqual((conf["weights"]["output"], conf["weights"]["cache_read"], conf["buckets"]), (4.0, 0.1, [50, 100]))
+        self.assertEqual(spry.pace_spend({"input": 10, "output": 10}, conf["weights"]), 50)
+        self.assertEqual([spry.pace_bucket(n, [300, 700]) for n in (0, 1, 299, 300, 699, 700)],
+                         [None, "under 300", "under 300", "300–699", "300–699", "700 or more"])
+        self.assertEqual([spry.pace_tokens(n) for n in (None, 999, 1500, 999_949, 2_340_000)], ["–", "999", "2k", "1000k", "2.3M"])
+        bad = self.tree(**{"spry__spry.config.json": json.dumps({**CONFIG, "pace": {"token_weights": {"output": "dear"}}})})
+        with self.assertRaises(SystemExit):
+            spry.pace_config(bad.project())
+
+    def test_falsify_runs_and_gate_reruns_come_from_the_step_log(self):
+        t = self.tree()
+        self.log(t, "a", self.session())
+        steps = [{"command": "falsify", "at": 1, "seconds": 300, "controls": 20, "caught": 12, "survived": 6, "unreliable": 2},
+                 {"command": "falsify", "at": 2, "seconds": 100, "controls": 6, "caught": 6, "survived": 0, "unreliable": 0, "waited": 30},
+                 {"command": "gate", "at": 3, "seconds": 200, "ok": False, "fast": False, "tests": True, "code": "x",
+                  "retried": True, "steps": [["spry check", 2, True], ["affected tests", 80, False]]},
+                 {"command": "gate", "at": 4, "seconds": 90, "ok": True, "fast": False, "tests": True, "code": "x", "force": True,
+                  "retried": True, "retry_lost": 40, "steps": [["affected tests", 80, True]]},
+                 {"command": "gate", "at": 5, "seconds": 70, "ok": True, "fast": False, "tests": True, "code": "y", "steps": []},
+                 {"command": "gate", "at": 6, "seconds": 9, "ok": True, "fast": True, "tests": False, "steps": []}]
+        os.makedirs(os.path.join(t.root, ".spry", "pace"))
+        with open(os.path.join(t.root, ".spry", "pace", "steps.jsonl"), "w") as handle:
+            handle.write("".join(json.dumps({"branch": "sl-1-a", **step}) + "\n" for step in steps))
+        p = t.project()
+        s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
+        f = spry.pace_falsify(s)
+        self.assertEqual((f["runs"], f["controls"], f["caught"], f["survived"], f["unreliable"], f["each"]), (2, 26, 18, 6, 2, 400 / 26))
+        self.assertEqual(spry.pace_reruns(s), {"tested": 3, "repeats": 2, "same": 1, "retries": 2, "lost": 118 + 40, "waited": 30},
+                         "a line with no retry_lost falls back to the gate's seconds less its steps'")
+        lines = "\n".join(spry.pace_slice_lines(s, spry.pace_flags(p, s), spry.pace_config(p)))
+        self.assertIn("- falsify: 2 runs, 26 controls — 18 caught, 6 survived, 2 unreliable; 6m40, 15.4s a control; "
+                      "the last run: 6 caught, 0 survived, 0 unreliable of 6", lines)
+        self.assertIn("- reruns: 3 full gates ran tests, 1 on code a full gate had already tested; "
+                      "2 quiet retries lost 2m38 to the first attempt; 0m30 waiting for the lock", lines)
+        self.assertIn("- flag: 2 quiet retries, 2m38 lost to the first attempt", lines)
+        self.assertNotIn("- tokens:", lines, "a log with no usage adds no token line")
+
+    def test_the_page_sets_slices_against_their_size_and_shows_tokens_only_where_counted(self):
+        t = self.tree()
+
+        def one(n, lines, tokens):
+            return {"id": f"SL-{n}", "kinds": {"agent": 600}, "phases": {}, "first": T0 + n, "last": T0 + 100 + n, "sessions": 1,
+                    "prompts": 1, "questions": 0, "compactions": 0, "reviews": [], "limit": 0, "slowest": [], "suite": 0,
+                    "gates": [], "lines": lines, **tokens}
+        plain = {s["id"]: s for s in [one(1, 200, {}), one(2, 400, {})]}   # summaries kept before CH-57, or an agent with no log
+        page = spry.pace_page(t.project(), plain)
+        self.assertNotIn("tokens", page.lower())
+        self.assertIn("| under 300 | 1 | 10m00 | 5m00 | – | – | – |", page)
+        counted = {**plain, "SL-3": one(3, 500, {"tokens": {"input": 2_000_000}, "sub_tokens": {"output": 100_000}, "requests": 9,
+                                                 "agents": 2, "peak": 250_000, "close": [T0, 180_000],
+                                                 "falsify": [{"at": 1, "seconds": 50, "controls": 10, "caught": 7, "survived": 3, "unreliable": 0}]})}
+        page = spry.pace_page(t.project(), counted)
+        self.assertIn("- tokens, in input-token equivalents: median 2.5M a slice, 500k per 100 lines; median peak context 250k; "
+                      "subagents 20% of the spend", page)
+        self.assertIn("| 300–699 | 2 | 10m00 | 2m15 | 2.5M | 500k | 250k |", page)
+        self.assertIn("| SL-3 | 500 | 2.5M | 500k | 20% | 250k | 180k | 1 | 10 | 7 | 3 | 0 | 5.0s | 0 (0) | 0 |", page)
+        self.assertIn("| SL-1 | 200 | – | – | – | – | – | – | – | – | – | – | – | 0 (0) | 0 |", page)
 
 
 STEPS = ("### Steps\n\n#### Step 1 · Refuse a fifth book\n\nCovers: AC-1\n\n- `src/lend.ts` — the limit\n\n"
