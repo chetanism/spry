@@ -1311,3 +1311,43 @@ Entry format:
     local note that cites *Open* step 4, 5 or 6 by number now means 5, 6 or 7;
   - a slice already open when the switch is turned on shows the warning at its merge; accept it
     there.
+
+## CH-61 · Pace shows what failed the gate, subagents by kind, review findings, and a change within one size
+
+- **Date:** 2026-11-15 · **Version:** 0.50.0
+- **Touches:** `tool/spry.py` (`pace`, the `gate`'s step-log line, `merge-check`),
+  `process/slicing.md` (*Close* step 5), `process/reviewing.md` (§5a), `templates/slice.md`
+  (`### Review`), `skills/slice-close`, `skills/pace`
+- **Why:** the rest of issue #19. `pace` showed time and tokens; it could not say which lint rule
+  kept failing the gate, what the subagents were for, what the reviews found, or whether a change
+  helped slices of one size.
+  - **Red checks:** the gate records the rules a failed fast check named — oxlint, eslint, `tsc`,
+    ruff, flake8, mypy, biome. The page lists red runs per check and the rules behind most of
+    them. In one project `lint` failed 144 gates over 73 slices.
+  - **Subagents:** the wait for a subagent the session started was filed as *waiting on another
+    session*, because Claude Code hands its report back that way. It is now *subagents waited
+    on*, a group of its own. Subagents are split by what they were started for — build, design
+    review, review, fix, tests, other — each with its count, its own time and its spend.
+  - **The review phase** lasts until the last reviewer reports. It ended at the launch notice.
+  - **Findings:** the close review's counts are recorded in the slice, under `### Review`:
+    `- <n> Blocker, <n> Should, <n> Nit — <n> fixed`. The page sets them beside the design
+    review's, the questions asked, and the bullets under `### Choices taken` where a project
+    keeps that section. `merge-check` shows the review line.
+  - **Size:** each change gets a row per size bucket with p25 / median / p75 before and after;
+    *By size* shows the same quartiles; `spry pace SL-n` sets the slice against its bucket.
+- **Adapt:**
+  - nothing to switch on. A section appears only when a slice has something for it;
+  - `### Review` is written by `/spry:slice-close`. A team whose people review by hand can leave
+    it out: nothing warns, and the page shows `–`;
+  - `### Choices taken` is not a spry section. A project whose own process lists the choices an
+    agent took without asking gets them counted; any other sees `–`;
+  - a rule is read from the usual output of each linter. A check whose output names its rules
+    another way counts as the check alone — say so in an issue, with a line of the output;
+  - the *review agents* flag no longer counts a design review or a fix agent.
+- **Migrate:**
+  - nothing is required;
+  - the project's copy of `slicing.md` *Close* step 5 takes the *Record it* bullet,
+    `reviewing.md` §5a step 5 its first clause, and `templates/slice.md` the `### Review` section;
+  - the first `spry pace` after the update reads every session log again, once;
+  - rules are recorded from this version on: an older red gate shows its check and no rule. A
+    closed slice whose session logs are gone keeps the waits it had, *another session* included.

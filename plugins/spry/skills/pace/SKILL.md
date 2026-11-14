@@ -27,6 +27,20 @@ and writes nothing but what `spry pace` keeps under `.spry/`.
    - **falsify:** many controls `unreliable`, or many seconds a control, across slices;
    - **reruns:** full gates on code a full gate had already tested, or minutes lost to quiet
      retries, across slices;
+   - **red checks:** a rule in *Red checks* that failed the gate in several slices — a convention
+     the agent has not been taught (`/spry:record`), or a rule the linter can fix by itself
+     (a `fix` on its `checks.fast` entry). A check red in most slices with no rule named is run too late: the fast gate
+     while building;
+   - **subagents:** one kind in *Subagents* holding most of the subagents' time or spend with
+     nothing to show for it in *Findings* — reviews that find nothing, fixes longer than the
+     build;
+   - **findings:** design-review Blockers that keep coming (the stories leave shapes open), a
+     review at close that still finds Blockers after a design review, findings recorded and not
+     fixed. No `### Review` line in most slices → say the counts are missing, not that the
+     reviews found nothing;
+   - **size:** judge a change by the rows under *Slices of one size*, never by the medians of all
+     slices when their sizes differ. A row with fewer than 10 slices after the change is a
+     reading, not a difference;
    - **Before and after each change** shows *too few slices to tell* → no finding from it. Say so, and
      name how many slices are still needed. Never read a difference into fewer than 10 a side.
 4. **One proposal per finding**, each of these and nothing else:

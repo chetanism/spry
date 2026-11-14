@@ -248,7 +248,8 @@ The session that ran the review does this, not the reviewing agent.
 4. **Commit** `fix(<SL-n>): review findings`. In a slice built in steps, each fix is instead
    `git commit --fixup=<its step's commit>` (`step SL-<n> --ranges`), folded in before the gate
    (`slicing.md` *Steps*). Reviewed at close: the close pushes, at its end. Otherwise push once.
-5. **Reviewed at close,** finish the close (`slicing.md` *Close*, from *Falsify*). A draft PR reviewed
+5. **Reviewed at close,** record the counts under the slice's `### Review` (`slicing.md` *Close*
+   step 5) and finish the close (from *Falsify*). A draft PR reviewed
    before its close: stop there; the close runs from step 1 when the build is done. **On *a*,** then
    run `/spry:merge` — every step. The answer was its step 6 yes, for the `!` items the
    report named; anything else it finds, it asks.

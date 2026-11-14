@@ -189,6 +189,7 @@ tests to change.</p>
   <li>the agent, thinking and writing</li>
   <li>checks: the gate, falsify, and tests or fast checks the agent ran itself</li>
   <li>other tools: spry, git, gh, the local services, polling loops</li>
+  <li>subagents: waiting on a subagent this session started — a reviewer, a fixer</li>
   <li>waiting on you, or a question it asked you</li>
   <li>you, busy in another session</li>
   <li>waiting on a background task, another session, or a scheduled wake-up</li>
@@ -224,10 +225,32 @@ tests to change.</p>
 
 <p>An agent that writes no session log gets the time report without the tokens.</p>
 
+<p>Four more tables say what the time and tokens bought:</p>
+
+<ul>
+  <li><strong>Subagents</strong>, by what each was started for — build, design review, review, fix, tests
+  or other, read from the few words the session gave it. Each kind has its count, its own working time
+  and its spend. That time runs beside the session's; the session's share is the wait above.</li>
+  <li><strong>Findings</strong>, a row per slice, from the slice file: what the
+  <a href="building.html#the-design-review">design review</a> found before any code, what the review at
+  close found and how much of it was fixed (the slice's <em>Review</em> section), and how many questions
+  the agent put to you.</li>
+  <li><strong>Red checks:</strong> how often each fast check failed a gate, and the rules behind most of
+  those failures — a lint rule, a type error's number. A rule that fails the gate in slice after slice is
+  a convention the agent was never taught, or one the linter could fix by itself.</li>
+  <li><strong>By size</strong>, with the spread: the lower quarter, the median and the upper quarter
+  (p25 / median / p75) of spend and active time per 100 lines, for slices of each size.</li>
+</ul>
+
 <ul>
   <li><strong>Did a change help?</strong> Every row in <code>process-changes.md</code> and every commit to the
   config marks a point. The page sets the slices after each point against as many before it — time,
-  spend, context, falsify and reruns alike.</li>
+  spend, context, falsify, reruns and findings alike.</li>
+  <li><strong>For slices of one size.</strong> Big slices cost less per line than small ones, so a change
+  that only moved the sizes moves every median. Under each point, a row per size sets the slices after
+  it against the 20 before, as p25 / median / p75. A size needs 10 slices before the change. With fewer
+  than 10 after it, the row shows where they fall and says it is not yet a difference.
+  <code>spry pace SL-42</code> sets one slice against the others of its size the same way.</li>
   <li><strong>Nothing to switch on.</strong> The gate, <code>check</code>, falsify and <code>merge-check</code> each
   add a line to a step log. Claude Code's own session logs are read only when you ask, so nothing
   runs while you work.</li>

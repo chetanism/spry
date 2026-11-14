@@ -233,12 +233,14 @@ search is <code>find</code>; the <a href="#pace">pace</a> page is at <code>/-/pa
 <code>.spry/view/pace.md</code>, which shows:</p>
 <ul>
   <li>each category's share of the time</li>
-  <li>before and after each dated change</li>
+  <li>before and after each dated change — and, under it, the slices of each size by themselves: p25 / median / p75 of the 20 before and of those after (a size needs 10 before)</li>
   <li>flags</li>
   <li>a row per slice, with its lines changed — and, apart from them, the lines in <code>checks.generated</code> files</li>
-  <li>by size: the medians of active time and spend, each per 100 changed lines, for slices of each size</li>
+  <li>by size: the medians of active time and spend for slices of each size, and each per 100 changed lines as p25 / median / p75</li>
   <li>tokens per slice: the spend in input-token equivalents, the subagents' share, the largest context, and the context when the close started</li>
-  <li>the design review per slice, when it had one: Blockers, Shoulds and how many were asked (shown by <code>pace SLICE</code>)</li>
+  <li>subagents, by what each was started for (build, design review, review, fix, tests, other): how many, their own working time and their spend</li>
+  <li>findings per slice, from the slice file: the design review's Blockers, Shoulds and asks; the close review's Blockers, Shoulds, Nits and fixes (<em>Review</em>); the questions the agent asked; and the bullets under <em>Choices taken</em>, where a project keeps that section</li>
+  <li>red checks: how often each fast check failed a gate, and the rules its output named — an oxlint or eslint rule, a <code>TS</code> number, a ruff, flake8 or mypy code, a biome rule. Rules are recorded from 0.50.0 on</li>
   <li>falsify per slice: runs, controls, how many were caught, survived and unreliable, and the seconds a control took</li>
   <li>reruns per slice: full gates that ran tests, how many ran on code already tested, and the time quiet retries lost</li>
   <li>gate steps</li>
@@ -247,7 +249,7 @@ search is <code>find</code>; the <a href="#pace">pace</a> page is at <code>/-/pa
 <p>Never committed.</p>
 <pre><code>spry pace [SLICE] [--since YYYY-MM-DD] [--last N] [--compare POINT]</code></pre>
 <ul>
-  <li><code>SLICE</code> — print one slice in detail instead: each kind of time, each phase, its gates, tokens, falsify runs, reruns and flags.</li>
+  <li><code>SLICE</code> — print one slice in detail instead: each kind of time, each phase, its gates, tokens, subagents, review findings, red checks, falsify runs, reruns and flags — and where it falls among the other slices of its size.</li>
   <li><code>--since</code>, <code>--last N</code> — only slices active since that day, or the last N.</li>
   <li><code>--compare POINT</code> — before and after a date, a <code>CH-n</code> taken, or a commit, instead of every change.</li>
 </ul>

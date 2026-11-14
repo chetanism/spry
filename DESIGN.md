@@ -595,7 +595,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 ## 17. Pace — where a slice's time goes
 
-> **Status:** built in CH-44 (0.33.0); the `/spry:pace` skill in CH-47 (0.36.0); `/spry:retro`, which joins it with memory-check, in CH-48 (0.37.0); tokens, falsify outcomes and gate reruns in CH-57 (0.46.0). Prototype: `docs/spikes/pace.py`.
+> **Status:** built in CH-44 (0.33.0); the `/spry:pace` skill in CH-47 (0.36.0); `/spry:retro`, which joins it with memory-check, in CH-48 (0.37.0); tokens, falsify outcomes and gate reruns in CH-57 (0.46.0); red checks by rule, subagents by kind, review findings and a comparison within one size in CH-61 (0.50.0). Prototype: `docs/spikes/pace.py`.
 
 Purpose: show where each slice's time and tokens went — the agent, the checks, waiting on a person —
 so that person can judge what to change: the process, the config, the tests, or spry. Report only;
@@ -608,8 +608,10 @@ it never changes anything.
     ran, the branch, the command and its seconds. A gate's line also holds each step's seconds,
     the code's fingerprint, whether it ran tests, and the outcome: passed, failed, skipped on the
     stamp, docs only, tests only, or a quiet retry with the seconds its first attempt took
-    (`retry_lost`). A falsify line holds its controls and how many were caught, survived and
-    unreliable. A wait for the lock (`checks.lock`) is `waited`. Writing a line costs microseconds and never
+    (`retry_lost`). For a fast check that failed it holds the rules the check's output named and
+    how often (`red`), the twelve most frequent: `.spry/gate/last.log` has the whole output, but
+    only until the next red gate. A falsify line holds its controls and how many were caught,
+    survived and unreliable. A wait for the lock (`checks.lock`) is `waited`. Writing a line costs microseconds and never
     fails the command. The gate figures on the page come from this log, for every agent. A slice
     with no step lines (before CH-44) falls back to the gate output in the session log.
   - **The agent's session log**, read after the slice and never copied. Claude Code writes one:
@@ -637,7 +639,7 @@ it never changes anything.
   | build | `link --pr`: the draft PR exists |
   | close | `slice-close` starting |
   | review | a review agent starting (an `Agent` call whose description or prompt says review) |
-  | fixes | that agent's result, or the notice that a background one finished |
+  | fixes | that agent's report — the last one's, when several review at once |
   | merge | `merge` starting, or `merge-check` |
 
 - **Every second of active time gets one category:**
@@ -650,6 +652,12 @@ it never changes anything.
     It is still a cost, the cost of running sessions side by side, but not a slow reply.
   - Waiting on a background task: any wait while a background task or agent it started is still
     running, whoever ends the wait. Nothing waited on you then, even if you typed first.
+  - **Waiting on a subagent** the session started. Claude Code starts a subagent in the
+    background and hands its report back as a message from another session, so this wait read
+    *waiting on another session* until CH-61. A session's own subagents are known by the ID in
+    the launch notice and by the hand-back's first words. The wait counts however long it was —
+    the slice was not idle — and a subagent that never reported stops counting where its own log
+    ends.
   - Waiting on another session, or on a scheduled wake-up.
   - **Away:** a gap longer than `pace.away` (default 30 min) that is not a tool running. Away time is
     left out of every total.
@@ -663,12 +671,25 @@ it never changes anything.
     The defaults are the usual price ratios, stated as assumptions: cache read 0.1, cache write
     1.25 or 2, output 5. One number then compares slices whatever the mix; it is not money.
   - The main session and its subagents are kept apart. A subagent's requests are in its own log.
+  - **Subagents by what they were started for:** build, design review, review, fix, tests or
+    other — the first such word in the description Claude Code keeps beside each subagent's log
+    (`subagents/*.meta.json`). Each kind has its count, its own working time and its spend. That
+    time is beside the session's, not part of it: the session's part is the wait above.
   - **Context** is everything one request sent, cached or not. A slice keeps its peak, and the
     context of the first request after `slice-close` started — what every turn of the close then
     carries.
   - **Size:** spend and active time are also shown per 100 changed lines, and each slice falls in
     a size bucket (`pace.buckets`: 300, 700, 1300, 2500 lines) so that it is set against slices
     of its own size.
+- **What failed the gate:** each fast check that went red, in a fast or a full gate, and the rule
+  it named — oxlint's and eslint's rule, a `TS` number, a ruff or flake8 code, a mypy code, a biome
+  rule. A formatter names files, not rules, and counts as the check alone. A few rules explain
+  most red gates, and each is a convention to teach or a rule to fix automatically.
+- **Findings**, from the slice file and never from a log: the design review's count line (§15),
+  the close review's — `### Review`, `<n> Blocker, <n> Should, <n> Nit — <n> fixed`, a line per
+  review, written at `slice-close` step 5 — and the bullets under `### Choices taken` where a
+  project's own process keeps that section; spry's does not ask for it. Questions put to the
+  person come from the session log. `merge-check` shows the review line and never asks for it.
 - **When it runs:** `merge-check`, once it passes, writes the slice's summary with no extra call. It
   reads only logs changed since a day before the slice's file was made, and any failure is
   swallowed, because pace never stands between a slice and its merge.
@@ -686,7 +707,11 @@ it never changes anything.
     (`checks.generated`) beside them and not in them.
   - **By phase:** each category's share.
   - **By size:** per size bucket, the medians of active time, spend, each per 100 lines, and peak
-    context.
+    context; each *per 100 lines* as p25 / median / p75 once a bucket has four slices.
+  - **Subagents:** per kind, how many, in how many slices, their time, the median, the spend.
+  - **Findings, a row per slice:** the design review's Blockers, Shoulds and asks; the close
+    review's Blockers, Shoulds, Nits and fixes; questions asked; choices taken.
+  - **Red checks:** red runs and slices per check, then the twenty rules behind the most red runs.
   - **Tokens, falsify and reruns, a row per slice:** spend, per 100 lines, the subagents' share,
     peak context and context entering close; falsify runs, controls, caught, survived, unreliable
     and seconds a control; full gates that ran tests and how many ran on code a full gate had
@@ -704,9 +729,14 @@ it never changes anything.
     compares medians of active time, each category's share, gate failures, retries and waits, raw
     and per 100 changed lines, because slices differ in size — and spend, spend per 100 lines,
     peak context, context entering close, falsify controls and survivors, and reruns on unchanged
-    code. With fewer than 10 slices on a side
-    it says *too few slices to tell* instead of a difference. `spry pace --compare
+    code, fast checks failed, questions asked and the reviews' Blockers. With fewer than 10
+    slices on a side it says *too few slices to tell* instead of a difference. `spry pace --compare
     <date|CH-n|commit>` does the same for any point.
+  - **Within one size.** Under each change, a row per size bucket and measure — spend per 100
+    lines, active time per 100 lines, context entering close — with p25 / median / p75 of the 20
+    slices before and of those after. A bucket needs 10 before; one slice after is already a
+    reading against them, and the table says it is not yet a difference. `spry pace <slice>` sets
+    one slice against the others of its bucket the same way, from four others up.
   - **Flags:** each is a rule with its threshold in `pace.flags`, shown with its evidence (slice,
     number) and what it usually means. Flags describe and never judge. The first set comes from
     the prototype:
@@ -734,7 +764,7 @@ it never changes anything.
   needed. When it is, the numbers (never log text) would go into the slice file at close, behind a
   switch, on a page grouped by phase, not by person. Session logs hold everything the
   agent saw, so they are read where they are and never copied.
-- **Not measured:** how long a background task ran (only the wait on it shows), a person's time
+- **Not measured:** how long a background command ran (only the wait on it shows), a person's time
   outside the sessions, and the tests a slice added after falsify left survivors — the step log
   holds each run's counts, not which controls they were.
 - **What the prototype found** (2026-10-29, spry-era slices of two pilots; 324 and 243 slices,
@@ -1008,6 +1038,21 @@ in `spry/history/writ.md`, then retires `canon/`.
   The merge stays a squash, so no commit on the main branch skipped the full gate. Being an
   instruction was not enough in connect, so the tool makes the step commits and `merge-check`
   checks them.
+- 2026-11-15 — a red check's rules are **recorded by the gate, in the step log** (CH-61), not read
+  from `.spry/gate/last.log` afterwards: that file holds one red run and the next one replaces
+  it. Only the rule and its count are kept, never the output's text.
+- 2026-11-15 — a subagent's kind comes from **its description, not its prompt** (CH-61). A fix
+  agent's prompt quotes the review it fixes, so the prompt said *review* for both; the
+  description is the few words the session chose for it.
+- 2026-11-15 — the close review's counts are **a line in the slice, shown by `merge-check` and
+  not asked for** (CH-61). Quality had no number, and the transcript is not a record: it is
+  deleted after a month and says what an agent reported, not what stood once verified. No
+  warning when the line is missing — the review itself is the rule, and a team whose people
+  review by hand has no counts to write.
+- 2026-11-15 — a change is judged **within a size bucket, as quartiles** (CH-61). One project's
+  slices ran from 200 to 7,000 lines, and spend per 100 lines fell fivefold across that range, so
+  a change that moved the sizes moved every median. Ten slices before make the bucket's row;
+  after the change even one slice is shown, as a reading against them and named as such.
 
 ## 23. Built
 
@@ -1203,3 +1248,8 @@ in `spry/history/writ.md`, then retires `canon/`.
   Blocker becomes an ask, and the counts are recorded under `### Design review` for `merge-check`
   and `pace`. From issue #18: 11 Blockers and 44 Shoulds on three slices, at about five minutes
   and one agent each.
+- 2026-11-15 — pace shows what failed the gate, subagents by kind, review findings and a change
+  within one size (CH-61, 0.50.0): the gate records the rules a red check named; the wait for a
+  session's own subagent is no longer *another session*; the close review is recorded under
+  `### Review`; `--compare` and *By size* give p25 / median / p75 per size bucket. Items 5–8 of
+  issue #19.
