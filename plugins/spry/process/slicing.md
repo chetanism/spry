@@ -81,10 +81,6 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
 4. **Show the summary and the plan.** Ask to approve only when the plan does something hard to undo
    (*When to stop and ask*) or departs from the story; otherwise go on.
 5. Then:
-   - **with `slices.issue` on, the issue first:** `spry.py issue-body SL-<n> | gh issue create
-     --title "SL-<n> <title>" --body-file -`. Its body is the work order as agreed, saying it is
-     never updated — the file goes on changing, and the difference is the record. Set `issue:` to
-     its number (`spry.py link SL-<n> --issue <n>`); `check` refuses an open slice without one;
    - set `state: open`, and `spry.py link SL-<n> --branch <branch> --owner` (`--owner <name>` when
      building it for someone else); `spry.py check`; commit `docs(slice): SL-<n> work order` —
      the branch's first commit, before any code;
@@ -189,9 +185,8 @@ that merges.
    `merge-check` blocks without it; `spry.py gate` (only `check` runs — nothing but documents changed); commit
    `docs(slice): SL-<n> close summary` with the trailer `Slice: SL-<n>` in the body; push; replace
    the PR body with `spry.py pr-body SL-<n> --base origin/<main>`; mark the PR ready for review.
-   With an `issue:`, post the close summary on it — `spry.py issue-body SL-<n> --close |
-   gh issue comment <issue> --body-file -` — and leave its body alone. The merge commit's
-   `Closes #<issue>` closes it.
+   A slice gets no GitHub issue: the request issues its story, bug or task came from follow the
+   plan through `spry.py issues --sync` (`planning.md` → *From a GitHub issue*).
 9. **Merge only through `/spry:merge`.** The review is done (step 5): on its answer *a*, run
    `/spry:merge` now; otherwise tell the person the PR is ready for it. A teammate may still review
    the ready PR.

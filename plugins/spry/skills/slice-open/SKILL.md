@@ -13,7 +13,6 @@ argument-hint: "[slice ID]"
   `slices.pick: ask`, the first four with none recommended (`slicing.md` → *Open*).
 - **Claim first:** `spry.py claim SL-<n>` makes the branch — and with `mint: main` takes the slice
   on the main branch, or names who holds it (`slicing.md` → *IDs and claims*).
-- **With `slices.issue` on,** the issue comes before `state: open`, from `spry.py issue-body`.
 - **A slice with `### Steps`** gets each step's plan under its heading, and is built one step at a
   time: `spry.py step SL-<n>`, then `spry.py step SL-<n> --commit` — never `git commit` of code by
   hand (`slicing.md` → *Steps*).

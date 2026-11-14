@@ -1011,3 +1011,41 @@ Entry format:
   `slices.mode` is `split`. Stories already sliced keep their slices; `steps` applies from the next
   `/spry:slice`.
 - **Migrate:** nothing — a slice without `### Steps` is one step, as before.
+
+## CH-52 · Issues are requests, not slices
+
+- **Date:** 2026-11-14 · **Version:** 0.41.0
+- **Touches:** `tool/spry.py` (`issues`; `link <item> --issue`; `issues:` in `check`; `issue-body`,
+  the `Closes #n` trailer, `slices.issue` and its `check` rule removed; `link_fields` no longer
+  guards a slice's `issue`), `process/planning.md` (*From a GitHub issue*), `process/slicing.md`
+  (Open, Close), `process/merging.md` (step 8), `process/setup.md` (topic b, files),
+  `process/templates/ci-github.yml` (`index` job), `process/templates/issue-forms/` (new),
+  `process/templates/spry.config.json`, `skills/{bug,feature,story,epic,milestone,task,merge,status,slice-open,slice-close}`
+- **Why:** a GitHub issue per slice answered nobody: developers read the PR, and the people outside
+  the team who follow issues need the request they made, not the slices it became. And it broke —
+  the `Closes #n` trailer reached GitHub only through `/spry:merge`, so on pulse-v2 28 issues of
+  closed slices stayed open after merges made another way, and 4 on connect. Meanwhile real requests
+  sat in issues the plan never answered: pulse-v2's #350 was half taken into B-46 and #340 settled in
+  D-173, both still open with no word. Now anyone asks in an issue; once agreed there, a planning
+  skill (`/spry:bug #42`, `/spry:story #42` …) writes the item and names the issue in `issues:`;
+  `spry issues --sync` gives each open issue one `spry:` label — `accepted`, `ready`, `in-progress`,
+  `done`, `declined`, derived from the plan — and a plain comment when it changes. It never closes
+  an issue: QA closes it after testing. It is safe to run any time, so CI on the main branch,
+  `/spry:merge` and a schedule can all run it, and a merge made outside the skill still arrives.
+- **Adapt:**
+  - when to sync: the template's `index` job runs `issues --sync` after a push to the main branch
+    (with `issues: write` and `GH_TOKEN`). A project without CI on push — connect cut it for minutes
+    — adds a nightly scheduled job with that step alone; `/spry:merge` syncs either way;
+  - whether people ask for work in issues: if so, put `templates/issue-forms/request.yml` and
+    `bug.yml` in `.github/ISSUE_TEMPLATE/`, replacing forms that are not for people outside the
+    team (a copy of a spry template, a label the repository lacks);
+  - a project whose deploy knows what it shipped may post on those issues itself
+    (`issues --json`), recorded as a local process change.
+- **Migrate:**
+  - remove `slices.issue` from `spry.config.json` (`check` warns while it is there), and the
+    issue steps from the project's copies of `slicing.md`, `slice-open` and `slice-close`;
+  - `spry issues --legacy` lists the per-slice issues still open; on a yes, `--legacy --close`
+    closes each with a comment saying why — `completed` for a closed slice, `not planned` otherwise.
+    A slice's old `issue:` stays as history;
+  - open issues no slice made are requests: list them for the person to take into the plan
+    (`/spry:bug #n` …) or close — never decide one alone.

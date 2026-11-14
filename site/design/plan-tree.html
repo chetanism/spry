@@ -155,7 +155,9 @@ related: [SL-1]
   <dt><code>state</code> for slices</dt>
   <dd><code>planned</code> → <code>open</code> → <code>closed</code>, or <code>dropped</code>. A closed slice also carries <code>closed: &lt;date&gt;</code>.</dd>
   <dt>Slices add</dt>
-  <dd><code>covers</code> (the story's criteria it builds), <code>branch</code>, <code>pr</code> — and <code>issue</code>, when the project turns on a GitHub issue per slice.</dd>
+  <dd><code>covers</code> (the story's criteria it builds), <code>branch</code>, <code>pr</code>.</dd>
+  <dt><code>issues</code></dt>
+  <dd>On a plan item: the GitHub issues it was asked for in, <code>issues: [42]</code>, set by <code>spry link S-3 --issue 42</code>. The issue then shows the item's stage — see <a href="../guides/team.html#requests">Requests in GitHub issues</a>.</dd>
   <dt><code>blocked_by</code></dt>
   <dd>What must finish first. An item waits on what it, and everything above it, names here. Filled by the conflict check (a <code>Dependency</code> finding) and by <code>/spry:slice</code> when one slice needs another's code.</dd>
   <dt><code>related</code></dt>
@@ -170,12 +172,6 @@ related: [SL-1]
   its own story waits on something that is only done when the slice is.</li>
 </ul>
 
-<h3>The issue option</h3>
-<p>With <code>slices.issue</code> on, opening a slice creates a GitHub issue from its work order — for
-people outside the repository who follow issues rather than files. The issue body is frozen and
-says so; the slice file keeps changing, and the difference is the record. The close summary is posted
-as a comment, and the merge commit's <code>Closes #n</code> closes it. <code>check</code> refuses an open slice
-without its issue.</p>
 
 <h2>A slice has two parts</h2>
 <div class="compare">

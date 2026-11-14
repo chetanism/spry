@@ -1,0 +1,43 @@
+# Written by /spry:init or /spry:update into .github/ISSUE_TEMPLATE/. A form for anyone — no knowledge
+# of the code or the plan needed. Once the request is agreed in its comments, a planning skill takes
+# it (`/spry:feature #<n>`, `/spry:story #<n>` …) and spry labels it as the work moves
+# (spry/process/planning.md → From a GitHub issue). `enhancement` is one of GitHub's default labels.
+name: Ask for something new
+description: A new feature, or a change to how something works
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Say what you need in your own words. Anyone can comment below; the team turns it into planned
+        work once it is agreed, and this issue then shows where it stands.
+        **Never paste real people's private details** — describe the case instead.
+  - type: textarea
+    id: need
+    attributes:
+      label: What do you need?
+      description: What someone wants to do, and cannot do today — or does with difficulty.
+    validations:
+      required: true
+  - type: textarea
+    id: who
+    attributes:
+      label: Who needs it?
+      description: The people who would use it — their role, not their names.
+    validations:
+      required: true
+  - type: textarea
+    id: why
+    attributes:
+      label: Why does it matter?
+      description: What it saves, prevents or makes possible. How often it comes up.
+  - type: textarea
+    id: example
+    attributes:
+      label: An example
+      description: One real situation, step by step, with made-up names.
+  - type: textarea
+    id: done
+    attributes:
+      label: How will we know it works?
+      description: What you would check to say "yes, this is what I asked for".

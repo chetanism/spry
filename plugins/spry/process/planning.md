@@ -86,3 +86,51 @@ Run by `bug` and `task`. Same interview rules; neither counts toward its parent'
   build, add a `fail` row to the story's `checks.md` — that is what un-proves the criterion.
 - **Severity:** `blocker` (stops a release), `major` (a criterion or rule fails), `minor` (anything else).
 - **Finish** as `interview.md` → *Finishing*, then offer `/spry:slice <ID>`.
+
+## From a GitHub issue
+
+Anyone — people outside the team too — may ask for work in a GitHub issue (`templates/issue-forms/`),
+and anyone may discuss it there. Once it is agreed, a planning skill takes it: `/spry:feature #42`,
+`/spry:story #42`, `/spry:bug #42`, `/spry:task #42`, `/spry:epic #42` or `/spry:milestone #42`.
+
+1. **Read it all:** `gh issue view <n> --comments`. The issue and its discussion are the starting
+   draft: a question they settled is not asked again; one they left open is.
+2. **Not agreed yet** — questions unanswered, people still disagreeing → say what is open, offer to
+   ask it on the issue (`gh issue comment`, audience 2–3), and stop.
+3. **What it becomes:** usually one item. A large request may become an epic and its features, and a
+   mixed one a bug and a story — each names the issue. Part of it may wait: then say on the issue,
+   in plain words, what was taken and what stays open.
+4. **Nothing private comes into the plan.** Read the project's security rules (`always_check`).
+   People's names, contact details, health, money or account records, and screenshots of them are
+   never copied — the plan describes the case instead ("a patient with two bookings on one day").
+   Passwords, codes and tokens never. Git keeps whatever is committed, for good.
+5. **Create, then link:** the level's procedure as usual (§1–§5, or *Bugs and tasks*), then
+   `spry.py link <ID> --issue <n>` on each item the issue asked for — it adds `<n>` to `issues:`.
+6. **After the commit:** `spry.py issues --sync` — the issue gets `spry:accepted` (or `spry:ready`)
+   and a comment naming each item, with a link.
+7. **From then on the plan is the record.** A change asked for on the issue is a change to the item,
+   agreed with its owner through the planning skill — never copied from the issue on its own.
+
+**Stages.** One `spry:` label at a time, and a plain comment when it changes. All derived (DESIGN.md
+§6), never typed:
+
+| Label | When |
+|---|---|
+| `spry:accepted` | an item names the issue; still `draft` |
+| `spry:ready` | every item it names is `ready` |
+| `spry:in-progress` | a slice under any of them is claimed, open or closed — or some are done, not all |
+| `spry:done` | every item it names is done; dropped ones do not count |
+| `spry:declined` | every item it names was dropped |
+
+- **spry never closes an issue.** QA, or whoever asked, closes it after testing. A closed issue is
+  left alone; reopening it hands it back to spry.
+- **A problem found in testing** → `/spry:bug #42`: a new bug names the same issue, which goes back
+  to `spry:in-progress` until the bug is done.
+- **When it runs:** `issues --sync` is safe to run any time — it changes only what is out of step.
+  CI runs it on the main branch after `index` (`templates/ci-github.yml`), `/spry:merge` after each
+  merge (`merging.md` step 8), and this procedure after linking. A project with no CI on push runs it
+  on a schedule instead, so a merge made outside `/spry:merge` still reaches its issue.
+  `spry.py issues` alone shows each issue's stage and which are out of step.
+- **Deploys:** spry knows when work is merged, not when it is deployed. A project whose deploy knows
+  what it shipped may tell the issues itself — `spry.py issues --json` gives each issue's items and
+  stage — recorded as a local process change (`changing.md`).

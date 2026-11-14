@@ -1,0 +1,58 @@
+# Written by /spry:init or /spry:update into .github/ISSUE_TEMPLATE/. A form for anyone who finds
+# something not working. Once it is understood in its comments, `/spry:bug #<n>` records it in the
+# plan and spry labels it as the fix moves (spry/process/planning.md → From a GitHub issue).
+# `bug` is one of GitHub's default labels.
+name: Report a problem
+description: Something does not work as it should
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Tell us what went wrong in your own words. Anyone can comment below.
+        **Never paste real people's private details, passwords or codes** — describe the case instead,
+        and blur them in screenshots.
+  - type: textarea
+    id: happens
+    attributes:
+      label: What happened?
+      description: What you saw, including any message on the screen.
+    validations:
+      required: true
+  - type: textarea
+    id: should
+    attributes:
+      label: What should have happened?
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How can we see it ourselves?
+      description: The steps, one per line, from where you started.
+      placeholder: |
+        1. Open …
+        2. Choose …
+        3. See …
+    validations:
+      required: true
+  - type: input
+    id: where
+    attributes:
+      label: Where?
+      description: The screen or page, and which site (test or live) — and the browser or phone, if you know it.
+  - type: dropdown
+    id: impact
+    attributes:
+      label: How much does it get in the way?
+      options:
+        - It stops the work — there is no way round it
+        - It is wrong, but there is a way round it
+        - It is a small thing
+    validations:
+      required: true
+  - type: textarea
+    id: more
+    attributes:
+      label: Anything else
+      description: Screenshots or a screen recording help — with private details blurred.

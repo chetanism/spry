@@ -94,7 +94,7 @@ defines its own level only — never the level below.</p>
 person can check, what is in and out of scope, and constraints. Does not define its epics.</p>
 <ul>
   <li><strong>When:</strong> planning the next big outcome.</li>
-  <li><strong>Arguments:</strong> a milestone ID to continue (for example one <code>init</code> drafted), or a title. Empty → it offers the roadmap's <em>Later</em> lines.</li>
+  <li><strong>Arguments:</strong> a milestone ID to continue (for example one <code>init</code> drafted), or a title. Empty → it offers the roadmap's <em>Later</em> lines. Or a GitHub issue, <code>#42</code>, to plan from: it reads the discussion first and links the item to it (<a href="../guides/team.html#requests">Requests in GitHub issues</a>).</li>
   <li><strong>Audience:</strong> 2.</li>
   <li><strong>Writes:</strong> <code>spry/plan/M-n-&lt;slug&gt;/README.md</code>.</li>
   <li><strong>Guide:</strong> <a href="../guides/planning.html">Plan the work</a>.</li>
@@ -103,7 +103,7 @@ person can check, what is in and out of scope, and constraints. Does not define 
 <h3 id="spryepic">/spry:epic</h3>
 <p>Defines one epic under a milestone: why, who it is for, done-when, and scope. Does not define its features.</p>
 <ul>
-  <li><strong>Arguments:</strong> the parent milestone ID and a title. Without a parent, it lists the milestones and asks.</li>
+  <li><strong>Arguments:</strong> the parent milestone ID and a title. Without a parent, it lists the milestones and asks. Or a GitHub issue, <code>#42</code>, to plan from: it reads the discussion first and links the item to it (<a href="../guides/team.html#requests">Requests in GitHub issues</a>).</li>
   <li><strong>Audience:</strong> 2.</li>
   <li><strong>Writes:</strong> <code>E-n-&lt;slug&gt;/README.md</code> inside the milestone's folder.</li>
   <li><strong>Note:</strong> a small project can drop the epic level in its config; features then sit straight under milestones.</li>
@@ -114,7 +114,7 @@ person can check, what is in and out of scope, and constraints. Does not define 
 <p>Defines one feature: a summary, who uses it, how it works step by step, numbered rules
 (<code>R-1</code>, <code>R-2</code> …) that stories cite, and what is out of scope. Does not write its stories.</p>
 <ul>
-  <li><strong>Arguments:</strong> the parent epic (or milestone, without epics) and a title.</li>
+  <li><strong>Arguments:</strong> the parent epic (or milestone, without epics) and a title. Or a GitHub issue, <code>#42</code>, to plan from: it reads the discussion first and links the item to it (<a href="../guides/team.html#requests">Requests in GitHub issues</a>).</li>
   <li><strong>Audience:</strong> 3.</li>
   <li><strong>Writes:</strong> <code>F-n-&lt;slug&gt;/README.md</code> inside its parent's folder.</li>
   <li><strong>Guide:</strong> <a href="../guides/planning.html">Plan the work</a>.</li>
@@ -126,7 +126,7 @@ criteria in Given / When / Then form, each one something a person using the prod
 It asks QA's question as it goes: "how would you check this by hand?"</p>
 <ul>
   <li><strong>When:</strong> a feature is ready to be broken into stories.</li>
-  <li><strong>Arguments:</strong> the parent feature and a title. One run can write several stories — it offers the list of titles first.</li>
+  <li><strong>Arguments:</strong> the parent feature and a title. One run can write several stories — it offers the list of titles first. Or a GitHub issue, <code>#42</code>, to plan from: it reads the discussion first and links the item to it (<a href="../guides/team.html#requests">Requests in GitHub issues</a>).</li>
   <li><strong>Audience:</strong> 3.</li>
   <li><strong>Writes:</strong> <code>S-n-&lt;slug&gt;/README.md</code> per story. A story with more than six criteria is offered a split.</li>
   <li><strong>Guide:</strong> <a href="../guides/criteria.html">Write acceptance criteria</a>.</li>
@@ -138,7 +138,7 @@ reproduce it, where, its impact and severity (<code>blocker</code>, <code>major<
 <code>minor</code>). It reads the open bugs under the same feature first, to catch duplicates.</p>
 <ul>
   <li><strong>When:</strong> someone reports something not working as the plan says.</li>
-  <li><strong>Arguments:</strong> the feature or story ID, and what goes wrong.</li>
+  <li><strong>Arguments:</strong> the feature or story ID, and what goes wrong. Or a GitHub issue, <code>#42</code>, to plan from: it reads the discussion first and links the item to it (<a href="../guides/team.html#requests">Requests in GitHub issues</a>).</li>
   <li><strong>Audience:</strong> 4.</li>
   <li><strong>Writes:</strong> <code>bugs/B-n-&lt;slug&gt;/README.md</code> under its parent. A bug that breaks a criterion names it in <code>breaks</code>. Bugs do not count toward their parent's progress.</li>
   <li><strong>Guide:</strong> <a href="../guides/bugs-and-tasks.html">Bugs and tasks</a>.</li>
@@ -149,7 +149,7 @@ reproduce it, where, its impact and severity (<code>blocker</code>, <code>major<
 milestone or epic it serves: why, what changes, how to tell it is done, and the risks. If a user
 would notice the result, it offers <code>/spry:story</code> instead.</p>
 <ul>
-  <li><strong>Arguments:</strong> the milestone or epic ID, and the work.</li>
+  <li><strong>Arguments:</strong> the milestone or epic ID, and the work. Or a GitHub issue, <code>#42</code>, to plan from: it reads the discussion first and links the item to it (<a href="../guides/team.html#requests">Requests in GitHub issues</a>).</li>
   <li><strong>Audience:</strong> 7.</li>
   <li><strong>Writes:</strong> <code>tasks/T-n-&lt;slug&gt;/README.md</code>. Tasks do not count toward progress.</li>
   <li><strong>Guide:</strong> <a href="../guides/bugs-and-tasks.html">Bugs and tasks</a>.</li>
@@ -179,7 +179,7 @@ plan does something hard to undo or departs from the story.</p>
 <ul>
   <li><strong>Arguments:</strong> a slice ID. Without one, it reads <em>Ready to build</em> on the backlog and offers the first row (or lists four, with <code>slices.pick: ask</code>).</li>
   <li><strong>Audience:</strong> 8 — except the work order's summary, which anyone can read.</li>
-  <li><strong>Writes:</strong> the slice file's <em>Work order</em>, the branch <code>sl-n-&lt;slug&gt;</code>, a draft PR whose body comes from the slice file, and — with <code>slices.issue</code> on — a GitHub issue. Then the code and tests.</li>
+  <li><strong>Writes:</strong> the slice file's <em>Work order</em>, the branch <code>sl-n-&lt;slug&gt;</code>, and a draft PR whose body comes from the slice file. Then the code and tests.</li>
   <li><strong>Guide:</strong> <a href="../guides/building.html">Build a slice</a>.</li>
 </ul>
 
@@ -193,7 +193,7 @@ the review.</p>
 <ul>
   <li><strong>Arguments:</strong> a slice ID; without one, the open slice on the current branch.</li>
   <li><strong>Audience:</strong> 8.</li>
-  <li><strong>Writes:</strong> the slice file's <em>Close summary</em> (what changed, falsify table, follow-ups), <code>state: closed</code> and <code>closed: &lt;date&gt;</code>, the PR body, and a comment on the slice's issue if it has one.</li>
+  <li><strong>Writes:</strong> the slice file's <em>Close summary</em> (what changed, falsify table, follow-ups), <code>state: closed</code> and <code>closed: &lt;date&gt;</code>, and the PR body.</li>
   <li><strong>Guide:</strong> <a href="../guides/closing.html">Close and merge a slice</a>.</li>
 </ul>
 

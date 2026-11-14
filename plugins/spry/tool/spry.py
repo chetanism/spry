@@ -31,8 +31,10 @@
     python3 spry/tool/spry.py draw --seed        # a fresh seed for an exploratory walk
     python3 spry/tool/spry.py draw <seed> <n> --pick < choices   # the same choice for ever, per (seed, n)
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
-    python3 spry/tool/spry.py link <slice> [--branch B] [--pr N] [--issue N] [--owner [NAME]]   # set them in the slice's front-matter
-    python3 spry/tool/spry.py issue-body <slice> [--close]   # the slice's issue (slices.issue): work order, or close summary
+    python3 spry/tool/spry.py link <slice> [--branch B] [--pr N] [--owner [NAME]]   # set them in the slice's front-matter
+    python3 spry/tool/spry.py link <item> --issue N   # the GitHub issue a plan item came from, added to its `issues:`
+    python3 spry/tool/spry.py issues [--sync [--dry-run]] [--offline] [--json]   # each linked issue's stage; --sync sets labels and comments
+    python3 spry/tool/spry.py issues --legacy [--close]   # issues made per slice before CH-52 still open; --close closes them
     python3 spry/tool/spry.py merge-message <slice> [--ci-local REASON]   # the squash commit: subject, summary, trailers
     python3 spry/tool/spry.py gate [--force] [--fast] [--full] [--failed]   # check, fast checks, affected tests — or only the changed ones when the branch adds only tests (--full: affected anyway) — then tests.always (--fast: no tests, no stamp; --failed: only the tests the last red gate named, no stamp); skipped while no code changed
     python3 spry/tool/spry.py changed --base <ref>   # for CI: code=true when anything but docs changed
@@ -78,7 +80,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.40.0"
+VERSION = "0.41.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -886,6 +888,10 @@ def check(project: Project):
                 project.problem(path, line, message)
         check_text(project, path, text, fm or {}, banned_res, budgets, gloss_path)
 
+    if "issue" in (project.config.get("slices") or {}):
+        project.problem(os.path.join(project.spry, "spry.config.json"), 1,
+                        "`slices.issue` is gone (CH-52): a slice no longer gets a GitHub issue — remove the key; "
+                        "issues now link to the plan items they asked for (`link <item> --issue N`)", "warning")
     mode = (project.config.get("slices") or {}).get("mode")
     if mode not in (None, "split", "steps"):
         project.problem(os.path.join(project.spry, "spry.config.json"), 1,
@@ -904,10 +910,9 @@ def check(project: Project):
             project.problem(item.doc, 1, f"`closed: {item.fm['closed']}` is not a date — YYYY-MM-DD, the day the slice closed")
         if item.type == "slice" and item.state == "open" and not owner_of(item):
             project.problem(item.doc, 1, f"open without an `owner:` — who is building it: `link {item.id} --owner`", "warning")
-        if item.type == "slice" and item.state == "open" and project.config.get("slices", {}).get("issue") \
-                and not str(item.fm.get("issue", "")).isdigit():
-            project.problem(item.doc, 1, "open without an `issue:` number — `slices.issue` is on: "
-                                         "slicing.md *Open* creates the issue before the branch")
+        if "issues" in item.fm:
+            for line, message in issues_problems(item):
+                project.problem(item.doc, line, message)
         needs_check = (item.type == "slice" and item.state in ("open", "closed")) or \
                       (item.type not in ("slice", "bug") and item.state == "ready")
         if needs_check:
@@ -1782,18 +1787,38 @@ def next_id(project: Project, kind: str) -> str:
 # ---------------------------------------------------------------- new
 
 def link_slice(project: Project, slice_id: str, fields: dict) -> str:
-    """Set front-matter fields on a slice — `branch`, `pr`, `issue`, `owner` — in place. Returns the file."""
+    """Set front-matter fields on a slice — `branch`, `pr`, `owner` — in place. Returns the file."""
     item = project.items.get(slice_id)
     if item is None or item.type != "slice":
         raise SystemExit(f"no slice {slice_id}")
+    if "issue" in fields:
+        raise SystemExit("a slice gets no GitHub issue (CH-52) — link the issue to the story, bug or task it asked "
+                         f"for: `link {item.parent.id if item.parent else '<item>'} --issue N`")
     if not fields:
-        raise SystemExit("nothing to set — give --branch, --pr, --issue or --owner")
-    for key in ("pr", "issue"):
-        if key in fields:
-            fields[key] = str(fields[key]).lstrip("#")
-            if not fields[key].isdigit():
-                raise SystemExit(f"`{key}` is a number, not {fields[key]!r}")
+        raise SystemExit("nothing to set — give --branch, --pr or --owner")
+    if "pr" in fields:
+        fields["pr"] = str(fields["pr"]).lstrip("#")
+        if not fields["pr"].isdigit():
+            raise SystemExit(f"`pr` is a number, not {fields['pr']!r}")
     write(item.doc, set_fields(item.text, fields))
+    return item.doc
+
+
+def link_issue(project: Project, item_id: str, issue: str) -> str:
+    """Add a GitHub issue to a plan item's `issues:` — the request it came from. Returns the file."""
+    item = project.items.get(item_id)
+    if item is None:
+        raise SystemExit(f"no item {item_id}")
+    if item.type == "slice":
+        return link_slice(project, item_id, {"issue": issue})
+    number = str(issue).lstrip("#")
+    if not number.isdigit():
+        raise SystemExit(f"an issue is a number, not {issue!r}")
+    value = item.fm.get("issues")
+    have = [str(v).lstrip("#") for v in value] if isinstance(value, list) else []
+    if number not in have:
+        have.append(number)
+    write(item.doc, set_fields(item.text, {"issues": "[" + ", ".join(have) + "]"}))
     return item.doc
 
 
@@ -2442,30 +2467,268 @@ def pr_body(project: Project, slice_id: str, base: str | None = None) -> str:
     body = re.sub(r"<!-- guide:.*?-->\n?", "", "\n".join(lines[start:]), flags=re.S)
     body = re.sub(r"\n{3,}", "\n\n", body).strip()
     parent = f" · {item.parent.label}" if item.parent else ""
-    issue = f" · issue #{item.fm['issue']}" if str(item.fm.get("issue", "")).isdigit() else ""
     review = reviewer_page(project, item, base)
-    return f"**{item.label}**{parent} — `{project.rel(item.doc)}`{issue}\n\n{review}{body}\n"
+    return f"**{item.label}**{parent} — `{project.rel(item.doc)}`\n\n{review}{body}\n"
 
 
-def issue_body(project: Project, slice_id: str, close: bool = False) -> str:
-    """The slice's issue: the work order as agreed, frozen and saying so — or, with `close`, the
-    close summary, posted on the issue as a comment. The file stays the living version."""
-    item = project.items.get(slice_id)
-    if item is None or item.type != "slice":
-        raise SystemExit(f"no slice {slice_id}")
-    part = "Close summary" if close else "Work order"
-    lines = item.text.split("\n")
-    start = next((i for i in range(item.body_start, len(lines)) if lines[i].strip() == f"## {part}"), None)
-    if start is None:
-        raise SystemExit(f"{project.rel(item.doc)} has no `## {part}` section")
-    end = next((i for i in range(start + 1, len(lines)) if lines[i].startswith("## ")), len(lines))
-    body = re.sub(r"<!-- guide:.*?-->\n?", "", "\n".join(lines[start:end]), flags=re.S)
-    body = re.sub(r"\n{3,}", "\n\n", body).strip()
-    rel = project.rel(item.doc)
-    if close:
-        return f"**{item.label}** closed — `{rel}`\n\n{body}\n"
-    return (f"> **This is `{rel}`'s work order as agreed on {time.strftime('%Y-%m-%d')}, and it is never "
-            f"updated.** The file is the living version; where the two differ, the file is right.\n\n{body}\n")
+# ---------------------------------------------------------------- GitHub issues: requests from outside the repository
+
+# Anyone may ask for work in a GitHub issue; once it is agreed there, a plan item is written from it and
+# names it in `issues:`. The issue then shows the stage the plan says — one `spry:` label, and a plain
+# comment when the stage changes. spry never closes one: a person does, once it is tested.
+ISSUE_STAGES = {
+    "accepted": ("c5def5", "Taken into the plan; the details are being agreed"),
+    "ready": ("1d76db", "Planned and ready to be built"),
+    "in-progress": ("fbca04", "Being built"),
+    "done": ("0e8a16", "Built and merged; tested before the issue is closed"),
+    "declined": ("cfd3d7", "Not going ahead; the plan dropped it"),
+}
+ISSUE_LEAD = {
+    "accepted": "**Taken into the plan.** The details are agreed next, before anything is built.",
+    "ready": "**Ready to be built.** The details are agreed; it waits its turn.",
+    "in-progress": "**Being built.**",
+    "done": "**Built.** It is merged and reaches the test environment with the next deploy. "
+            "Close this issue once it has been tested there.",
+    "declined": "**Not going ahead.** The plan dropped it; the item says why. "
+                "Close this issue once everyone has seen this.",
+}
+ISSUE_ROW = {"accepted": "being planned", "ready": "ready to be built", "in-progress": "being built",
+             "done": "built", "declined": "dropped"}
+
+
+def item_issues(item: Item) -> list:
+    """The issue numbers a plan item names in `issues:`; anything that is not a number is left to `check`."""
+    value = item.fm.get("issues")
+    if item.type == "slice" or not isinstance(value, list):
+        return []
+    return [int(v.lstrip("#")) for v in value if v.lstrip("#").isdigit()]
+
+
+def issues_problems(item: Item) -> list:
+    value = item.fm["issues"]
+    if item.type == "slice":
+        return [(1, "a slice names no issue: put `issues:` on the story, bug or task it builds")]
+    if not isinstance(value, list):
+        return [(1, "`issues` must be a list of issue numbers: `issues: [42]`")]
+    return [(1, f"`issues` names {v!r}, which is not an issue number") for v in value if not v.lstrip("#").isdigit()]
+
+
+def item_stage(project: Project, item: Item) -> str:
+    """Where one plan item stands, in the words an issue uses — derived, like everything else (§6)."""
+    if gone(item):
+        return "declined"
+    if project.done(item):
+        return "done"
+    slices = project.descendants(item, "slice")
+    if any((s.state in ("open", "closed") or claimed(s)) and not gone(s) for s in slices):
+        return "in-progress"
+    return "ready" if item.state == "ready" else "accepted"
+
+
+def issue_stages(project: Project) -> dict:
+    """{42: {"stage": "in-progress", "items": [(item, stage), …]}} for every issue a plan item names.
+    Several items may name one issue: it is done when all of them are, and dropped ones do not count."""
+    named = {}
+    for item in project.items.values():
+        for n in item_issues(item):
+            named.setdefault(n, []).append(item)
+    out = {}
+    for n, items in sorted(named.items()):
+        rows = [(i, item_stage(project, i)) for i in sorted(items, key=lambda i: natural_key(i.id))]
+        live = [s for _, s in rows if s != "declined"]
+        if not live:
+            stage = "declined"
+        elif all(s == "done" for s in live):
+            stage = "done"
+        elif any(s in ("in-progress", "done") for s in live):
+            stage = "in-progress"
+        elif all(s == "ready" for s in live):
+            stage = "ready"
+        else:
+            stage = "accepted"
+        out[n] = {"stage": stage, "items": rows}
+    return out
+
+
+def issue_comment(project: Project, entry: dict, repo: str | None) -> str:
+    """The comment posted when an issue's stage changes: plain words, every item with its title and a link."""
+    prefix, main = git_prefix(project.root), main_branch(project)
+    lines = [ISSUE_LEAD[entry["stage"]], ""]
+    for item, stage in entry["items"]:
+        name = f"{item.id} {item.title}".strip()
+        path = urllib.parse.quote(prefix + project.rel(item.doc))
+        lines.append(f"- [{name}]({repo}/blob/{main}/{path}) — {ISSUE_ROW[stage]}" if repo
+                     else f"- {name} — {ISSUE_ROW[stage]}")
+    lines += ["", f"<sub>From spry: the label `spry:{entry['stage']}` shows where this stands. "
+                  f"The plan is the record; a change asked for here is agreed with the team first.</sub>"]
+    return "\n".join(lines) + "\n"
+
+
+def gh_run(project: Project, *args: str, input: str | None = None) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(["gh", *args], cwd=project.root, capture_output=True, text=True, input=input, timeout=60)
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return subprocess.CompletedProcess(["gh", *args], 1, "", str(error))
+
+
+def issue_states(project: Project, numbers: list) -> dict | None:
+    """{n: {"state": "open", "title": …, "labels": [...]}} from one `gh api graphql` call per hundred numbers;
+    a number the repository does not have maps to None, and None for the whole when gh cannot answer."""
+    if not numbers:
+        return {}
+    if not shutil.which("gh"):
+        return None
+    found = {}
+    for i in range(0, len(numbers), 100):
+        fields = " ".join(f"n{n}: issue(number: {n}) {{ state title labels(first: 50) {{ nodes {{ name }} }} }}"
+                          for n in numbers[i:i + 100])
+        query = f"query($owner: String!, $name: String!) {{ repository(owner: $owner, name: $name) {{ {fields} }} }}"
+        done = gh_run(project, "api", "graphql", "-F", "owner={owner}", "-F", "name={repo}", "-f", f"query={query}")
+        try:  # a number it cannot find fails the call, with the rest of the answer still on stdout
+            repo = (json.loads(done.stdout or "null") or {}).get("data", {}).get("repository")
+        except (ValueError, AttributeError):
+            repo = None
+        if repo is None:
+            return None
+        for n in numbers[i:i + 100]:
+            said = repo.get(f"n{n}")
+            found[n] = said and {"state": str(said.get("state", "")).lower(), "title": said.get("title", ""),
+                                 "labels": [x["name"] for x in (said.get("labels") or {}).get("nodes") or []]}
+    return found
+
+
+def issue_actions(stages: dict, current: dict) -> list:
+    """What `--sync` does, worked out without touching GitHub: per open issue whose `spry:` label is not
+    its stage, the label to add, the old ones to remove, and whether to comment (the stage changed).
+    A closed issue is left alone — a person closed it; reopening it hands it back to spry."""
+    out = []
+    for n, entry in stages.items():
+        said = current.get(n)
+        want = f"spry:{entry['stage']}"
+        if said is None:
+            out.append({"n": n, "stage": entry["stage"], "skip": "no such issue in this repository"})
+            continue
+        if said["state"] != "open":
+            continue
+        have = [x for x in said["labels"] if x.startswith("spry:") and x[5:] in ISSUE_STAGES]
+        if have == [want]:
+            continue
+        out.append({"n": n, "stage": entry["stage"], "add": want, "remove": [x for x in have if x != want],
+                    "comment": want not in have, "was": ", ".join(have) or "no spry label"})
+    return out
+
+
+def ensure_issue_labels(project: Project) -> str | None:
+    """Create the `spry:` stage labels the repository lacks. An error message, or None."""
+    done = gh_run(project, "label", "list", "--limit", "500", "--json", "name")
+    if done.returncode != 0:
+        return done.stderr.strip() or "gh label list failed"
+    have = {x["name"] for x in json.loads(done.stdout or "[]")}
+    for stage, (color, description) in ISSUE_STAGES.items():
+        if f"spry:{stage}" not in have:
+            made = gh_run(project, "label", "create", f"spry:{stage}", "--color", color, "--description", description)
+            if made.returncode != 0:
+                return made.stderr.strip() or f"gh label create spry:{stage} failed"
+    return None
+
+
+def legacy_issues(project: Project, open_titles: dict | None = None) -> list:
+    """[(slice, n)] — the issues made per slice before CH-52: each slice's own `issue:`, and an open issue
+    titled `SL-<n> …` for a slice in the plan (`open_titles`, {n: title}) — a slice still on its branch
+    has its `issue:` there, not here."""
+    found = {int(str(s.fm["issue"]).lstrip("#")): s for s in project.of_type("slice")
+             if str(s.fm.get("issue", "")).lstrip("#").isdigit()}
+    for n, title in (open_titles or {}).items():
+        m = re.match(re.escape(project.ids["slice"]) + r"-(\d+)\b", title)
+        target = project.items.get(f"{project.ids['slice']}-{m.group(1)}") if m else None
+        if target is not None and target.type == "slice":
+            found.setdefault(n, target)
+    return sorted(((s, n) for n, s in found.items()), key=lambda r: r[1])
+
+
+def legacy_comment(item: Item) -> str:
+    pr = f" Its pull request, #{item.fm['pr']}, has the details." if str(item.fm.get("pr", "")).isdigit() else ""
+    state = {"closed": "is built and merged", "dropped": "was dropped"}.get(item.state, f"is {item.state or 'planned'}")
+    return (f"spry no longer keeps an issue per slice; issues are now for requests, linked to the plan items they "
+            f"asked for. {item.id} {item.title} {state}.{pr}\n")
+
+
+def issues_command(project: Project, args) -> int:
+    repo = github_url(project.root)
+    if args.legacy:
+        listed = gh_run(project, "issue", "list", "--state", "open", "--limit", "5000", "--json", "number,title")
+        titles = {x["number"]: x["title"] for x in json.loads(listed.stdout or "[]")} if listed.returncode == 0 else {}
+        rows = legacy_issues(project, titles)
+        states = issue_states(project, [n for _, n in rows])
+        if states is None:
+            print("gh could not answer — run `gh auth status`", file=sys.stderr)
+            return 1
+        still = [(s, n) for s, n in rows if (states.get(n) or {}).get("state") == "open"]
+        for s, n in still:
+            if args.close:
+                reason = "completed" if s.state == "closed" else "not planned"
+                done = gh_run(project, "issue", "close", str(n), "--reason", reason, "--comment", legacy_comment(s))
+                if done.returncode != 0:
+                    print(f"#{n}: {done.stderr.strip() or 'gh issue close failed'}", file=sys.stderr)
+                    return 1
+                print(f"closed #{n} ({reason}) — {s.label} is {s.state}")
+            else:
+                print(f"#{n} open — {s.label} is {s.state}")
+        print(f"{len(still)} of {len(rows)} slice issue{'s' if len(rows) != 1 else ''} "
+              f"{'closed now' if args.close else 'still open'}")
+        return 0
+
+    stages = issue_stages(project)
+    current = {} if args.offline else issue_states(project, list(stages))
+    if current is None:
+        print("gh could not answer — run `gh auth status`, or pass --offline", file=sys.stderr)
+        return 1
+    actions = [] if args.offline else issue_actions(stages, current)
+    if args.sync and not args.dry_run and any("add" in a for a in actions):
+        error = ensure_issue_labels(project)
+        if error:
+            print(error, file=sys.stderr)
+            return 1
+        for a in [a for a in actions if "add" in a]:
+            edit = ["issue", "edit", str(a["n"]), "--add-label", a["add"]]
+            edit += ["--remove-label", ",".join(a["remove"])] if a["remove"] else []
+            done = gh_run(project, *edit)
+            if done.returncode == 0 and a["comment"]:
+                done = gh_run(project, "issue", "comment", str(a["n"]), "--body-file", "-",
+                              input=issue_comment(project, stages[a["n"]], repo))
+            if done.returncode != 0:
+                print(f"#{a['n']}: {done.stderr.strip() or 'gh failed'}", file=sys.stderr)
+                return 1
+    if args.json:
+        by_n = {a["n"]: a for a in actions}
+        print(json.dumps([{"issue": n, "stage": e["stage"], "state": (current.get(n) or {}).get("state"),
+                           "items": [{"id": i.id, "title": i.title, "stage": st, "path": project.rel(i.doc)}
+                                     for i, st in e["items"]],
+                           "change": by_n.get(n)} for n, e in stages.items()], indent=2))
+        return 0
+    by_n = {a["n"]: a for a in actions}
+    for n, entry in stages.items():
+        items = ", ".join(f"{i.label} ({st})" if len(entry["items"]) > 1 else i.label for i, st in entry["items"])
+        said = current.get(n) if current else None
+        a = by_n.get(n)
+        if args.offline:
+            note = ""
+        elif a and "skip" in a:
+            note = f" — {a['skip']}"
+        elif said and said["state"] != "open":
+            note = f" — {said['state']}, left alone"
+        elif a:
+            verb = "would set" if args.dry_run or not args.sync else "set"
+            note = f" — {verb} spry:{a['stage']} (was {a['was']}){'; comment' if a['comment'] else ''}"
+        else:
+            note = ""
+        print(f"#{n} {entry['stage']}: {items}{note}")
+    if not stages:
+        print("no plan item names an issue — `link <item> --issue N` names one")
+    elif not args.offline and not args.sync:
+        late = sum(1 for a in actions if "add" in a)
+        print(f"{late} issue{'s' if late != 1 else ''} out of step" + (" — `issues --sync` brings them up to date" if late else ""))
+    return 0
 
 
 def reviewer_page(project: Project, item: Item, base: str | None) -> str:
@@ -4314,6 +4577,10 @@ def serve_meta(project: Project, item: Item, repo: str | None) -> str:
             label = f"{key} #{value}"
             badges.append(f'<a class="badge" href="{repo}/{path}/{value}">{label}</a>' if repo
                           else f'<span class="badge">{label}</span>')
+    for value in item_issues(item):
+        label = f"issue #{value}"
+        badges.append(f'<a class="badge" href="{repo}/issues/{value}">{label}</a>' if repo
+                      else f'<span class="badge">{label}</span>')
     if branch:
         badges.append(f'<span class="badge"><code>{html.escape(branch)}</code></span>')
     rows = []
@@ -4691,8 +4958,6 @@ def merge_message(project: Project, slice_id: str, ci_local: str | None = None) 
         trailers.append(f"Parent: {item.parent.id}")
     if item.parent and item.parent.type == "story" and item.fm.get("covers"):
         trailers.append("Covers: " + ", ".join(f"{item.parent.id}/{ac}" for ac in item.fm["covers"]))
-    if str(item.fm.get("issue", "")).isdigit():
-        trailers.append(f"Closes #{item.fm['issue']}")
     if ci_local:
         head = git(project.root, "rev-parse", "--short", "HEAD").stdout.strip() or "?"
         trailers.append(f"CI: did not run ({' '.join(ci_local.split())}); gate green locally at {head}")
@@ -6822,9 +7087,9 @@ def memory_text(report: dict) -> str:
 # `merge-check` stay the authority, and a hook only says it sooner.
 AGENT_HOOKS = ("session", "link_fields", "cited_criteria", "check_edit", "merge", "check_stop", "step_commit")
 HOOKS_SINCE = (0, 34, 0)
-LINK_FIELDS = ("branch", "pr", "issue", "owner")
+LINK_FIELDS = ("branch", "pr", "owner")
 IN_PLACE = re.compile(r"\b(?:g?sed|perl)\b[^|;&\n]*\s-[a-zA-Z]*i")
-LINK_KEY = re.compile(r"\b(?:branch|pr|issue|owner):")
+LINK_KEY = re.compile(r"\b(?:branch|pr|owner):")
 GH_VALUE_FLAGS = {"-t", "--subject", "-b", "--body", "-F", "--body-file", "-A", "--author-email",
                   "--match-head-commit", "-R", "--repo"}
 
@@ -6914,14 +7179,14 @@ def branch_slices(names: "Names", branch: str) -> list:
 
 
 def hook_link_fields(project: Project, payload: dict) -> dict | None:
-    """A slice's `branch`, `pr`, `issue` and `owner` are set by `link`, which checks them, not by hand."""
+    """A slice's `branch`, `pr` and `owner` are set by `link`, which checks them, not by hand."""
     given = payload.get("tool_input") or {}
     if payload.get("tool_name") == "Bash":
         command = given.get("command") or ""
         slice_doc = re.search(r"\b" + re.escape(project.ids["slice"]) + r"-\d+[\w-]*\.md\b", command)
         if IN_PLACE.search(command) and slice_doc and LINK_KEY.search(command):
-            return deny("A slice's `branch`, `pr`, `issue` and `owner` are set with `python3 spry/tool/spry.py "
-                        "link SL-<n> --branch <b> --pr <n> --issue <n> --owner [<name>]`, which checks each one — "
+            return deny("A slice's `branch`, `pr` and `owner` are set with `python3 spry/tool/spry.py "
+                        "link SL-<n> --branch <b> --pr <n> --owner [<name>]`, which checks each one — "
                         "not with an in-place edit.")
         return None
     path, rel, before = hook_file(project, payload)
@@ -7223,11 +7488,11 @@ def main(argv=None) -> int:
     g.add_argument("--restore", metavar="BASE", help="on a branch: put back BASE's copy of every generated block it changed")
     p = sub.add_parser("related", help="conflict-check candidates for a document")
     p.add_argument("file")
-    p = sub.add_parser("link", help="set a slice's branch, pr, issue or owner in its front-matter")
-    p.add_argument("slice")
+    p = sub.add_parser("link", help="set a slice's branch, pr or owner, or add a GitHub issue to a plan item's `issues:`")
+    p.add_argument("slice", metavar="item")
     p.add_argument("--branch")
     p.add_argument("--pr")
-    p.add_argument("--issue")
+    p.add_argument("--issue", help="a plan item only: the GitHub issue it came from, added to `issues:`")
     p.add_argument("--owner", nargs="?", const="", help="who is building it: a team.members name or login; "
                                                         "bare, the person git says is at this clone")
     p = sub.add_parser("claim", help="take a slice before opening it: on the main branch with `mint: main`, then cut its branch")
@@ -7246,9 +7511,13 @@ def main(argv=None) -> int:
                                                    "a parent may be the key of an earlier entry")
     p.add_argument("--owner")
     p.add_argument("--dependency", help="external: the service the behaviour belongs to")
-    p = sub.add_parser("issue-body", help="a slice's issue: the work order as agreed, or with --close its close summary")
-    p.add_argument("slice")
-    p.add_argument("--close", action="store_true", help="the close summary, for a comment on the issue")
+    p = sub.add_parser("issues", help="the GitHub issues plan items came from, and the stage each is at")
+    p.add_argument("--sync", action="store_true", help="set each open issue's spry: label, and comment when its stage changes")
+    p.add_argument("--dry-run", action="store_true", help="with --sync: say what would change, change nothing")
+    p.add_argument("--offline", action="store_true", help="do not ask gh: the stages from the plan alone")
+    p.add_argument("--json", action="store_true")
+    p.add_argument("--legacy", action="store_true", help="issues made per slice before CH-52 that are still open")
+    p.add_argument("--close", action="store_true", help="with --legacy: close them, each with a comment")
     p = sub.add_parser("pr-body", help="a slice's work order and close summary, for its pull request")
     p.add_argument("slice")
     p.add_argument("--base", help="git ref the PR merges into, to show criteria the branch changed")
@@ -7478,7 +7747,16 @@ def main(argv=None) -> int:
     if args.command == "related":
         print(related(project, args.file), end="")
         return 0
+    if args.command == "issues":
+        return issues_command(project, args)
     if args.command == "link":
+        target = project.items.get(args.slice)
+        if target is not None and target.type != "slice":
+            if args.branch is not None or args.pr is not None or args.owner is not None or args.issue is None:
+                print(f"{args.slice} is a {target.type}: only --issue N links one", file=sys.stderr)
+                return 2
+            print(project.rel(link_issue(project, args.slice, args.issue)))
+            return 0
         fields = {k: getattr(args, k) for k in ("branch", "pr", "issue") if getattr(args, k) is not None}
         if args.owner is not None:
             fields["owner"] = resolve_owner(project, args.owner)
@@ -7624,9 +7902,6 @@ def main(argv=None) -> int:
             print(f"{args.file}:{n}: {word}")
         print(f"{len(hits)} private word{'s' if len(hits) != 1 else ''}")
         return 1 if hits else 0
-    if args.command == "issue-body":
-        print(issue_body(project, args.slice, args.close), end="")
-        return 0
     if args.command == "pr-body":
         print(pr_body(project, args.slice, args.base), end="")
         return 0
