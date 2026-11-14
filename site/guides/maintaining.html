@@ -205,9 +205,29 @@ tests to change.</p>
   <li>flags for what stands out</li>
 </ul>
 
+<p>Time is half the cost; the other half is tokens. From the same session logs, the page shows for each slice:</p>
+
+<ul>
+  <li><strong>Spend</strong>, in input-token equivalents: every token counted at what it costs against one
+  fresh input token (<code>pace.token_weights</code>). A cache read counts a tenth, output five times. It
+  compares slices; it is not a price.</li>
+  <li><strong>Subagents' share</strong> of that spend, kept apart from the main session.</li>
+  <li><strong>Peak context</strong>, and the <strong>context entering close</strong> — what every turn of the
+  close then carries.</li>
+  <li><strong>Per 100 changed lines</strong>, and a <em>By size</em> table, because a slice of 200 lines and
+  one of 3,000 can't be compared raw.</li>
+  <li><strong>Falsify:</strong> runs, controls, how many were caught, survived and unreliable, and the
+  seconds a control took.</li>
+  <li><strong>Reruns:</strong> full gates that ran tests, how many ran on code a full gate had already
+  tested, and the minutes quiet retries lost.</li>
+</ul>
+
+<p>An agent that writes no session log gets the time report without the tokens.</p>
+
 <ul>
   <li><strong>Did a change help?</strong> Every row in <code>process-changes.md</code> and every commit to the
-  config marks a point. The page sets the slices after each point against as many before it.</li>
+  config marks a point. The page sets the slices after each point against as many before it — time,
+  spend, context, falsify and reruns alike.</li>
   <li><strong>Nothing to switch on.</strong> The gate, <code>check</code>, falsify and <code>merge-check</code> each
   add a line to a step log. Claude Code's own session logs are read only when you ask, so nothing
   runs while you work.</li>

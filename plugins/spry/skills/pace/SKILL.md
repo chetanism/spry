@@ -20,12 +20,19 @@ and writes nothing but what `spry pace` keeps under `.spry/`.
 3. **What counts as a finding:**
    - a flag on the page, with the slices it names — a flag on one slice is a note, on several a finding;
    - a category whose share is high across the slices, or that moved after a dated change;
+   - **tokens:** spend per 100 lines well above the median of the slice's own row in *By size*, in
+     several slices; a context entering close that is most of the peak, so every turn of the close
+     pays for it; subagents holding most of the spend with no fall in the main session's. Spend
+     is in input-token equivalents, not money — compare slices, never quote a price;
+   - **falsify:** many controls `unreliable`, or many seconds a control, across slices;
+   - **reruns:** full gates on code a full gate had already tested, or minutes lost to quiet
+     retries, across slices;
    - **Before and after each change** shows *too few slices to tell* → no finding from it. Say so, and
      name how many slices are still needed. Never read a difference into fewer than 10 a side.
 4. **One proposal per finding**, each of these and nothing else:
    - **process change** — a rule, a template or a step in `spry/process/` → `/spry:process-change`;
    - **config change** — a key in `spry/spry.config.json` (`falsify.parallel`, `falsify.setup`,
-     `pace.flags`, `hooks.*`, `tests.*`), with the value;
+     `checks.lock`, `checks.generated`, `pace.flags`, `hooks.*`, `tests.*`), with the value;
    - **a bug in spry** — a flag the page itself calls a spry bug, such as tests run again on code
      that had passed → `/spry:contribute`;
    - **a bug or task in the project** — a slow or flaky test, a slow gate step → `/spry:bug`,
@@ -34,7 +41,8 @@ and writes nothing but what `spry pace` keeps under `.spry/`.
    A proposal with no evidence behind it is not made. Flags describe; the agent decides what to
    propose, and says how sure it is.
 5. **Reply** per `spry/process/chat.md`, at the tone in `.spry/tone`, else 7:
-   - `DONE` — `[Checked]` how many slices and the range, and the median active time;
+   - `DONE` — `[Checked]` how many slices and the range, the median active time, and the median
+     spend when the page has one;
    - `[Found]` one bullet per finding: the evidence, then the proposal and the skill that carries it out;
    - `FYI` — what had too few slices to tell, and the flags that are only notes;
    - `ASK` 1 — which proposals to start: a. all the process and config changes, one after the other

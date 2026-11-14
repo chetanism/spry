@@ -222,7 +222,7 @@ search is <code>find</code>; the <a href="#pace">pace</a> page is at <code>/-/pa
 </ul>
 
 <h3 id="pace">pace</h3>
-<p>Where slices' time went, from the step log that <code>gate</code>, <code>check</code>, <code>falsify run</code> and
+<p>Where slices' time and tokens went, from the step log that <code>gate</code>, <code>check</code>, <code>falsify run</code> and
 <code>merge-check</code> write and Claude Code's session logs for this clone. It writes
 <code>.spry/view/pace.md</code>, which shows:</p>
 <ul>
@@ -230,17 +230,22 @@ search is <code>find</code>; the <a href="#pace">pace</a> page is at <code>/-/pa
   <li>before and after each dated change</li>
   <li>flags</li>
   <li>a row per slice, with its lines changed — and, apart from them, the lines in <code>checks.generated</code> files</li>
+  <li>by size: the medians of active time and spend, each per 100 changed lines, for slices of each size</li>
+  <li>tokens per slice: the spend in input-token equivalents, the subagents' share, the largest context, and the context when the close started</li>
+  <li>falsify per slice: runs, controls, how many were caught, survived and unreliable, and the seconds a control took</li>
+  <li>reruns per slice: full gates that ran tests, how many ran on code already tested, and the time quiet retries lost</li>
   <li>gate steps</li>
   <li>the slowest calls</li>
 </ul>
 <p>Never committed.</p>
 <pre><code>spry pace [SLICE] [--since YYYY-MM-DD] [--last N] [--compare POINT]</code></pre>
 <ul>
-  <li><code>SLICE</code> — print one slice in detail instead: each kind of time, each phase, its gates and flags.</li>
+  <li><code>SLICE</code> — print one slice in detail instead: each kind of time, each phase, its gates, tokens, falsify runs, reruns and flags.</li>
   <li><code>--since</code>, <code>--last N</code> — only slices active since that day, or the last N.</li>
   <li><code>--compare POINT</code> — before and after a date, a <code>CH-n</code> taken, or a commit, instead of every change.</li>
 </ul>
 <p>Session logs are read once per size and change time. The first run on a long project can take a minute.</p>
+<p>Tokens come from Claude Code's session logs. An agent that writes none gets the time report without them.</p>
 <p>It measures and never judges. <a href="skills.html#sprypace"><code>/spry:pace</code></a> has a fresh agent read the page and propose what to change.</p>
 
 <h3 id="hooks">hooks</h3>

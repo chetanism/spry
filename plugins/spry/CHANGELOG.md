@@ -1183,3 +1183,43 @@ Entry format:
 - **Migrate:**
   - nothing is required;
   - the project's copy of `slicing.md` *Close* step 6 takes the line on a slot `left out`.
+
+## CH-57 · Pace shows tokens, falsify outcomes and gate reruns beside the time
+
+- **Date:** 2026-11-14 · **Version:** 0.46.0
+- **Touches:** `tool/spry.py` (`pace`, and the `gate`'s step-log line), `skills/pace`,
+  `templates/spry.config.json` (`pace.token_weights`, `pace.buckets`)
+- **Why:** judging one process change took four one-off scripts over the agent's session logs and
+  the step log (issue #19). `pace` reported time and nothing else, so a change that saved minutes
+  and cost tokens, or the other way round, could not be read from it.
+  - **Tokens per slice**, from the session logs `pace` already reads: the spend in input-token
+    equivalents, the main session and its subagents apart, the number of requests, the largest
+    context any request carried, and the context when the close started. A request is counted
+    once, though the log repeats its usage on every record.
+  - **Size:** each slice's spend and active time per 100 changed lines, and a *By size* table that
+    sets a slice against slices of its own size.
+  - **Falsify per slice**, from the step log: runs, controls, caught, survived and unreliable,
+    the time and the seconds a control took, and the last run alone.
+  - **Gate reruns:** how many full gates ran tests, how many of those ran on code a full gate had
+    already tested, quiet retries with the time their first attempts took, and time spent waiting
+    for the lock (`checks.lock`).
+  - **Before and after each change** compares all of these as well as the time.
+- **Adapt:**
+  - nothing to switch on; a project whose agent writes no session log sees no token line or
+    column, and the same time report as before;
+  - `pace.token_weights` says what one token of each kind costs against one fresh input token.
+    The defaults are the usual price ratios, stated as assumptions, not looked-up prices: cache
+    read 0.1, cache write 1.25 (kept 5 minutes) or 2 (kept 1 hour), output 5. Set them to your
+    model's prices if they differ;
+  - `pace.buckets` are the line counts where one size bucket ends and the next starts:
+    300, 700, 1300, 2500;
+  - *context entering close* is the first request after `/spry:slice-close` starts. A slice
+    closed without the skill shows none;
+  - the time a quiet retry lost is recorded from this version on. For an older line it is the
+    gate's seconds less its steps', which is a few seconds over.
+- **Migrate:**
+  - nothing is required;
+  - the first `spry pace` after the update reads every session log again, once — a minute or two
+    on a long project;
+  - a closed slice whose session logs Claude Code has already deleted keeps its time and shows
+    `–` for tokens.

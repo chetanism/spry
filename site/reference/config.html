@@ -100,7 +100,7 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
        "command": "&lt;runner with fail-fast flag&gt; {files}"}
     ]
   },
-  "pace": { "away": 30, "logs": [], "flags": { … } },
+  "pace": { "away": 30, "logs": [], "flags": { … }, "token_weights": { … }, "buckets": [300, 700, 1300, 2500] },
   "hooks": {
     "session": true, "link_fields": true, "cited_criteria": true,
     "check_edit": true, "merge": true, "check_stop": true, "step_commit": true
@@ -246,6 +246,8 @@ which stops and asks.</p>
     <tr><td><code>pace.away</code></td><td>Minutes. A gap longer than this that is not a tool running counts as away and is left out of every number.</td><td><code>30</code></td></tr>
     <tr><td><code>pace.logs</code></td><td>Extra folders of Claude Code session logs to read (globs), for a worktree outside the clone. The clone's own folder and its <code>.claude/worktrees/</code> are read already.</td><td><code>[]</code></td></tr>
     <tr><td><code>pace.flags</code></td><td>When a slice is flagged: <code>falsify_share</code>, <code>session_share</code> (waiting on another session) and <code>merge_wait_share</code> (waiting on you during the merge) as fractions, <code>review_agents</code> as a count.</td><td><code>0.2</code>, <code>0.2</code>, <code>0.5</code>, <code>3</code></td></tr>
+    <tr><td><code>pace.token_weights</code></td><td>What one token of each kind costs against one fresh input token: <code>input</code>, <code>cache_read</code>, <code>cache_write_5m</code>, <code>cache_write_1h</code>, <code>output</code>. A slice's spend is its tokens times these, so it is in input-token equivalents, not money. The defaults are the usual price ratios, not looked-up prices; set the ones that differ for your model.</td><td><code>1</code>, <code>0.1</code>, <code>1.25</code>, <code>2</code>, <code>5</code></td></tr>
+    <tr><td><code>pace.buckets</code></td><td>Changed-line counts where one size bucket ends and the next starts. The page's <em>By size</em> table sets a slice against slices in its own bucket.</td><td><code>[300, 700, 1300, 2500]</code></td></tr>
   </tbody>
 </table>
 

@@ -549,11 +549,11 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 ## 17. Pace — where a slice's time goes
 
-> **Status:** built in CH-44 (0.33.0); the `/spry:pace` skill in CH-47 (0.36.0); `/spry:retro`, which joins it with memory-check, in CH-48 (0.37.0). Prototype: `docs/spikes/pace.py`.
+> **Status:** built in CH-44 (0.33.0); the `/spry:pace` skill in CH-47 (0.36.0); `/spry:retro`, which joins it with memory-check, in CH-48 (0.37.0); tokens, falsify outcomes and gate reruns in CH-57 (0.46.0). Prototype: `docs/spikes/pace.py`.
 
-Purpose: show where each slice's time went — the agent, the checks, waiting on a person — so that
-person can judge what to change: the process, the config, the tests, or spry. Report only; it never
-changes anything.
+Purpose: show where each slice's time and tokens went — the agent, the checks, waiting on a person —
+so that person can judge what to change: the process, the config, the tests, or spry. Report only;
+it never changes anything.
 
 - **Always on, no switch.** Nothing runs while working that would not run anyway. There are two
   sources:
@@ -561,7 +561,9 @@ changes anything.
     `.spry/pace/steps.jsonl` of the main checkout, shared by its worktrees. A line holds when it
     ran, the branch, the command and its seconds. A gate's line also holds each step's seconds,
     the code's fingerprint, whether it ran tests, and the outcome: passed, failed, skipped on the
-    stamp, docs only, tests only, or a quiet retry. Writing a line costs microseconds and never
+    stamp, docs only, tests only, or a quiet retry with the seconds its first attempt took
+    (`retry_lost`). A falsify line holds its controls and how many were caught, survived and
+    unreliable. A wait for the lock (`checks.lock`) is `waited`. Writing a line costs microseconds and never
     fails the command. The gate figures on the page come from this log, for every agent. A slice
     with no step lines (before CH-44) falls back to the gate output in the session log.
   - **The agent's session log**, read after the slice and never copied. Claude Code writes one:
@@ -607,6 +609,20 @@ changes anything.
     left out of every total.
   - Session start and `/clear` count as the end of a turn. Parallel sessions are summed, and the page
     also shows real time: the union of the active spans.
+- **Tokens**, from the same session logs:
+  - Each request to the model carries its usage: fresh input, cache read, cache written (kept 5
+    minutes or 1 hour) and output. The log repeats it on every record of the request, so it is
+    counted once per `requestId`.
+  - **Spend** is in input-token equivalents: each kind times its weight in `pace.token_weights`.
+    The defaults are the usual price ratios, stated as assumptions: cache read 0.1, cache write
+    1.25 or 2, output 5. One number then compares slices whatever the mix; it is not money.
+  - The main session and its subagents are kept apart. A subagent's requests are in its own log.
+  - **Context** is everything one request sent, cached or not. A slice keeps its peak, and the
+    context of the first request after `slice-close` started — what every turn of the close then
+    carries.
+  - **Size:** spend and active time are also shown per 100 changed lines, and each slice falls in
+    a size bucket (`pace.buckets`: 300, 700, 1300, 2500 lines) so that it is set against slices
+    of its own size.
 - **When it runs:** `merge-check`, once it passes, writes the slice's summary with no extra call. It
   reads only logs changed since a day before the slice's file was made, and any failure is
   swallowed, because pace never stands between a slice and its merge.
@@ -623,6 +639,13 @@ changes anything.
     prompts; questions asked; compactions; lines changed, with generated lines
     (`checks.generated`) beside them and not in them.
   - **By phase:** each category's share.
+  - **By size:** per size bucket, the medians of active time, spend, each per 100 lines, and peak
+    context.
+  - **Tokens, falsify and reruns, a row per slice:** spend, per 100 lines, the subagents' share,
+    peak context and context entering close; falsify runs, controls, caught, survived, unreliable
+    and seconds a control; full gates that ran tests and how many ran on code a full gate had
+    already tested; quiet retries and the time their first attempts took. Shown only when a log
+    gave one of them, so an agent that writes no session log keeps the time report it had.
   - **Gate steps:** runs, total, median and max for each step; quiet retries.
   - The slowest single calls, and the calls that ran to the agent's time limit.
   - **Before and after each change.** The page marks every change it can date:
@@ -633,7 +656,9 @@ changes anything.
 
     For each change, it sets the slices closed after it against the same number closed before. It
     compares medians of active time, each category's share, gate failures, retries and waits, raw
-    and per 100 changed lines, because slices differ in size. With fewer than 10 slices on a side
+    and per 100 changed lines, because slices differ in size — and spend, spend per 100 lines,
+    peak context, context entering close, falsify controls and survivors, and reruns on unchanged
+    code. With fewer than 10 slices on a side
     it says *too few slices to tell* instead of a difference. `spry pace --compare
     <date|CH-n|commit>` does the same for any point.
   - **Flags:** each is a rule with its threshold in `pace.flags`, shown with its evidence (slice,
@@ -663,8 +688,9 @@ changes anything.
   needed. When it is, the numbers (never log text) would go into the slice file at close, behind a
   switch, on a page grouped by phase, not by person. Session logs hold everything the
   agent saw, so they are read where they are and never copied.
-- **Not measured:** how long a background task ran (only the wait on it shows), and a person's time
-  outside the sessions.
+- **Not measured:** how long a background task ran (only the wait on it shows), a person's time
+  outside the sessions, and the tests a slice added after falsify left survivors — the step log
+  holds each run's counts, not which controls they were.
 - **What the prototype found** (2026-10-29, spry-era slices of two pilots; 324 and 243 slices,
   median 38 and 49 min of active time):
   - The agent thinking and writing: 15% and 12%.
@@ -872,6 +898,14 @@ in `spry/history/writ.md`, then retires `canon/`.
   a tricky one is asked alone, the person editing it recommended — the person's call (2026-10-31).
   `gh` is asked once per hundred numbers through GraphQL, not once per number: Pulse's memory names
   over 200.
+- 2026-11-14 — pace counts tokens as **input-token equivalents** (CH-57), not money and not raw
+  counts. Raw counts mislead: a cache read is nine-tenths of the tokens and a tenth of the cost.
+  Money needs a price list per model that the tool would have to keep current. Ratios between the
+  kinds of token have been the same across models, so they are the default and `pace.token_weights`
+  replaces them. *Context entering close* is read from the phase `pace` already tracks, not from a
+  pattern over commands as the prototype did. *Tests added after falsify* was left out: the step
+  log does not say which controls a run held, and guessing from counts would be wrong for a rerun
+  of the survivors alone.
 - 2026-10-31 — the `/spry:pace` skill (CH-47) judges and `spry pace` measures, as `/spry:memory-check`
   and `spry memory-check` do: one skill for each tool, so the numbers can be read without the
   judging. It reads the page and `spry pace <slice>`, not a JSON form of them: the page is the one
@@ -1084,3 +1118,8 @@ in `spry/history/writ.md`, then retires `canon/`.
   with its command and last line and left out, and the others run its controls. Red in every slot
   is still `unreliable`. From issue #23: 129 of 171 controls `unreliable` in one slice, and a
   61-minute serial rerun.
+- 2026-11-14 — pace shows tokens, falsify outcomes and gate reruns beside the time (CH-57,
+  0.46.0): spend in input-token equivalents with the subagents apart, peak context and context
+  entering close, from the session logs; falsify runs and outcomes, reruns on unchanged code and
+  the time quiet retries lost, from the step log; a *By size* table per `pace.buckets`. Items 1–4
+  of issue #19, where judging one process change took four one-off scripts.

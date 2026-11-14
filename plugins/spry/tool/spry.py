@@ -82,7 +82,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.45.0"
+VERSION = "0.46.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -6001,6 +6001,7 @@ def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: d
                 # A test that times out under load and passes on a quiet machine is load, not code.
                 # A real failure fails both runs, so the retry never turns red into green.
                 say(f"  timed out under load — once more, quietly: {retry}")
+                seen["retry_lost"] = round(time.time() - started, 1)   # the first attempt's time, which bought nothing
                 started = time.time()
                 done = subprocess.run(retry, shell=True, cwd=project.root, capture_output=True, text=True)
                 say(f"{'✓' if done.returncode == 0 else '✗'} {name}, quiet retry · {time.time() - started:.1f}s")
@@ -6193,7 +6194,7 @@ def review_check(payload, diff: str, own: bool = False) -> list:
 
 # ---------------------------------------------------------------- pace (§17)
 
-PACE_VERSION = 1
+PACE_VERSION = 2
 # Every second of active time gets one of these; `away` is left out of every total.
 PACE_KINDS = (("agent", "the agent, thinking and writing"), ("gate", "gate"), ("falsify", "falsify"),
               ("tests", "tests outside the gate"), ("fast", "fast checks outside the gate"),
@@ -6214,12 +6215,23 @@ PACE_OTHER = re.compile(r'^\{"type":\s*"(?!(?:user|assistant|system)")')  # a re
 PACE_GATE_STEP = re.compile(r"^([✓✗]) (.+?) · ([\d.]+)s", re.M)
 PACE_RUNNERS = {"pytest", "vitest", "jest", "playwright", "mocha", "ava"}
 PACE_ORDER = ("gate", "falsify", "tests", "fast", "polling", "spry", "stack", "gh", "git")
+# Spend is in input-token equivalents: what each kind of token costs against one fresh input token.
+# These are the usual price ratios, not looked-up prices — `pace.token_weights` replaces any of them.
+PACE_WEIGHTS = {"input": 1.0, "cache_read": 0.1, "cache_write_5m": 1.25, "cache_write_1h": 2.0, "output": 5.0}
+PACE_BUCKETS = (300, 700, 1300, 2500)   # changed lines: where one size bucket ends and the next starts
 
 
 def pace_config(project: Project) -> dict:
     conf = project.config.get("pace") or {}
     flags = {**PACE_FLAGS, **(conf.get("flags") or {})}
-    return {"away": float(conf.get("away", 30)) * 60, "logs": list(conf.get("logs") or []), "flags": flags}
+    try:
+        weights = {**PACE_WEIGHTS, **{k: float(v) for k, v in (conf.get("token_weights") or {}).items() if k in PACE_WEIGHTS}}
+        buckets = sorted({int(b) for b in conf.get("buckets") or PACE_BUCKETS if int(b) > 0})
+    except (TypeError, ValueError, AttributeError):
+        raise SystemExit("spry.config.json: pace.token_weights takes a number for each kind of token, "
+                         "and pace.buckets a list of line counts")
+    return {"away": float(conf.get("away", 30)) * 60, "logs": list(conf.get("logs") or []), "flags": flags,
+            "weights": weights, "buckets": buckets or list(PACE_BUCKETS)}
 
 
 def pace_root(project: Project) -> str:
@@ -6373,7 +6385,32 @@ def pace_records(path: str):
 
 def pace_branch_entry() -> dict:
     return {"kinds": {}, "phases": {}, "first": None, "last": None, "prompts": 0, "questions": 0,
-            "compactions": 0, "gates": [], "limit": 0, "slowest": [], "suite": 0}
+            "compactions": 0, "gates": [], "limit": 0, "slowest": [], "suite": 0,
+            "tokens": {}, "requests": 0, "peak": 0, "close": None}
+
+
+def pace_usage(record: dict, seen: set) -> dict | None:
+    """The tokens of one request to the model, counted once: the log holds a record per content
+    block, and each repeats the whole request's usage."""
+    usage = record["message"].get("usage")
+    ident = record.get("requestId") or record["message"].get("id")
+    if not isinstance(usage, dict) or (ident is not None and ident in seen):
+        return None
+    seen.add(ident)
+
+    def count(value):
+        return value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+    made = usage.get("cache_creation") if isinstance(usage.get("cache_creation"), dict) else None
+    # A cache write with no lifetime given is counted at the 5-minute rate, the API's default.
+    return {"input": count(usage.get("input_tokens")), "cache_read": count(usage.get("cache_read_input_tokens")),
+            "cache_write_5m": count(made.get("ephemeral_5m_input_tokens")) if made else count(usage.get("cache_creation_input_tokens")),
+            "cache_write_1h": count(made.get("ephemeral_1h_input_tokens")) if made else 0,
+            "output": count(usage.get("output_tokens"))}
+
+
+def pace_context(used: dict) -> float:
+    """What the model read for one request: everything sent, cached or not."""
+    return sum(v for k, v in used.items() if k != "output")
 
 
 def pace_read_log(path: str, away: float, suite: list) -> dict:
@@ -6385,6 +6422,7 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
     background = set()  # background tasks started and not yet reported finished, by tool_use id
     prev, branch, ended, phase = None, "", True, "other"
     turn = phase_turn = 0   # a phase set in this turn follows the agent to a new branch; an older one does not
+    requests = set()
 
     def entry(name):
         return branches.setdefault(name or "", pace_branch_entry())
@@ -6454,6 +6492,13 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
                 head = pace_head(command) or block.get("name", "")
                 gate_fast = ("--fast" in command or "--failed" in command) if kind == "gate" else None
                 pending[block.get("id")] = (t, kind, head, gate_fast, review and not given.get("run_in_background"))
+            used = pace_usage(record, requests)
+            if used:
+                pace_add(spot["tokens"], used)
+                spot["requests"] += 1
+                spot["peak"] = max(spot["peak"], pace_context(used))
+                if phase == "close" and spot["close"] is None:
+                    spot["close"] = [t, pace_context(used)]
             ended = message.get("stop_reason") == "end_turn" and not pending
         elif kind_of_record == "user" and isinstance(content, list) and any(c.get("type") == "tool_result" for c in content if isinstance(c, dict)):
             for c in content:
@@ -6514,12 +6559,12 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
 
 
 def pace_subagents(path: str) -> list:
-    """[branch, seconds, review] for each subagent this session started; a review agent is one whose
-    first prompt says review."""
+    """[branch, seconds, review, tokens] for each subagent this session started; a review agent is one
+    whose first prompt says review."""
     found = []
     for sub in sorted(glob.glob(os.path.join(glob.escape(path[:-6]), "subagents", "*.jsonl"))):
         first = last = None
-        branch, review = "", False
+        branch, review, tokens, requests = "", False, {}, set()
         for record in pace_records(sub):
             t = record["_t"]
             if first is None:
@@ -6527,8 +6572,11 @@ def pace_subagents(path: str) -> list:
                 review = bool(re.search(r"\breview", pace_text(record["message"]["content"])[:3000], re.I))
             last = t
             branch = branch or record.get("gitBranch") or ""
+            used = pace_usage(record, requests) if record["type"] == "assistant" else None
+            if used:
+                pace_add(tokens, used)
         if first is not None:
-            found.append([branch, round(last - first, 1), review])
+            found.append([branch, round(last - first, 1), review, tokens])
     return found
 
 
@@ -6652,7 +6700,8 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
         return slices.setdefault(slice_id, {"id": slice_id, "kinds": {}, "phases": {}, "first": None, "last": None,
                                             "sessions": 0, "prompts": 0, "questions": 0, "compactions": 0,
                                             "reviews": [], "limit": 0, "slowest": [], "suite": 0, "gates": [],
-                                            "log_gates": []})
+                                            "log_gates": [], "tokens": {}, "sub_tokens": {}, "requests": 0,
+                                            "peak": 0, "close": None, "agents": 0, "falsify": []})
     prompts = sorted((t, path) for path, data in logs.items() for t in data.get("prompts", []))
     times = [p[0] for p in prompts]
     import bisect
@@ -6672,6 +6721,11 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
                 s[key] += d[key]
             s["slowest"] = sorted(s["slowest"] + d["slowest"], reverse=True)[:5]
             s["log_gates"] += d["gates"]
+            pace_add(s["tokens"], d.get("tokens") or {})
+            s["requests"] += d.get("requests", 0)
+            s["peak"] = max(s["peak"], d.get("peak", 0))
+            if d.get("close") and (s["close"] is None or d["close"][0] < s["close"][0]):
+                s["close"] = d["close"]   # the first time the slice entered its close, across sessions
         for start, end, branch, phase in data.get("you", []):
             slice_id = by_branch.get(branch)
             if slice_id not in slices:
@@ -6682,13 +6736,23 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
                 for kinds in (s["kinds"], s["phases"].setdefault(phase, {})):
                     kinds["you"] = kinds.get("you", 0) - gap
                     kinds["elsewhere"] = kinds.get("elsewhere", 0) + gap
-        for branch, seconds, review in data.get("agents", []):
-            if review and by_branch.get(branch) in slices:
-                slices[by_branch[branch]]["reviews"].append(seconds)
+        for branch, seconds, review, *more in data.get("agents", []):
+            if by_branch.get(branch) not in slices:
+                continue
+            s = slices[by_branch[branch]]
+            s["agents"] += 1
+            pace_add(s["sub_tokens"], more[0] if more else {})
+            if review:
+                s["reviews"].append(seconds)
     for step in pace_steps(project):
         slice_id = by_branch.get(step.get("branch", ""))
-        if step.get("command") == "gate" and slice_id and (not only or slice_id == only):
+        if not slice_id or (only and slice_id != only):
+            continue
+        if step.get("command") == "gate":
             spot(slice_id)["gates"].append(step)
+        elif step.get("command") == "falsify":
+            spot(slice_id)["falsify"].append({k: step[k] for k in ("at", "seconds", "controls", "caught", "survived",
+                                                                  "unreliable", "waited") if k in step})
     lines = {} if only else pace_lines(project)  # a slice at merge-check has no squash commit yet
     folder = os.path.join(pace_home(project), "slices")
     for slice_id, s in slices.items():
@@ -6752,6 +6816,78 @@ def pace_full_gates(s: dict) -> list:
     return [g for g in s["gates"] if not g.get("fast") and g.get("skipped") != "failed"]
 
 
+def pace_spend(tokens: dict, weights: dict) -> float:
+    """Tokens as input-token equivalents (`pace.token_weights`)."""
+    return sum((tokens or {}).get(kind, 0) * weight for kind, weight in weights.items())
+
+
+def pace_tokens(count) -> str:
+    if count is None:
+        return "–"
+    if count >= 999_950:
+        return f"{count / 1e6:.1f}M"
+    return f"{count / 1e3:.0f}k" if count >= 1000 else f"{count:.0f}"
+
+
+def pace_bucket(lines, buckets) -> str | None:
+    """The size bucket a slice of `lines` changed lines falls in (`pace.buckets`), as its label."""
+    if not lines:
+        return None
+    edges = [0] + list(buckets)
+    for low, high in zip(edges, edges[1:]):
+        if lines < high:
+            return f"under {high}" if not low else f"{low}–{high - 1}"
+    return f"{edges[-1]} or more"
+
+
+def pace_token_numbers(s: dict, weights: dict) -> dict | None:
+    """A slice's spend, the main session and its subagents apart; None when no log gave a count."""
+    main, sub = pace_spend(s.get("tokens"), weights), pace_spend(s.get("sub_tokens"), weights)
+    if not main and not sub:
+        return None
+    return {"spend": main + sub, "main": main, "sub": sub, "requests": s.get("requests", 0), "agents": s.get("agents", 0),
+            "peak": s.get("peak") or None, "close": s["close"][1] if s.get("close") else None,
+            "per100": (main + sub) / s["lines"] * 100 if s.get("lines") else None}
+
+
+def pace_falsify(s: dict) -> dict | None:
+    """Every `falsify run` of a slice, summed, and its last run alone."""
+    runs = sorted(s.get("falsify") or [], key=lambda r: r.get("at", 0))
+    if not runs:
+        return None
+    out = {k: sum(r.get(k, 0) for r in runs) for k in ("controls", "caught", "survived", "unreliable", "seconds")}
+    return {**out, "runs": len(runs), "last": runs[-1],
+            "each": out["seconds"] / out["controls"] if out["controls"] else None}
+
+
+def pace_retry_lost(gate: dict) -> float:
+    """Seconds a gate's first attempt took before its quiet retry. A line from before CH-57 did not
+    record it: there, the gate's seconds less its steps' — the retried step holds only its second run."""
+    if not gate.get("retried"):
+        return 0.0
+    if "retry_lost" in gate:
+        return float(gate["retry_lost"])
+    if "seconds" not in gate:
+        return 0.0
+    return max(0.0, float(gate["seconds"]) - sum(seconds for _name, seconds, *_ in gate.get("steps", [])))
+
+
+def pace_reruns(s: dict) -> dict:
+    """Gates run more than once: full gates that ran tests, how many of those ran on code a full
+    gate had already tested, quiet retries and the time their first attempts took, and lock waits."""
+    tested = sorted((g for g in pace_full_gates(s) if g.get("tests")), key=lambda g: g.get("at", 0))
+    codes, same = set(), 0
+    for g in tested:
+        if g.get("code") in codes:
+            same += 1
+        if g.get("code"):
+            codes.add(g["code"])
+    retried = [g for g in s.get("gates", []) if g.get("retried")]
+    waited = sum(g.get("waited", 0) for g in s.get("gates", [])) + sum(r.get("waited", 0) for r in s.get("falsify") or [])
+    return {"tested": len(tested), "repeats": max(0, len(tested) - 1), "same": same, "retries": len(retried),
+            "lost": sum(pace_retry_lost(g) for g in retried), "waited": waited}
+
+
 def pace_flags(project: Project, s: dict) -> list:
     """What stands out in one slice, each with its number. Flags describe; they never judge."""
     conf = pace_config(project)["flags"]
@@ -6775,7 +6911,9 @@ def pace_flags(project: Project, s: dict) -> list:
         out.append(f"tests ran again {again}× on code that had passed — the stamp missed: a spry bug, worth /spry:contribute")
     retried = sum(1 for g in s["gates"] if g.get("retried"))
     if retried:
-        out.append(f"{retried} quiet retr{'y' if retried == 1 else 'ies'} — the machine was loaded, or a test is flaky")
+        lost = sum(pace_retry_lost(g) for g in s["gates"])
+        out.append(f"{retried} quiet retr{'y' if retried == 1 else 'ies'}" + (f", {pace_time(lost)} lost to the first attempt" if lost >= 1 else "")
+                   + " — the machine was loaded, or a test is flaky")
     if s.get("limit"):
         out.append(f"{s['limit']} call{'s' if s['limit'] != 1 else ''} ran to the agent's 10-minute limit — a wait that belonged in the background, or a hung test")
     session = s["kinds"].get("session", 0)
@@ -6853,19 +6991,45 @@ def pace_merged(slices: list, changes: list) -> list:
     return out
 
 
-def pace_measures(s: dict) -> dict:
+PACE_COUNTED = ("full gates failed", "quiet retries", "time lost to quiet retries", "full gates repeated on unchanged code",
+                "falsify controls", "falsify controls survived")   # a mean per slice; every other measure is a median
+
+
+def pace_measures(s: dict, weights: dict | None = None) -> dict:
     active = pace_active(s)
     full = pace_full_gates(s)
     out = {"active time": active}
     for name, kinds in PACE_GROUPS:
         out[f"{name} share"] = pace_group(s, kinds) / active if active else None
+    reruns, falsify = pace_reruns(s), pace_falsify(s) or {}
+    tokens = pace_token_numbers(s, weights or PACE_WEIGHTS) or {}
     out["full gates failed"] = sum(1 for g in full if not g.get("ok", True))
-    out["quiet retries"] = sum(1 for g in s["gates"] if g.get("retried"))
+    out["quiet retries"] = reruns["retries"]
+    out["time lost to quiet retries"] = reruns["lost"]
+    out["full gates repeated on unchanged code"] = reruns["same"]
+    out["falsify controls"] = falsify.get("controls", 0)
+    out["falsify controls survived"] = falsify.get("survived", 0)
     out["active time per 100 lines"] = active / s["lines"] * 100 if s.get("lines") else None
+    out["spend"] = tokens.get("spend")
+    out["spend per 100 lines"] = tokens.get("per100")
+    out["peak context"] = tokens.get("peak")
+    out["context entering close"] = tokens.get("close")
     return out
 
 
-def pace_compare(slices: list, at: float, label: str) -> list:
+def pace_shown(key: str, value) -> str:
+    if value is None:
+        return "–"
+    if key.endswith("share"):
+        return f"{100 * value:.0f}%"
+    if key.startswith(("active", "time lost")):
+        return pace_time(value)
+    if key.startswith(("spend", "peak", "context")):
+        return pace_tokens(value)
+    return f"{value:.2f}"
+
+
+def pace_compare(slices: list, at: float, label: str, weights: dict | None = None) -> list:
     """Markdown: the slices ended after `at` against as many ended before it, by median."""
     after = sorted((s for s in slices if s["last"] > at), key=lambda s: s["last"])[:20]
     before = sorted((s for s in slices if s["last"] <= at), key=lambda s: s["last"])[-max(len(after), 1):]
@@ -6873,17 +7037,13 @@ def pace_compare(slices: list, at: float, label: str) -> list:
     if len(after) < 10 or len(before) < 10:
         return [head, "", f"- too few slices to tell: {len(before)} before, {len(after)} after (10 a side needed)", ""]
     rows = [head, "", f"| {len(before)} slices a side | before | after |", "|---|---:|---:|"]
-    measured = [pace_measures(s) for s in before], [pace_measures(s) for s in after]
+    measured = [pace_measures(s, weights) for s in before], [pace_measures(s, weights) for s in after]
     for key in measured[0][0]:
-        counted = key in ("full gates failed", "quiet retries")
+        counted = key in PACE_COUNTED
         values = [(sum(m[key] for m in side) / len(side)) if counted else pace_median([m[key] for m in side]) for side in measured]
-        if key.endswith("share"):
-            shown = [f"{100 * v:.0f}%" if v is not None else "–" for v in values]
-        elif key.startswith("active"):
-            shown = [pace_time(v) if v is not None else "–" for v in values]
-        else:
-            shown = [f"{v:.2f}" if v is not None else "–" for v in values]
-        rows.append(f"| {key + ', per slice' if counted else 'median ' + key} | {shown[0]} | {shown[1]} |")
+        if values == [None, None]:
+            continue   # no log on either side gave this number
+        rows.append(f"| {key + ', per slice' if counted else 'median ' + key} | {pace_shown(key, values[0])} | {pace_shown(key, values[1])} |")
     return rows + [""]
 
 
@@ -6895,7 +7055,46 @@ def pace_size(s: dict) -> str:
     return f", {s.get('lines') or 0} lines changed" + (f" and {made} generated" if made else "")
 
 
-def pace_slice_lines(s: dict, flags: list) -> list:
+def pace_check_lines(s: dict, conf: dict) -> list:
+    """A slice's tokens, falsify runs and gate reruns, one line each, only where there is one to show."""
+    rows = []
+    t = pace_token_numbers(s, conf["weights"])
+    if t:
+        row = (f"- tokens: {pace_tokens(t['spend'])} spend, in input-token equivalents — the main session "
+               f"{pace_tokens(t['main'])} over {t['requests']} request{'s' if t['requests'] != 1 else ''}")
+        if t["agents"]:
+            row += f", {t['agents']} subagent{'s' if t['agents'] != 1 else ''} {pace_tokens(t['sub'])} ({pace_share(t['sub'], t['spend'])})"
+        if t["peak"]:
+            row += f"; peak context {pace_tokens(t['peak'])}" + (f", {pace_tokens(t['close'])} entering close" if t["close"] else "")
+        if t["per100"] is not None:
+            row += f"; {pace_tokens(t['per100'])} per 100 lines"
+        rows.append(row)
+    if s.get("lines"):
+        rows.append(f"- size: {pace_bucket(s['lines'], conf['buckets'])} lines; {pace_time(pace_active(s) / s['lines'] * 100)} active per 100 lines")
+    f = pace_falsify(s)
+    if f:
+        row = (f"- falsify: {f['runs']} run{'s' if f['runs'] != 1 else ''}, {f['controls']} control{'s' if f['controls'] != 1 else ''} — "
+               f"{f['caught']} caught, {f['survived']} survived, {f['unreliable']} unreliable; {pace_time(f['seconds'])}"
+               + (f", {f['each']:.1f}s a control" if f["each"] else ""))
+        if f["runs"] > 1:
+            last = f["last"]
+            row += (f"; the last run: {last.get('caught', 0)} caught, {last.get('survived', 0)} survived, "
+                    f"{last.get('unreliable', 0)} unreliable of {last.get('controls', 0)}")
+        rows.append(row)
+    r = pace_reruns(s)
+    parts = []
+    if r["repeats"]:
+        parts.append(f"{r['tested']} full gates ran tests, {r['same']} on code a full gate had already tested")
+    if r["retries"]:
+        parts.append(f"{r['retries']} quiet retr{'y' if r['retries'] == 1 else 'ies'} lost {pace_time(r['lost'])} to the first attempt")
+    if r["waited"] >= 1:
+        parts.append(f"{pace_time(r['waited'])} waiting for the lock")
+    if parts:
+        rows.append("- reruns: " + "; ".join(parts))
+    return rows
+
+
+def pace_slice_lines(s: dict, flags: list, conf: dict | None = None) -> list:
     """Markdown for one slice."""
     active = pace_active(s)
     rows = [f"## {s['id']}", "",
@@ -6917,6 +7116,7 @@ def pace_slice_lines(s: dict, flags: list) -> list:
     rows += ["", f"- gate: {len(full)} full ({sum(1 for g in full if not g.get('ok', True))} failed, "
              f"{sum(1 for g in full if g.get('tests'))} ran tests), {len(s['gates']) - len(full)} fast"
              + (f"; {len(s['reviews'])} review agent{'s' if len(s['reviews']) != 1 else ''}, {pace_time(sum(s['reviews']))}" if s.get("reviews") else "")]
+    rows += pace_check_lines(s, conf or {"weights": PACE_WEIGHTS, "buckets": PACE_BUCKETS})
     if s.get("slowest"):
         rows.append("- slowest calls: " + "; ".join(f"{pace_time(v)} {PACE_LABEL.get(k, k)} `{h[:60]}`" for v, k, h in s["slowest"][:3]))
     rows += [f"- flag: {f}" for f in flags]
@@ -6945,9 +7145,19 @@ def pace_page(project: Project, slices: dict, since: str | None = None, last: in
     kinds = {}
     for s in chosen:
         pace_add(kinds, {k: v for k, v in s["kinds"].items() if k != "away"})
+    conf = pace_config(project)
+    numbers = {s["id"]: pace_token_numbers(s, conf["weights"]) for s in chosen}
+    counted = [t for t in numbers.values() if t]
     rows += [f"- {len(chosen)} slices, {time.strftime('%Y-%m-%d', time.localtime(chosen[0]['first']))} to "
              f"{time.strftime('%Y-%m-%d', time.localtime(chosen[-1]['last']))}; median {pace_time(pace_median(actives))} "
-             f"active, the slowest quarter from {pace_time(actives[3 * len(actives) // 4])}", ""]
+             f"active, the slowest quarter from {pace_time(actives[3 * len(actives) // 4])}"]
+    if counted:
+        per100 = pace_median([t["per100"] for t in counted])
+        rows.append(f"- tokens, in input-token equivalents: median {pace_tokens(pace_median([t['spend'] for t in counted]))} a slice"
+                    + (f", {pace_tokens(per100)} per 100 lines" if per100 is not None else "")
+                    + f"; median peak context {pace_tokens(pace_median([t['peak'] for t in counted]))}"
+                    + f"; subagents {pace_share(sum(t['sub'] for t in counted), sum(t['spend'] for t in counted))} of the spend")
+    rows.append("")
     rows += ["## Where the time went", "", "| | time | share |", "|---|---:|---:|"]
     for name, group in PACE_GROUPS:
         part = sum(kinds.get(k, 0) for k in group)
@@ -6962,7 +7172,7 @@ def pace_page(project: Project, slices: dict, since: str | None = None, last: in
     if not changes:
         rows += ["- no dated change in this range: a process-changes row or a config commit marks one", ""]
     for at, label in reversed(changes):
-        rows += pace_compare(chosen, at, label)
+        rows += pace_compare(chosen, at, label, conf["weights"])
     flagged = [(s, pace_flags(project, s)) for s in reversed(chosen)]
     rows += ["## Flags", ""]
     listed = [f"- {s['id']}: {f}" for s, flags in flagged for f in flags]
@@ -6976,6 +7186,36 @@ def pace_page(project: Project, slices: dict, since: str | None = None, last: in
         full = pace_full_gates(s)
         rows.append(f"| {s['id']} | {pace_time(active)} | " + " | ".join(shares)
                     + f" | {len(full)} ({sum(1 for g in full if not g.get('ok', True))}) | {len(s.get('reviews', []))} | {s['sessions']} |")
+    sized = {}
+    for s in chosen:
+        if s.get("lines"):
+            sized.setdefault(pace_bucket(s["lines"], conf["buckets"]), []).append(s)
+    if sized:
+        rows += ["", "## By size", "", "Medians. A slice is set against slices of its own size (`pace.buckets`, in changed lines).", "",
+                 "| lines changed | slices | active | active per 100 lines | spend | spend per 100 lines | peak context |",
+                 "|---|---:|---:|---:|---:|---:|---:|"]
+        for label in [pace_bucket(n, conf["buckets"]) for n in [1] + conf["buckets"]]:
+            group = sized.get(label)
+            if group:
+                tokens = [numbers[s["id"]] or {} for s in group]
+                rows.append(f"| {label} | {len(group)} | {pace_time(pace_median([pace_active(s) for s in group]))} | "
+                            f"{pace_time(pace_median([pace_active(s) / s['lines'] * 100 for s in group]))} | "
+                            + " | ".join(pace_tokens(pace_median([t.get(k) for t in tokens])) for k in ("spend", "per100", "peak")) + " |")
+    if counted or any(s.get("falsify") or pace_reruns(s)["retries"] for s in chosen):
+        rows += ["", "## Tokens, falsify and reruns, newest first", "",
+                 "Spend is in input-token equivalents (`pace.token_weights`). *Same code*: full gates that ran tests "
+                 "on code a full gate had already tested.", "",
+                 "| slice | lines | spend | per 100 lines | subagents | peak context | entering close | falsify runs | controls "
+                 "| caught | survived | unreliable | a control | full gates with tests (same code) | quiet retries (lost) |",
+                 "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+        for s, _ in flagged[:60]:
+            t, f, r = numbers[s["id"]] or {}, pace_falsify(s) or {}, pace_reruns(s)
+            cells = [str(s.get("lines") or "–"), pace_tokens(t.get("spend")), pace_tokens(t.get("per100")),
+                     pace_share(t["sub"], t["spend"]) if t else "–", pace_tokens(t.get("peak")), pace_tokens(t.get("close"))]
+            cells += [str(f.get(k, "–")) for k in ("runs", "controls", "caught", "survived", "unreliable")]
+            cells += [f"{f['each']:.1f}s" if f.get("each") else "–", f"{r['tested']} ({r['same']})",
+                      f"{r['retries']} ({pace_time(r['lost'])})" if r["retries"] else "0"]
+            rows.append(f"| {s['id']} | " + " | ".join(cells) + " |")
     steps = {}
     for s in chosen:
         for g in s["gates"]:
@@ -7008,7 +7248,7 @@ def pace(project: Project, slice_id: str | None = None, since: str | None = None
         if not s:
             say(f"no time found for {slice_id}: no session or step log names its branch")
             return 1
-        say("\n".join(pace_slice_lines(s, pace_flags(project, s))).rstrip())
+        say("\n".join(pace_slice_lines(s, pace_flags(project, s), pace_config(project))).rstrip())
         return 0
     page = pace_page(project, slices, since, last, point)
     target = os.path.join(project.root, ".spry", "view", "pace.md")
@@ -7971,7 +8211,7 @@ def main(argv=None) -> int:
     p.add_argument("--fast", action="store_true", help="spry check and the fast checks only, no tests; stamps nothing")
     p.add_argument("--full", action="store_true", help="the affected tests even when the branch changes only test files")
     p.add_argument("--failed", action="store_true", help="only the test files the last red gate named; stamps nothing")
-    p = sub.add_parser("pace", help="where slices' time went — the agent, checks, waiting on you — from this clone's logs")
+    p = sub.add_parser("pace", help="where slices' time and tokens went — the agent, checks, waiting on you — from this clone's logs")
     p.add_argument("slice", nargs="?", help="one slice in detail")
     p.add_argument("--since", metavar="YYYY-MM-DD", help="slices active since this day")
     p.add_argument("--last", type=int, metavar="N", help="the last N slices")
