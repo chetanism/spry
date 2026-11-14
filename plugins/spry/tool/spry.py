@@ -82,7 +82,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.46.0"
+VERSION = "0.47.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -5342,6 +5342,29 @@ def steps_config(project: Project) -> dict:
     return {**STEP_DEFAULTS, **{k: v for k, v in given.items() if k in STEP_DEFAULTS and isinstance(v, int) and v > 0}}
 
 
+def step_tests_on(project: Project) -> bool:
+    given = (project.config.get("slices") or {}).get("steps")
+    return isinstance(given, dict) and given.get("tests") is True
+
+
+def step_tests(project: Project, paths: list) -> tuple:
+    """([test files `step --commit` runs], [ones left to the gate]) — with `slices.steps.tests` on, the
+    test files the step added or changed, less `slices.steps.tests_skip` (the ones that need the stack).
+    A file no falsify runner takes is left to the gate, and named. ([], []) with the switch off."""
+    if not step_tests_on(project):
+        return [], []
+    skip = project.config["slices"]["steps"].get("tests_skip") or []
+    skip = [glob_regex(str(g)) for g in (skip if isinstance(skip, list) else [skip])]
+    tests = project._test_globs()
+    wanted = [p for p in paths if any(g.match(p) for g in tests) and not any(g.match(p) for g in skip)
+              and os.path.isfile(native(os.path.join(project.root, p)))]
+    if not wanted:
+        return [], []
+    table = runners(project)
+    files = [p for p in wanted if any(glob_regex(g).match(p) for r in table for g in r.get("match", ["**"]))]
+    return files, [p for p in wanted if p not in files]
+
+
 def slice_steps(text: str) -> list:
     """[{n, title, covers, plan, line}] — each `#### Step <k> · <title>` under the work order's
     `### Steps`; [] for a slice without one, which is one step. `n` is None for a heading that is not
@@ -5643,7 +5666,8 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
         say("Covers: " + (", ".join(step["covers"] or []) or "—"))
         for line in step["plan"]:
             say(line)
-        say(f"Build it, then `spry.py step {item.id} --commit`: the fast checks, then the step's commit.")
+        say(f"Build it, then `spry.py step {item.id} --commit`: the fast checks"
+            + (", the test files the step touched," if step_tests_on(project) else "") + " then the step's commit.")
         return 0
     tracked = git(project.root, "diff", "--relative", "--name-only", "--no-renames", "HEAD", "--", ".")
     untracked = git(project.root, "ls-files", "-o", "--exclude-standard", "--", ".")
@@ -5654,9 +5678,23 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
     if documents_only(project, paths):
         say(f"only documents changed — step {k} changes code; commit documents as usual")
         return 1
-    code = gate(project, fast=True, say=say)
+    try:
+        files, left = step_tests(project, paths)
+    except PlanError as e:
+        say(f"step {k} not committed: `slices.steps.tests` is on, but {e}")
+        return 2
+    if files:
+        say(f"– the step's tests: {', '.join(files)}")
+    if left:
+        say(f"– left to the gate, no falsify runner takes them: {', '.join(left)}")
+    said = []
+    code = gate(project, fast=True, say=lambda line: (said.append(line), say(line))[1], step_tests=files)
     if code:
-        say(f"step {k} not committed: the fast checks are red")
+        if any(line.startswith("✗ " + STEP_TESTS) for line in said):
+            named = (gate_failure(project) or {}).get("files") or files
+            say(f"step {k} not committed: its tests are red — {', '.join(named)}")
+        else:
+            say(f"step {k} not committed: the fast checks are red")
         return code
     added = git(project.root, "add", "-A", "--", ".")
     made = git(project.root, "commit", "-q", "-m", f"{item.id} step {k}: {step['title']}", "-m", f"Step: {item.id}/{k}") \
@@ -5713,9 +5751,14 @@ def named_commands(entries, key: str, prefix: str = "") -> list:
     return out
 
 
-def gate_steps(project: Project, fast: bool = False, changed_tests: list | None = None) -> list:
+STEP_TESTS = "step tests"
+
+
+def gate_steps(project: Project, fast: bool = False, changed_tests: list | None = None,
+               label: str = "changed tests") -> list:
     """[(name, command, cwd)] — fast checks cheapest first, then, unless `fast`, the affected tests —
-    or, given `changed_tests`, those files through their falsify runners — then `tests.always`."""
+    or, given `changed_tests`, those files through their falsify runners — then `tests.always`.
+    `fast` with `changed_tests` is a step's commit (§15): the fast checks, then the step's own tests."""
     tests = project.config.get("tests", {})
     steps = named_commands(project.config.get("checks", {}).get("fast"), "checks.fast")
     if not fast and changed_tests is None:
@@ -5726,10 +5769,10 @@ def gate_steps(project: Project, fast: bool = False, changed_tests: list | None 
         if not command.strip() or re.search(r"<[a-z][a-z ,/-]*>", command):
             raise SystemExit(f"spry.config.json: `{name}` has no command yet — set {key}")
     steps = [(name, command, project.root) for name, command, _key in steps]
-    if not fast and changed_tests:
-        at = len(steps) - len(tests.get("always") or [])
+    if changed_tests:
+        at = len(steps) - (0 if fast else len(tests.get("always") or []))
         table = runners(project)
-        steps[at:at] = [(f"changed tests{'' if cwd == project.root else ' in ' + os.path.relpath(cwd, project.root).replace(os.sep, '/')}",
+        steps[at:at] = [(f"{label}{'' if cwd == project.root else ' in ' + os.path.relpath(cwd, project.root).replace(os.sep, '/')}",
                          runner_command(project, table[index], cwd, files), cwd)
                         for (index, cwd), files in group_files(project, changed_tests).items()]
     return steps
@@ -5829,7 +5872,7 @@ def gate_keep_going(project: Project) -> str:
 
 
 def gate(project: Project, force: bool = False, say=print, fast: bool = False, full: bool = False,
-         failed: bool = False) -> int:
+         failed: bool = False, step_tests: list | None = None) -> int:
     """The gate, timed into the step log (§17)."""
     started, seen = time.time(), {"steps": []}
     if failed:
@@ -5837,7 +5880,7 @@ def gate(project: Project, force: bool = False, say=print, fast: bool = False, f
         pace_log(project, "gate", time.time() - started - seen.get("waited", 0), ok=code == 0, fast=True,
                  failed=True, **seen)
         return code
-    code = run_gate(project, force, say, fast, full, seen)
+    code = run_gate(project, force, say, fast, full, seen, step_tests)
     # A wait for the lock is another run's time: `waited` records it, `seconds` leaves it out.
     pace_log(project, "gate", time.time() - started - seen.get("waited", 0), ok=code == 0, fast=fast, full=full,
              force=force, **seen)
@@ -5921,14 +5964,16 @@ def rerun_failed(project: Project, say, seen: dict) -> int:
     return 0
 
 
-def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: dict) -> int:
+def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: dict,
+             step_tests: list | None = None) -> int:
     """`spry check`, then the fast checks, then the affected tests, then `tests.always`. A failed fast
     check does not stop the other fast checks (`gate.keep_going`), and the tests do not run after one;
     a failed test step stops the gate. A red gate leaves its output in `.spry/gate/last.log` and does
     not run again on the same code. A branch that changed only test files runs those files instead of
     the affected tests, unless `full`: a test file breaks no other package's tests. A pass is stamped
     with the code's fingerprint; while the code is unchanged, only `check` runs again.
-    `fast` leaves out the tests, for each change while building, and stamps nothing."""
+    `fast` leaves out the tests, for each change while building, and stamps nothing; with `step_tests`
+    it runs those files after the checks, as a step's commit does when `slices.steps.tests` is on."""
     started = time.time()
     errors = [p for p in check(project) if p.level == "error"]
     say(f"{'✗' if errors else '✓'} spry check · {time.time() - started:.1f}s")
@@ -5937,7 +5982,7 @@ def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: d
         for p in errors[:10]:
             say(f"  {p}")
         return 1
-    steps = gate_steps(project, fast)
+    steps = gate_steps(project, fast, changed_tests=step_tests or None, label=STEP_TESTS)
     stamp_path = os.path.join(project.root, ".spry", "green")
     fingerprint = code_fingerprint(project)
     try:
@@ -6019,7 +6064,8 @@ def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: d
         return 1
     if fast:
         clear_gate_failure(project, names)
-        say("fast checks green — tests not run; `spry.py gate` runs them")
+        say("fast checks and the step's tests green — the affected tests not run; `spry.py gate` runs them"
+            if step_tests else "fast checks green — tests not run; `spry.py gate` runs them")
         return 0
     clear_gate_failure(project)
     if fingerprint:
@@ -8200,7 +8246,7 @@ def main(argv=None) -> int:
     p.add_argument("--ci-local", metavar="REASON", help="CI never ran, for this reason; the gate stood in for it")
     p = sub.add_parser("step", help="steps mode: a slice's next step, or --commit it after the fast checks")
     p.add_argument("slice")
-    p.add_argument("--commit", action="store_true", help="run `gate --fast`, then commit the step with its `Step:` trailer")
+    p.add_argument("--commit", action="store_true", help="run `gate --fast` — and, with `slices.steps.tests`, the test files the step touched — then commit the step with its `Step:` trailer")
     p.add_argument("--ranges", action="store_true", help="each committed step's diff, and the whole one, for the review")
     p.add_argument("--squash", action="store_true", help="fold `fixup!` commits into their steps")
     p.add_argument("--base", help="the ref the branch merges into (default origin/<main>)")

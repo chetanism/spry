@@ -107,7 +107,9 @@ commits already on the branch, and the commit that finishes it.</p>
   after a compaction, starts here.</li>
   <li><code>--commit</code> — runs <code>gate --fast</code>, then commits everything as
   <code>SL-n step k: title</code> with the trailer <code>Step: SL-n/k</code>. It refuses when the fast checks
-  are red, when nothing changed, when only documents changed, or when the steps so far are out of order.</li>
+  are red, when nothing changed, when only documents changed, or when the steps so far are out of order.
+  With <code>slices.steps.tests</code> on it also runs the test files the step added or changed, less
+  <code>slices.steps.tests_skip</code>, and refuses when one fails, naming the file.</li>
   <li><code>--ranges</code> — each step's <code>git diff</code>, and the whole branch's, for the reviewers.
   Off the slice's branch it reads <code>origin/&lt;branch&gt;</code>, so nothing is checked out;
   <code>--head REF</code> names another place.</li>

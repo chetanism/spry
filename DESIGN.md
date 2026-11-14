@@ -425,6 +425,13 @@ it grows with the guards a diff adds, not with the number of slices.
     `Bash(git commit *)` on a steps branch, refuses a commit without the trailer and names
     `spry.py step --commit`. As with every hook, it fails open, and the rule stays in `check` and
     `merge-check`.
+- **A step's own tests, by a switch** (CH-58). With `slices.steps.tests` on, `step --commit` runs
+  the test files the step added or changed, after the fast checks and through their
+  `falsify.runners`, as the step `step tests`. A red one refuses the commit and names the file,
+  and `gate --failed` reruns it. Only those files: not the affected set, and not a file matching
+  `slices.steps.tests_skip`, where a project lists the tests that need the stack. A file no
+  runner takes is left to the gate and named; no runners at all refuses the commit. Off by
+  default, so the next bullet holds unless a project chooses otherwise.
 - **Tests once per story.** Each step runs `gate --fast` (lint, types, no tests). The affected
   tests run while building only when their answer is needed, as today. The full gate and falsify
   run once, at close, on the whole slice. Pushes happen only at close — for the review, and at its
@@ -772,7 +779,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
-| `step <slice> [--commit] [--ranges [--head]] [--squash] [--base]` | steps mode (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` and commits it with its `Step:` trailer; `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps |
+| `step <slice> [--commit] [--ranges [--head]] [--squash] [--base]` | steps mode (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` — and, with `slices.steps.tests`, the test files the step added or changed — and commits it with its `Step:` trailer; `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
@@ -898,6 +905,11 @@ in `spry/history/writ.md`, then retires `canon/`.
   a tricky one is asked alone, the person editing it recommended — the person's call (2026-10-31).
   `gh` is asked once per hundred numbers through GraphQL, not once per number: Pulse's memory names
   over 200.
+- 2026-11-15 — a step's commit runs **only the test files the step touched**, behind a switch
+  that is off (CH-58). The affected set at every step would undo what steps mode saves: tests
+  once per story. The files a step wrote are the ones most likely red, and they are seconds.
+  Off by default because it needs `falsify.runners`, and because a project whose tests need the
+  stack has to say which (`slices.steps.tests_skip`) before it helps.
 - 2026-11-14 — pace counts tokens as **input-token equivalents** (CH-57), not money and not raw
   counts. Raw counts mislead: a cache read is nine-tenths of the tokens and a tenth of the cost.
   Money needs a price list per model that the tool would have to keep current. Ratios between the
@@ -1123,3 +1135,7 @@ in `spry/history/writ.md`, then retires `canon/`.
   entering close, from the session logs; falsify runs and outcomes, reruns on unchanged code and
   the time quiet retries lost, from the step log; a *By size* table per `pace.buckets`. Items 1–4
   of issue #19, where judging one process change took four one-off scripts.
+- 2026-11-15 — a step's commit can run the test files the step touched (CH-58, 0.47.0):
+  `slices.steps.tests`, off by default, and `slices.steps.tests_skip` for the tests that need the
+  stack. From issue #27: 29% of affected-test runs red, and 54 of 91 repeated full gates after a
+  red test run, each about four minutes at close-sized context.
