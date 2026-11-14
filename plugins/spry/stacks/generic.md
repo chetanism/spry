@@ -15,7 +15,9 @@ Ask the developer for, and record in config:
 - `tests.always` — commands `gate` and CI run after the tests whenever code changed, whatever
   changed: tests that read the whole code tree (banned words, licences); empty when there are none;
 - `tests.all` — every test, in parallel where the runner allows;
-- `checks.fast` — format, lint and type checks, cheapest first; they run before any test;
+- `checks.fast` — format, lint and type checks, cheapest first; they run before any test; for the
+  formatter also `fix`, its write-mode command, with `{files}` where a step's files go — a step's
+  commit runs it when format is the only red check;
 - `checks.docs` — globs for files whose change never needs a test run (default `spry/**`, `**/*.md`);
 - `tests.junit` — where a JUnit XML report is written, if the runner can;
 - `tests.parts` — when the suite has parts that run differently (unit, integration, end to end):

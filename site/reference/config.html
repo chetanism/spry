@@ -58,7 +58,7 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
   ],
   "checks": {
     "fast": [
-      {"name": "format", "run": "&lt;formatter in check mode&gt;"},
+      {"name": "format", "run": "&lt;formatter in check mode&gt;", "fix": "&lt;formatter in write mode&gt; {files}"},
       {"name": "lint", "run": "&lt;linter, with its cache&gt;"},
       {"name": "types", "run": "&lt;type checker, if the language has one&gt;"}
     ],
@@ -171,7 +171,7 @@ the fast checks run before any test.</p>
 <table>
   <thead><tr><th>Key</th><th>Means</th></tr></thead>
   <tbody>
-    <tr><td><code>checks.fast</code></td><td>Format, lint and type checks, as <code>{"name", "run"}</code>, cheapest first.</td></tr>
+    <tr><td><code>checks.fast</code></td><td>Format, lint and type checks, as <code>{"name", "run"}</code>, cheapest first. A check may also carry <code>fix</code>: the same tool in write mode, with <code>{files}</code> where the files go — for the formatter. When every red check of a step has one, <code>spry.py step --commit</code> runs it on the step's files, says which changed, checks again and commits. A check without <code>fix</code> stops the commit; leave it out to have a format failure stop it too.</td></tr>
     <tr><td><code>checks.docs</code></td><td>Globs for files whose change never needs a test run. A branch that changed only these runs <code>check</code> alone. Default <code>["spry/**", "**/*.md"]</code>.</td></tr>
     <tr><td><code>checks.generated</code></td><td>Globs for files a command writes: a generated client, a schema dump, a package manager's lock file. Their lines are left out of a slice's size — the <code>slices.steps.max_lines</code> warning and <code>pace</code>'s "lines changed" — and printed beside it as "n generated". Default: none.</td></tr>
     <tr><td><code>checks.lock</code></td><td><code>true</code>: only one <code>gate</code> or <code>falsify run</code> runs its commands at a time, across every worktree of this clone. A run that has to wait says who holds the lock and for how long, then goes on. For a machine where several sessions build side by side. Default <code>false</code>.</td></tr>
@@ -310,7 +310,8 @@ off, so a project set up before 0.34.0 has none until it takes them. New project
 <h3>TypeScript / Node — Vitest</h3>
 <pre data-label="Vitest"><code>"checks": {
   "fast": [
-    {"name": "format", "run": "prettier --check ."},
+    {"name": "format", "run": "prettier --check .",
+     "fix": "prettier --write --ignore-unknown {files}"},
     {"name": "lint", "run": "eslint . --cache"},
     {"name": "types", "run": "tsc --noEmit"}
   ]
@@ -337,7 +338,7 @@ off, so a project set up before 0.34.0 has none until it takes them. New project
 <h3>Python — pytest</h3>
 <pre data-label="pytest"><code>"checks": {
   "fast": [
-    {"name": "format", "run": "ruff format --check ."},
+    {"name": "format", "run": "ruff format --check .", "fix": "ruff format ."},
     {"name": "lint", "run": "ruff check ."},
     {"name": "types", "run": "mypy ."}
   ]

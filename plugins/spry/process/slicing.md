@@ -233,7 +233,9 @@ file, keeps that so (DESIGN.md §15 *Steps mode*).
 - **Build.** `spry.py step SL-<n>` names the next step and its plan, from the commits already made
   — so a new session, or one after a compaction, starts there. Build that step only, then
   `spry.py step SL-<n> --commit`: `gate --fast`, then one commit, `SL-<n> step <k>: <title>`, with
-  the trailer `Step: SL-<n>/<k>`. Red fast checks → fix and run it again. With `slices.steps.tests`
+  the trailer `Step: SL-<n>/<k>`. Red fast checks → fix and run it again; when every red check has
+  a `fix` in `checks.fast` (the formatter), the tool runs it on the step's files, says which
+  changed, and commits. With `slices.steps.tests`
   on, it also runs the test files the step added or changed (not those in
   `slices.steps.tests_skip`), and a red one refuses the commit and names the file: fix it in this
   step, not at close. **Never `git commit` code

@@ -3892,6 +3892,86 @@ class Steps(Base):
         self.assertEqual(code, 2, out)
         self.assertIn("`slices.steps.tests` is on, but spry.config.json has no falsify.runners", out)
 
+    def fast_checks(self, fix="python3 .spry/fmt.py {files}"):
+        """A formatter that minds `UGLY` and can take it out, and a linter that minds `LINT` and cannot."""
+        self.write(".spry/fmt.py", "import sys\nfor f in sys.argv[1:]:\n    text = open(f).read()\n"
+                             "    open(f, 'w').write(text.replace(' UGLY', ''))\n")
+        fmt = {"name": "format", "run": "! grep -rl UGLY src", **({"fix": fix} if fix else {})}
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "checks": {"fast": [
+            fmt, {"name": "lint", "run": "! grep -rl LINT src"}]}}))
+        self.run_git("add", "spry/spry.config.json")
+        self.run_git("commit", "-qm", "docs: fast checks")
+
+    def read(self, rel):
+        with open(os.path.join(self.t.root, rel)) as handle:
+            return handle.read()
+
+    def test_a_step_whose_only_fault_is_formatting_is_formatted_and_committed(self):
+        self.on_branch()
+        self.fast_checks()
+        before = self.commits()
+        self.write("src/lend.ts", "export const limit = 4 UGLY\n")
+        self.write("src/it's new.ts", "export const shown = true UGLY\n")
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 0, out)
+        self.assertIn("✗ format", out)
+        self.assertIn("– format fixed by its `fix` command — files changed: src/it's new.ts, src/lend.ts; the checks run again", out)
+        self.assertIn("committed step 1 of 2", out)
+        self.assertEqual(int(self.commits()), int(before) + 1, "one `step --commit`, one commit")
+        self.assertEqual(self.read("src/lend.ts"), "export const limit = 4\n")
+        show = subprocess.run(["git", "show", "HEAD:src/lend.ts"], cwd=self.t.root, capture_output=True, text=True).stdout
+        self.assertEqual(show, "export const limit = 4\n", "the commit holds the formatted file")
+        self.assertEqual(subprocess.run(["git", "status", "--porcelain"], cwd=self.t.root, capture_output=True, text=True).stdout, "")
+        rows = [json.loads(line) for line in self.read(".spry/pace/steps.jsonl").strip().split("\n")]
+        self.assertEqual([(r["command"], r.get("ok")) for r in rows[-3:]], [("gate", False), ("fix", None), ("gate", True)])
+        self.assertEqual((rows[-2]["checks"], rows[-2]["files"]), (["format"], 2))
+
+    def test_a_lint_failure_still_refuses_the_step_and_nothing_is_formatted(self):
+        self.on_branch()
+        self.fast_checks()
+        before = self.commits()
+        self.write("src/lend.ts", "export const limit = 4 UGLY LINT\n")
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 1, out)
+        self.assertIn("✗ lint", out)
+        self.assertNotIn("fixed by", out)
+        self.assertIn("step 1 not committed: the fast checks are red", out)
+        self.assertEqual(self.read("src/lend.ts"), "export const limit = 4 UGLY LINT\n", "left as the agent wrote it")
+        self.assertEqual(self.commits(), before)
+        self.write("src/lend.ts", "export const limit = 4 UGLY\n")
+        self.write("src/page.ts", "export const shown = true\n")
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 0, out)
+        self.assertIn("files changed: src/lend.ts;", out, "only the files the formatter changed are named")
+
+    def test_without_a_fix_command_a_format_failure_refuses_the_step_as_before(self):
+        self.on_branch()
+        self.fast_checks(fix="")
+        before = self.commits()
+        self.write("src/lend.ts", "export const limit = 4 UGLY\n")
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 1, out)
+        self.assertNotIn("fixed by", out)
+        self.assertEqual(self.read("src/lend.ts"), "export const limit = 4 UGLY\n")
+        for fix, why in (("<formatter in write mode> {files}", "a placeholder is not a command"), ("true", "")):
+            self.fast_checks(fix=fix)
+            before = self.commits()
+            code, out = self.say(True, False, False)
+            self.assertEqual(code, 1, out + why)
+            self.assertEqual(self.commits(), before)
+        self.assertIn("– the `fix` of format changed no file, so the red stands", out)
+        self.assertIn("step 1 not committed: the fast checks are red", out)
+        self.fast_checks(fix="echo cannot parse >&2; exit 3")
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 1, out)
+        self.assertIn("✗ format, fix", out)
+        self.assertIn("cannot parse", out)
+        self.fast_checks()
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 0, out)
+        self.assertIn("– not run again", out, "the red a gate already found is fixed too, not run a second time first")
+        self.assertIn("committed step 1 of 2", out)
+
     def test_a_slice_over_the_size_cap_is_the_person_s_call(self):
         self.on_branch()
         self.write("spry/spry.config.json", json.dumps({**CONFIG, "slices": {"steps": {"max_lines": 2}}}))

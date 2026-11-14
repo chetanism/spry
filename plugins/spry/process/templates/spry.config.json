@@ -1,6 +1,6 @@
 {
-  "spry": "0.47.0",
-  "spry_baseline": "CH-58",
+  "spry": "0.48.0",
+  "spry_baseline": "CH-59",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -25,7 +25,7 @@
   ],
   "checks": {
     "fast": [
-      {"name": "format", "run": "<formatter in check mode>"},
+      {"name": "format", "run": "<formatter in check mode>", "fix": "<formatter in write mode> {files}"},
       {"name": "lint", "run": "<linter, with its cache>"},
       {"name": "types", "run": "<type checker, if the language has one>"}
     ],

@@ -425,6 +425,14 @@ it grows with the guards a diff adds, not with the number of slices.
     `Bash(git commit *)` on a steps branch, refuses a commit without the trailer and names
     `spry.py step --commit`. As with every hook, it fails open, and the rule stays in `check` and
     `merge-check`.
+- **A red the tool can mend, it mends** (CH-59). A `checks.fast` entry may carry `fix`, the same
+  tool in write mode: the formatter's. When every red check of a step's fast gate has one,
+  `step --commit` runs each on the step's files (`{files}`), names the files that changed, runs
+  the fast gate again and commits on its answer. A red check without one (lint, types) refuses
+  the commit as before and nothing is formatted; so does a `fix` that fails or changes no file.
+  With `gate.keep_going: off` the gate stops at the first red check, so the formatter may run
+  before a lint error is seen. No `fix`, no change: that is the switch. `gate` itself never
+  writes a file.
 - **A step's own tests, by a switch** (CH-58). With `slices.steps.tests` on, `step --commit` runs
   the test files the step added or changed, after the fast checks and through their
   `falsify.runners`, as the step `step tests`. A red one refuses the commit and names the file,
@@ -779,7 +787,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
-| `step <slice> [--commit] [--ranges [--head]] [--squash] [--base]` | steps mode (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` — and, with `slices.steps.tests`, the test files the step added or changed — and commits it with its `Step:` trailer; `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps |
+| `step <slice> [--commit] [--ranges [--head]] [--squash] [--base]` | steps mode (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` — and, with `slices.steps.tests`, the test files the step added or changed — and commits it with its `Step:` trailer, first running the `fix` of the red checks when each has one; `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
@@ -905,6 +913,13 @@ in `spry/history/writ.md`, then retires `canon/`.
   a tricky one is asked alone, the person editing it recommended — the person's call (2026-10-31).
   `gh` is asked once per hundred numbers through GraphQL, not once per number: Pulse's memory names
   over 200.
+- 2026-11-15 — the formatter's write command is **a `fix` on its `checks.fast` entry**, not a
+  second list and not a guess from the check's name (CH-59). The entry already names the tool,
+  so the two modes sit together, and the tool need not know which check is the formatter: a
+  check with a `fix` can be mended, one without stops the commit. Only `step --commit` runs it,
+  where the tool is about to commit the working tree anyway; a gate that rewrote files would
+  surprise whoever ran it. The fast gate runs again afterwards, so the commit rests on checks
+  that saw the formatted files: seconds of machine time against an agent's turn.
 - 2026-11-15 — a step's commit runs **only the test files the step touched**, behind a switch
   that is off (CH-58). The affected set at every step would undo what steps mode saves: tests
   once per story. The files a step wrote are the ones most likely red, and they are seconds.
@@ -1139,3 +1154,6 @@ in `spry/history/writ.md`, then retires `canon/`.
   `slices.steps.tests`, off by default, and `slices.steps.tests_skip` for the tests that need the
   stack. From issue #27: 29% of affected-test runs red, and 54 of 91 repeated full gates after a
   red test run, each about four minutes at close-sized context.
+- 2026-11-15 — a step's commit formats the step's files when format is the only red check
+  (CH-59, 0.48.0): `fix` on a `checks.fast` entry. From issue #26: 28% of one project's fast
+  gates red in ten days, 27 on format alone, each a turn at 200k+ tokens of context.

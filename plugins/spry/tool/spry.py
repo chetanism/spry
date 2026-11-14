@@ -82,7 +82,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.47.0"
+VERSION = "0.48.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -5365,6 +5365,69 @@ def step_tests(project: Project, paths: list) -> tuple:
     return files, [p for p in wanted if p not in files]
 
 
+def fast_fixes(project: Project) -> dict:
+    """{check name: command} — the `checks.fast` entries that carry a `fix`: the same tool in write
+    mode, as a formatter has. A `fix` still in `<…>` is not set."""
+    entries = (project.config.get("checks") or {}).get("fast") or []
+    out = {}
+    for (name, _command, _key), entry in zip(named_commands(entries, "checks.fast"), entries):
+        fix = str(entry.get("fix") or "").strip() if isinstance(entry, dict) else ""
+        if fix and not re.search(r"<[a-z][a-z ,/-]*>", fix):
+            out[name] = fix
+    return out
+
+
+def step_paths(project: Project) -> list:
+    """Every file the working tree changed or added since HEAD — what a step's commit takes."""
+    tracked = git(project.root, "diff", "--relative", "--name-only", "--no-renames", "HEAD", "--", ".")
+    untracked = git(project.root, "ls-files", "-o", "--exclude-standard", "--", ".")
+    return sorted(set(filter(None, (tracked.stdout + "\n" + untracked.stdout).split("\n"))))
+
+
+def file_digest(path: str) -> str | None:
+    try:
+        with open(native(path), "rb") as handle:
+            return hashlib.sha256(handle.read()).hexdigest()
+    except OSError:
+        return None
+
+
+def step_fix(project: Project, paths: list, said: list, say) -> bool:
+    """A step's fast gate went red (`said` is what it printed). When every red check carries a `fix`
+    (`checks.fast`), run each on the step's files and name the files it changed. True when one did,
+    so the checks are worth running again; a check without a `fix` — lint, types — stops it as before."""
+    red = [m.group(1) for m in (re.match(r"✗ (.+) · [\d.]+s$", line) for line in said) if m]
+    if not red and any(line.startswith("– not run again") for line in said):
+        red = [n for n, _c in red_steps(gate_failure(project) or {})]   # the same code, the same red
+    fixes = fast_fixes(project)
+    if not red or any(name not in fixes for name in red):
+        return False
+    here = [p for p in paths if os.path.isfile(native(os.path.join(project.root, p)))]
+    before = {p: file_digest(os.path.join(project.root, p)) for p in paths}
+    started = time.time()
+    try:
+        for name in red:
+            if "{files}" in fixes[name] and not here:
+                continue
+            command = fixes[name].replace("{files}", " ".join(shell_quote(p) for p in here))
+            at = time.time()
+            done = subprocess.run(command, shell=True, cwd=project.root, capture_output=True, text=True)
+            if done.returncode != 0:
+                say(f"✗ {name}, fix · {time.time() - at:.1f}s — {command}")
+                say("\n".join("  " + line for line in (done.stdout + done.stderr).rstrip().split("\n")[-10:]))
+                return False
+    except PlanError as e:
+        say(f"– `{', '.join(red)}` not fixed: {e}")
+        return False
+    changed = [p for p in step_paths(project) if before.get(p) != file_digest(os.path.join(project.root, p))]
+    pace_log(project, "fix", time.time() - started, checks=red, files=len(changed))
+    if not changed:
+        say(f"– the `fix` of {', '.join(red)} changed no file, so the red stands")
+        return False
+    say(f"– {', '.join(red)} fixed by its `fix` command — files changed: {', '.join(changed)}; the checks run again")
+    return True
+
+
 def slice_steps(text: str) -> list:
     """[{n, title, covers, plan, line}] — each `#### Step <k> · <title>` under the work order's
     `### Steps`; [] for a slice without one, which is one step. `n` is None for a heading that is not
@@ -5669,9 +5732,7 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
         say(f"Build it, then `spry.py step {item.id} --commit`: the fast checks"
             + (", the test files the step touched," if step_tests_on(project) else "") + " then the step's commit.")
         return 0
-    tracked = git(project.root, "diff", "--relative", "--name-only", "--no-renames", "HEAD", "--", ".")
-    untracked = git(project.root, "ls-files", "-o", "--exclude-standard", "--", ".")
-    paths = sorted(set(filter(None, (tracked.stdout + "\n" + untracked.stdout).split("\n"))))
+    paths = step_paths(project)
     if not paths:
         say(f"nothing changed — build step {k} first")
         return 1
@@ -5689,6 +5750,10 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
         say(f"– left to the gate, no falsify runner takes them: {', '.join(left)}")
     said = []
     code = gate(project, fast=True, say=lambda line: (said.append(line), say(line))[1], step_tests=files)
+    if code and step_fix(project, paths, said, say):
+        # Only what a `fix` can mend was red, and it changed files: the checks answer for the result.
+        said.clear()
+        code = gate(project, fast=True, say=lambda line: (said.append(line), say(line))[1], step_tests=files)
     if code:
         if any(line.startswith("✗ " + STEP_TESTS) for line in said):
             named = (gate_failure(project) or {}).get("files") or files
