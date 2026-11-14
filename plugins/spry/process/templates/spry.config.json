@@ -1,6 +1,6 @@
 {
-  "spry": "0.51.0",
-  "spry_baseline": "CH-62",
+  "spry": "0.52.0",
+  "spry_baseline": "CH-63",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -81,7 +81,8 @@
     "check_edit": true,
     "merge": true,
     "check_stop": true,
-    "step_commit": true
+    "step_commit": true,
+    "session_end": true
   },
   "memory": {"index_lines": 60, "index_bytes": 8000, "line_chars": 200, "stale_days": 30},
   "slices": {
@@ -90,6 +91,15 @@
     "design_review": false,
     "steps": {"max": 5, "max_lines": 800, "tests": false, "tests_skip": []}
   },
+  "worktrees": {
+    "dir": ".claude/worktrees",
+    "home_branch": "alt{index}",
+    "max": 4,
+    "setup": "",
+    "share": [],
+    "stale_after": 12
+  },
+  "progress": {"transcripts": false, "quiet": 15, "keep": 400},
   "main_branch": "main",
   "mint": "local"
 }

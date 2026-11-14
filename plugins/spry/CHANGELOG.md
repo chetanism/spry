@@ -1381,3 +1381,58 @@ Entry format:
     *Bugs and tasks* its bullet;
   - open and closed bugs whose slice is known can take the field now: the count reaches back as
     far as the bugs are filled in.
+
+## CH-63 · Worktrees made and handed out by spry, and a progress view over them
+
+- **Date:** 2026-11-15 · **Version:** 0.52.0
+- **Touches:** `tool/spry.py` (`worktree`, `say`, `watch`; `gate`, `step`, `falsify run`,
+  `review-check` and `merge-check` write the progress log; falsify slots run `worktrees.setup`;
+  `agent-hook session`, `agent-hook session_end`), `hooks/hooks.json` (*SessionEnd*),
+  `skills/worktree`, `process/slicing.md` (*Slices side by side*, *Worktrees*),
+  `process/merging.md` (step 8), `process/setup.md` (step 5), `templates/spry.config.json` (`worktrees`, `progress`,
+  `hooks.session_end`)
+- **Why:** issue #21. Someone running two to four sessions side by side gives each its own
+  worktree. Spry said nothing about them, so each project invented the layout: where they live,
+  which one is free, which database and ports each uses, which branch each rests on between
+  slices. Falsify's slots needed the same isolation and had none: in one slice, 129 of 171 controls
+  came out `unreliable` because the slots shared a database. Interrupted runs left scratch trees
+  behind. And while a slice was building, its owner could not tell which session was working,
+  which was stuck and which was waiting on them. One step ran for 32 minutes with nothing to show.
+  - **`spry.py worktree`:** `list`; `new [name]`, under `worktrees.dir` on a home branch at the
+    main branch's head, with the next free index and `worktrees.setup` run there; `claim <name|index>`,
+    which refuses a worktree a live session holds and takes a stale one, saying so; `release`;
+    `home`, the worktree put back on its home branch at the main branch's head; and `prune`, which
+    removes the falsify scratch trees no run owns and the records of worktrees that are gone.
+  - **Claims** live in the main checkout, in `.spry/worktrees/<name>.json`: the session id, the
+    process and the time, written under a file lock. A claim is stale when its process is gone or
+    when its worktree has written nothing for `worktrees.stale_after` hours. The session-end hook
+    releases it, and the session-start hook names the worktree and warns when it is unclaimed.
+  - **One set-up script:** falsify slots run `worktrees.setup` with `SPRY_WORKTREE` and
+    `SPRY_FALSIFY_SLOT` both set, in place of `falsify.setup`, which stays as the older name. So a
+    worktree and a slot are isolated the same way.
+  - **Progress, written by the tool:** `step --commit`, `gate`, `falsify run`, `review-check`,
+    `merge-check` and `worktree home` each add one line to `.spry/progress/events.jsonl` in the main
+    checkout. This costs no tokens, and there is nothing for a session to forget. `spry.py say`
+    adds a line by hand.
+  - **`spry.py watch [-n s] [--once]`:** one panel per worktree, showing its claim, its slice and
+    step (`step 2 of 4`), its last milestones and the time since. A panel that has gone quiet is
+    marked. The top line says who holds the heavy-check lock. With `progress.transcripts:
+    "claude-code"`, each panel also shows what the session is doing (working, running a command,
+    waiting on a subagent, waiting on you), its context and its spend.
+  - Open points of the issue, settled: `watch` is in `spry.py`, because the tool is one file; a
+    claim never guards the main checkout, where plan-only sessions run.
+- **Adapt:**
+  - nothing to switch on for the progress log and `watch`;
+  - add the `worktrees` block to have spry make and hand out worktrees, with `setup` the project's
+    own script. Without the block, `worktree` says so and nothing else changes;
+  - `progress.transcripts: "claude-code"` reads Claude Code's session logs for each panel. It is
+    off by default; other agents get the tool's own lines only;
+  - a project whose `falsify.setup` already isolates slots can move it to `worktrees.setup`. While
+    both are set, `worktrees.setup` wins.
+- **Migrate:**
+  - the project's config takes `hooks.session_end: true`, for claims to end with their session;
+  - the project's copies of `slicing.md` (*Slices side by side*, the *Worktrees* section) and of
+    `merging.md` step 8 take the new text;
+  - worktrees made by hand are claimed as they are: `worktree claim <name>` records one, with the
+    index its name ends in;
+  - scratch trees left by interrupted falsify runs go with one `worktree prune`.

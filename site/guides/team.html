@@ -109,7 +109,8 @@ worktree and its own agent session:</p>
 <ol class="steps">
   <li><strong>Check they don't collide.</strong>
     <p><code>spry.py related</code> on each work order, and the conflict check, show no shared file.</p></li>
-  <li><strong>Claim without switching, and add a worktree.</strong>
+  <li><strong>Claim without switching, and add a worktree</strong> — or, with a <code>worktrees</code> block, let
+    <code>/spry:worktree</code> do it (<a href="#worktrees">below</a>).
 <pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py claim SL-4 --no-switch
 <span class="p">$ </span>git worktree add ../shelf-sl-4 sl-4-due-date-in-library-time-zone</code></pre></li>
   <li><strong>Start a session there.</strong>
@@ -120,6 +121,56 @@ worktree and its own agent session:</p>
 
 <p>The backlog helps here: a slice is listed as ready only when the slices it needs are closed, so a pair
 that can't be built side by side never shows up as two ready rows.</p>
+
+<h3 id="worktrees">Worktrees</h3>
+
+<p>With two to four sessions running, you need to know where each worktree lives, which one is free, which
+database and ports each one uses, and which branch each rests on between slices. Add a
+<code>worktrees</code> block to the config and spry keeps track of all of that:</p>
+
+<pre data-label="spry/spry.config.json"><code>"worktrees": {
+  "dir": ".claude/worktrees",
+  "home_branch": "alt{index}",
+  "max": 4,
+  "setup": "tooling/worktree-setup.sh",
+  "share": [".env.example"]
+}</code></pre>
+
+<ul>
+  <li><strong>Your script isolates; spry hands out.</strong> <code>spry.py worktree new</code> makes a worktree on
+  its home branch (<code>alt1</code>, <code>alt2</code>, …) at the main branch's head and runs
+  <code>setup</code> there, with <code>SPRY_WORKTREE</code> (its index) and <code>SPRY_WORKTREE_NAME</code> set.
+  The script creates the worktree's database, picks its ports and writes its <code>.env</code>. Falsify's
+  slots run the same script, with <code>SPRY_FALSIFY_SLOT</code> set as well, so a slot never shares a
+  database with the tree it runs from.</li>
+  <li><strong>One session per worktree.</strong> In a new session, <code>/spry:worktree</code> claims one: by index,
+  by name, or the lowest free one. A worktree another live session holds is never offered. A claim
+  ends with its session, and a claim whose session is gone, or has been silent for 12 hours, can be
+  taken. The main checkout is never claimed: sessions that only plan share it.</li>
+  <li><strong>Home between slices.</strong> After a merge, <code>/spry:merge</code> puts the worktree back on its
+  home branch at the main branch's head. It can't check out the main branch itself, because the main
+  checkout holds it.</li>
+  <li><strong>Leftovers.</strong> <code>spry.py worktree prune</code> removes the scratch trees an interrupted
+  falsify run left behind, and forgets worktrees you deleted by hand.</li>
+</ul>
+
+<h3 id="watch-them-work">Watch them work</h3>
+
+<p>While a slice builds, its session can go quiet for half an hour. To see what each one is doing, run
+<code>spry.py watch</code> in a terminal of its own:</p>
+
+<pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py watch
+shelf1 #1 · sl-4-due-date            │ shelf2 #2 · sl-6-renewals
+claimed by pid 4121 · 42m            │ claimed by pid 4388 · 18m
+SL-4 Due date · step 2 of 3 · Page   │ SL-6 Renewals · open
+14:02 step 1 of 3 committed (3f9c1a) │ 14:20 gate red: lint
+14:31 gate --fast green              │ quiet for 22m</code></pre>
+
+<p>The tool writes those lines itself: each step's commit, each gate, falsify run and merge check, and each
+return home. They cost no tokens, and no session has to remember to write them. A worktree that has
+gone quiet past <code>progress.quiet</code> minutes is marked. Set <code>progress.transcripts</code> to
+<code>"claude-code"</code> and each panel also says what its session is doing now: working, running a
+command, waiting on a subagent, or waiting on you.</p>
 
 <h2 id="requests">Requests in GitHub issues</h2>
 

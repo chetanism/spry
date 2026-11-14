@@ -291,13 +291,42 @@ Slices of stories that touch different files can be built at the same time, each
 worktree and agent session:
 
 - `spry.py related` on each work order, and the conflict check, show no shared file.
-- `spry.py claim SL-<n> --no-switch`, then `git worktree add ../<repo>-sl-<n> sl-<n>-<slug>`, and
+- With a `worktrees` block, `/spry:worktree` gives the session one (*Worktrees*, below); without,
+  `spry.py claim SL-<n> --no-switch`, then `git worktree add ../<repo>-sl-<n> sl-<n>-<slug>`, and
   start a session there.
 - Each worktree has its own `.spry/green`, so one gate never vouches for the other.
 - With `checks.lock: true`, gates and falsify runs in different worktrees run one after the
   other: a run that waits prints who holds the lock, then goes on. Do not stop or retry it.
 - They merge one at a time; the second rebases if the first touched anything it touches
   (`merging.md` step 5).
+
+## Worktrees
+
+With a `worktrees` block in the config, spry makes the worktrees and hands them out
+(`/spry:worktree`, `spry.py worktree`):
+
+```json
+"worktrees": {"dir": ".claude/worktrees", "home_branch": "alt{index}", "max": 4,
+              "setup": "tooling/worktree-setup.sh", "share": [".env.example"], "stale_after": 12}
+```
+
+- **`setup`** runs once in a new worktree with `SPRY_WORKTREE` (its index) and `SPRY_WORKTREE_NAME`
+  set. It creates what the project isolates: a database, ports, its `.env`. Falsify slots run it
+  too, with `SPRY_FALSIFY_SLOT` also set and `SPRY_WORKTREE` the index of the tree the run is in
+  (0 in the main checkout), in place of `falsify.setup`.
+- **A session never enters a worktree another session has claimed.** `worktree claim` refuses one a
+  live session holds; a claim whose process is gone, or that wrote nothing for `stale_after` hours,
+  is taken and said. The session-end hook releases it.
+- **A worktree rests on its home branch at the main branch's head between slices.** `/spry:merge`
+  sends it there (`worktree home`) after the squash, in place of checking out the main branch,
+  which the main checkout holds.
+- The main checkout is never claimed: plan-only sessions share it.
+- **Progress:** `step --commit`, `gate`, `falsify run`, `review-check`, `merge-check` and
+  `worktree home` each write one line to the main checkout's `.spry/progress/events.jsonl`;
+  `spry.py watch` draws a panel per worktree from it. Inside a long step, `spry.py say "<text>"`
+  adds a milestone — always alongside the next tool call, never as a turn of its own.
+- `worktree prune` removes falsify's scratch trees an interrupted run left, and the records of
+  worktrees deleted by hand.
 
 ## IDs and claims
 
