@@ -4771,8 +4771,9 @@ class Worktrees(Base):
         self.assertIn("claimed by pid", page)
         self.assertIn("SL-1 Slice SL-1 · step 2 of 2 · Page", page)
         self.assertIn("routes done", page)
-        later = spry.watch_render(spry.Project(self.root, load=False), width=200, now=time.time() + 3600)
-        self.assertIn("quiet for 1h", later)
+        self.assertNotIn("quiet for", page)
+        later = spry.watch_render(spry.Project(self.root, load=False), width=200, now=time.time() + 2 * 3600)
+        self.assertRegex(later, r"quiet for (1h5\d|2h0\d)")
 
     def test_transcripts_say_what_a_session_waits_on(self):
         log = os.path.join(self.root, "log.jsonl")
