@@ -1037,8 +1037,11 @@ Entry format:
     (with `issues: write` and `GH_TOKEN`). A project without CI on push — connect cut it for minutes
     — adds a nightly scheduled job with that step alone; `/spry:merge` syncs either way;
   - whether people ask for work in issues: if so, put `templates/issue-forms/request.yml` and
-    `bug.yml` in `.github/ISSUE_TEMPLATE/`, replacing forms that are not for people outside the
-    team (a copy of a spry template, a label the repository lacks);
+    `bug.yml` in `.github/ISSUE_TEMPLATE/`. **Ask about each template already there**, one ask
+    each: replace it with spry's form · merge the fields it has and spry's lacks into spry's form
+    (a row in `process-changes.md`, so a later update keeps them) · keep it beside spry's. Name
+    what makes it unfit for people outside the team, if anything — a copy of a spry template, a
+    label the repository lacks. A kept local field is never dropped without a yes;
   - a project whose deploy knows what it shipped may post on those issues itself
     (`issues --json`), recorded as a local process change.
 - **Migrate:**
