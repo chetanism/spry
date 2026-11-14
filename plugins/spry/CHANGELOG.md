@@ -1249,3 +1249,28 @@ Entry format:
 - **Migrate:**
   - nothing is required;
   - the project's copy of `slicing.md` *Steps* → *Build* takes the sentence on `slices.steps.tests`.
+
+## CH-59 · A step's commit formats the step's files when format is the only red check
+
+- **Date:** 2026-11-15 · **Version:** 0.48.0
+- **Touches:** `tool/spry.py` (`step --commit`), `process/slicing.md` (*Steps* → *Build*),
+  `templates/spry.config.json` (`fix` on a `checks.fast` entry), `stacks/{generic,python,typescript-node}.md`
+- **Why:** a step whose only fault is formatting was refused, and the agent ran the formatter and
+  committed again: a full turn, at the context a slice has by then, for a fix a command makes
+  (issue #26). In one project's ten days 28% of the fast gates were red, 27 of them on format.
+  - A `checks.fast` entry may carry `fix`: the same tool in write mode. When **every** red check of
+    a step's fast gate has one, `step --commit` runs it on the step's files, names the files it
+    changed, runs the checks again and commits.
+  - A red check without a `fix` — lint, types — refuses the commit as before, and nothing is
+    formatted.
+  - A `fix` that fails, or changes no file, leaves the commit refused and says which.
+  - Only `step --commit` does this. `gate` and `gate --fast` never change a file.
+- **Adapt:**
+  - add `fix` to the format check, with `{files}` where the step's files go:
+    `"fix": "prettier --write --ignore-unknown {files}"`, or `"fix": "ruff format ."` for a
+    formatter that should not be handed files it cannot read;
+  - leave `fix` out to keep the old behaviour: a format failure refuses the commit;
+  - put it on the linter only if its autofix is one you would commit unread.
+- **Migrate:**
+  - nothing is required;
+  - the project's copy of `slicing.md` *Steps* → *Build* takes the sentence on `fix`.

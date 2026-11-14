@@ -34,7 +34,7 @@
   ],
   "checks": {
     "fast": [
-      {"name": "format", "run": "pnpm prettier --check ."},
+      {"name": "format", "run": "pnpm prettier --check .", "fix": "pnpm prettier --write --ignore-unknown {files}"},
       {"name": "lint", "run": "pnpm eslint . --cache"},
       {"name": "types", "run": "pnpm tsc --noEmit"}
     ]

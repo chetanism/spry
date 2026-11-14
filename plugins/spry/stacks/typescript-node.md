@@ -13,7 +13,7 @@ audience: 8
 | `tests.all` | `vitest run` (threads by default) | `jest --maxWorkers=50%` |
 | `tests.junit` | `reports/junit.xml` — the runner writes it with `--reporter=junit --outputFile=reports/junit.xml` | the file `jest-junit` writes (`JEST_JUNIT_OUTPUT_FILE`) |
 | falsify runner | `vitest run --bail 1 {files}` | `jest --bail {files}` |
-| `checks.fast` | format `prettier --check .` · lint `eslint . --cache` · types `tsc --noEmit` | same |
+| `checks.fast` | format `prettier --check .`, `fix` `prettier --write --ignore-unknown {files}` · lint `eslint . --cache` · types `tsc --noEmit` | same |
 
 - **Fast checks** run before any test, in `spry.py gate` and in CI. Use the project's own tools
   if it has others (Biome, oxlint, oxfmt). In a Turborepo, filter them like the tests:
