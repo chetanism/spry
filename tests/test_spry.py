@@ -1983,6 +1983,79 @@ class Falsify(unittest.TestCase):
         self.assertEqual(spry.falsify_suggest(spry.Project(self.root), "SL-1", "sl-1", fallback=False), [],
                          "merge-check never requires a fallback line")
 
+    def test_suggest_drafts_only_the_tests_that_name_the_source(self):
+        self.write({"tests/test_far.py": '"""S-1/AC-1 from far away"""\nassert True\n'})
+        self.commit("a test citing the criterion that never names the source file")
+        plan = spry.falsify_suggest(spry.Project(self.root), "SL-1", "main")
+        self.assertEqual(plan[0]["files"], ["tests/test_limit.py", "tests/test_overdue.py"])
+        self.assertEqual([r for _, r, _ in self.run_plan(plan)], ["caught", "survived"])
+
+    def test_a_control_no_test_names_is_not_run(self):
+        self.write({"tests/test_limit.py": TEST_LIMIT.replace("from loans import lend", "lend = lambda *a: 'limit' if a[0] > 2 else 'ok'"),
+                    "tests/test_overdue.py": TEST_OVERDUE.replace("from loans import lend", "lend = lambda *a: 'ok'")})
+        self.commit("tests that never name the source file")
+        notes = []
+        plan = spry.falsify_suggest(spry.Project(self.root), "SL-1", "main", notes=notes)
+        self.assertEqual([e["files"] for e in plan], [[], []])
+        self.assertTrue(any("`files: []`" in n for n in notes), notes)
+        ran = spry.run_tests
+        spry.run_tests = lambda *a, **k: self.fail("nothing should run")
+        self.addCleanup(setattr, spry, "run_tests", ran)
+        results = self.run_plan(plan)
+        self.assertEqual([(r, n) for _, r, n in results], [("survived", "no test names loans")] * 2)
+        spry.run_tests = ran
+        lines = self.merge_lines("\n".join(spry.falsify_rows(results)) + "\n")
+        self.assertEqual(sum(1 for s, x in lines if s == "block" and "was not run — no test names loans" in x), 2, lines)
+        for entry in plan:
+            del entry["files"]
+        self.assertEqual([(r, n) for _, r, n in self.run_plan(plan)], [("survived", "")] * 2,
+                         "without `files`, every test citing `expect` runs")
+
+    def test_suggest_leaves_out_guards_the_branch_only_moved(self):
+        old = "def check(n):\n    if n > 9:\n        raise ValueError(n)\n    return n\n"
+        self.write({"src/old.py": old})
+        self.commit("a guard, before the slice")
+        self.git("checkout", "-q", "-b", "move")
+        self.write({"src/old.py": "from fresh import check\n",
+                    "src/fresh.py": old.replace("    return n", "    if n < 0:\n        raise KeyError(n)\n    return n")})
+        self.commit("the function moves to its own file and gains a guard")
+        notes = []
+        plan = spry.falsify_suggest(spry.Project(self.root), "SL-1", "sl-1", notes=notes)
+        self.assertEqual([(e["find"], e["mutation"]) for e in plan],
+                         [("    if n < 0:", "never true"), ("        raise KeyError(n)", "replace with `pass`")])
+        self.assertEqual(plan[1]["with"], "        pass", "deleting an `if`'s only statement would not parse")
+        self.assertTrue(any(n.startswith("2 guards the branch only moved") for n in notes), notes)
+
+    def test_suggest_drafts_no_line_that_only_builds_a_value(self):
+        js = ("export function lend(input, member) {\n"
+              "  const name = input.name || 'none';\n"
+              "  const extra = { ...(input.note === undefined ? {} : { note: input.note }) };\n"
+              "  if (\n    member.loans >= 3 &&\n    member.kind !== 'staff'\n  ) {\n"
+              "    throw new Error(\n      'limit'\n    );\n  }\n"
+              "  return { name, ...extra };\n}\n")
+        self.write({"src/lend.js": js})
+        self.commit("javascript with defaults, a pass-through and a condition over several lines")
+        project = spry.Project(self.root)
+        plan = {e["find"]: e for e in spry.falsify_suggest(project, "SL-1", "main") if e["file"] == "src/lend.js"}
+        self.assertEqual(sorted(plan), ["    member.kind !== 'staff'", "    member.loans >= 3 &&", "    throw new Error(", "  if ("])
+        self.assertEqual(plan["    member.loans >= 3 &&"]["mutation"], "`>=` → `>`")
+        for find in ("    member.kind !== 'staff'", "    throw new Error(", "  if ("):
+            self.assertEqual((plan[find]["with"], plan[find]["mutation"]), (None, "write one"), find)
+        with self.assertRaises(spry.PlanError) as caught:
+            self.run_plan([dict(plan["  if ("], expect=["S-1/AC-1"], files=["tests/test_limit.py"])])
+        self.assertIn("no mutation yet", str(caught.exception))
+        with open(os.path.join(self.root, "spry", "spry.config.json")) as handle:
+            config = json.load(handle)
+        config["falsify"]["controls"] = "operators"
+        self.write({"spry/spry.config.json": json.dumps(config)})
+        self.commit("the old reach")
+        wide = [e["find"] for e in spry.falsify_suggest(spry.Project(self.root), "SL-1", "main") if e["file"] == "src/lend.js"]
+        self.assertIn("  const name = input.name || 'none';", wide)
+        config["falsify"]["controls"] = "everything"
+        self.write({"spry/spry.config.json": json.dumps(config)})
+        with self.assertRaises(spry.PlanError):
+            spry.falsify_suggest(spry.Project(self.root), "SL-1", "main")
+
     def test_a_branch_that_adds_no_source_needs_no_falsify(self):
         self.git("checkout", "-q", "-b", "tests-only")
         self.write({"tests/test_more.py": '"""S-1/AC-1 more"""\nassert True\n'})
@@ -2845,6 +2918,47 @@ class Mutations(unittest.TestCase):
                      "  const p: Promise<boolean> = check(a && b);"):
             self.assertEqual(spry.mutations_for(line), [("", "delete the line")], line)
         self.assertEqual(spry.mutations_for("  const late = days > limit;")[0][1], "` > ` → ` >= `")
+
+    def test_a_control_refuses_stops_or_decides(self):
+        for line in ("  if (a) {", "  } else if (b) {", "    raise Limit()", "  return null;", "  WHERE org_id = $1",
+                     "    AND deleted_at IS NULL", "    .where(eq(loans.org, org))", "  assert(count < 3);"):
+            self.assertTrue(spry.is_control(line), line)
+        for line in ("  const name = input || 'x';", "  ...(x === undefined ? {} : { x }),", "  {open && <Menu />}",
+                     "  // if a == b, refuse", "  const same = a === b;", "  return a.id === b.id;"):
+            self.assertFalse(spry.is_control(line), line)
+            self.assertTrue(spry.is_control(line, rule="operators"), line)
+
+    def test_a_clause_of_a_condition_over_several_lines_is_a_control(self):
+        condition = "function f() {\n  if (\n    a === b &&\n    g(c, (d)) !== e\n  ) {\n    stop();\n  }\n}\n"
+        self.assertTrue(spry.is_control("    a === b &&", condition))
+        self.assertTrue(spry.is_control("    g(c, (d)) !== e", condition))
+        call = "function f() {\n  if (ready) {\n    send(\n      a === b,\n    );\n  }\n}\n"
+        self.assertFalse(spry.is_control("      a === b,", call), "an argument, inside an `if`'s block but not its condition")
+
+    def test_never_a_deletion_that_cannot_parse(self):
+        write_one = (None, "write one")
+        self.assertEqual(spry.mutations_for("  throw new Conflict();", "  if (x) {", "  }")[0], ("", "delete the line"))
+        self.assertEqual(spry.mutations_for("  throw new Conflict(", "  if (x) {", "    'no'")[0], write_one)
+        self.assertEqual(spry.mutations_for("    throw new Conflict();", "  if (x)", "  next();")[0], write_one,
+                         "the only statement of an `if` without braces: deleting it would guard the next line")
+        self.assertEqual(spry.mutations_for("    a === b,", "  const o = {", "  };")[0], write_one)
+        self.assertEqual(spry.mutations_for("    a === b", "    ready &&", "  ) {")[0], write_one)
+        self.assertEqual(spry.mutations_for("  const y = a === b", "  go();", "    ? one")[0], write_one)
+        self.assertEqual(spry.mutations_for("        raise Limit()", "    if n > 3:", "    return n")[0],
+                         ("        pass", "replace with `pass`"))
+        self.assertEqual(spry.mutations_for("        raise Limit()", "        log(n)", "    return n")[0], ("", "delete the line"))
+        self.assertEqual(spry.mutations_for("    WHERE id = $1", "    SELECT * FROM loans", "      AND org_id = $2")[0], write_one,
+                         "the query would no longer parse, and every test would fail: a false catch")
+        self.assertEqual(spry.mutations_for("      AND org_id = $2", "    WHERE id = $1", "      AND gone IS NULL")[0], ("", "delete the line"))
+        self.assertEqual(spry.mutations_for("    WHERE id = $1", "    SELECT * FROM loans", "  `, [id]);")[0], ("", "delete the line"))
+
+    def test_a_guard_with_its_statement_on_the_same_line_is_made_never_true(self):
+        self.assertEqual(spry.mutations_for("  if (!ok(a, ')')) throw new Gone('no (such) loan');", "", "")[0],
+                         ("  if (false && (!ok(a, ')'))) throw new Gone('no (such) loan');", "never true"))
+        self.assertEqual(spry.mutations_for("  } else if (late) {", "", "")[0], ("  } else if (false && (late)) {", "never true"))
+        self.assertEqual(spry.mutations_for("\tif count >= limit {", "", "")[0], ("\tif false && (count >= limit) {", "never true"))
+        self.assertEqual(spry.mutations_for("\tif err := save(x); err != nil {", "\tx := 1", "\t\treturn err")[0], (None, "write one"),
+                         "a condition that also declares cannot be wrapped")
 
     def test_a_pipe_in_a_cell_is_escaped_and_read_back(self):
         entry = {"control": "a || b", "find": "a || b", "with": "", "expect": ["S-1/AC-1"]}

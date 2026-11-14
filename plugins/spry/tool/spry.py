@@ -59,6 +59,7 @@ counted child is.
 from __future__ import annotations
 
 import argparse
+import collections
 import filecmp
 import glob
 import hashlib
@@ -80,7 +81,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.42.0"
+VERSION = "0.43.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -2952,6 +2953,9 @@ def load_plan(project: Project, path: str) -> list:
         for key in ("control", "file", "find", "expect"):
             if not entry.get(key):
                 raise PlanError(f"{where} has no `{key}`")
+        if entry.get("mutation") == WRITE_ONE or ("with" in entry and entry["with"] is None):
+            raise PlanError(f"{where}: no mutation yet — deleting the line would not parse. Set `with` to what the "
+                            "line becomes with the control gone, and `mutation` to a few words saying so")
         entry.setdefault("with", "")
         if entry["find"] == entry["with"]:
             raise PlanError(f"{where}: `find` equals `with` — nothing would change")
@@ -2978,7 +2982,9 @@ def load_plan(project: Project, path: str) -> list:
             hint = f" (cited only outside a test's name: {', '.join(loose[:3])})" if loose else ""
             raise PlanError(f"{where}: no test cites {', '.join(entry['expect'])} — nothing could notice{hint}; "
                             "put the ID in a test's name, or name the test file that guards it")
-        chosen = entry.get("files") or cited
+        # `files: []` is the draft's word that no test citing `expect` names the source file: nothing is run
+        entry["_unnamed"] = entry.get("files") == []
+        chosen = [] if entry["_unnamed"] else entry.get("files") or cited
         stray = sorted(set(chosen) - set(cited))
         if stray:
             raise PlanError(f"{where}: {', '.join(stray)} cites none of {', '.join(entry['expect'])}")
@@ -3138,24 +3144,34 @@ def in_tree(project: Project, root: str, cwd: str) -> str:
 GENERIC_STEMS = ("index", "__init__", "mod", "main", "lib")
 
 
+def source_name(path: str) -> str:
+    """What a test would call this source file: its name without the extension, or its folder's
+    when the name says nothing (`index.ts`, `__init__.py`)."""
+    stem = os.path.splitext(os.path.basename(path))[0]
+    return os.path.basename(os.path.dirname(path)) if stem in GENERIC_STEMS else stem
+
+
+def naming_tests(project: Project, path: str, tests: list) -> list:
+    """The test files among `tests` that name this source file."""
+    stem = source_name(path)
+    if not stem:
+        return []
+    word = re.compile(r"(?<![\w-])" + re.escape(stem) + r"(?![\w-])")
+    out = []
+    for rel in tests:
+        try:
+            if word.search(read(os.path.join(project.root, rel))):
+                out.append(rel)
+        except (OSError, UnicodeDecodeError):
+            pass
+    return out
+
+
 def likely_first(project: Project, entry: dict) -> list:
     """The control's tests in tiers: those that name its source file first, then the rest.
     One failure is enough, so a cheap tier that catches it saves running a criterion's every test."""
     tests = entry.get("_tests") or []
-    path = entry.get("file") or ""
-    stem = os.path.splitext(os.path.basename(path))[0]
-    if stem in GENERIC_STEMS:
-        stem = os.path.basename(os.path.dirname(path))
-    if not stem:
-        return [tests]
-    word = re.compile(r"(?<![\w-])" + re.escape(stem) + r"(?![\w-])")
-    first = []
-    for rel in tests:
-        try:
-            if word.search(read(os.path.join(project.root, rel))):
-                first.append(rel)
-        except (OSError, UnicodeDecodeError):
-            pass
+    first = naming_tests(project, entry.get("file") or "", tests)
     rest = [rel for rel in tests if rel not in first]
     return [tier for tier in (first, rest) if tier] or [tests]
 
@@ -3300,10 +3316,15 @@ WIDE_CONTROL = 20
 
 def falsify_run(project: Project, plan_path: str, dry: bool = False, say=print, jobs=None) -> list:
     """Run a plan. Returns [(entry, result, note)], result caught | survived | unreliable."""
-    plan = load_plan(project, plan_path)
+    whole = load_plan(project, plan_path)
+    plan = [e for e in whole if not e["_unnamed"]]
     table = runners(project)
     timeout = int(project.config.get("falsify", {}).get("timeout", 600))
     groups = group_files(project, [f for e in plan for f in e["_tests"]])
+    unnamed = {id(e): (e, "survived", f"no test names {source_name(e['file'])}") for e in whole if e["_unnamed"]}
+    for entry, _result, note in unnamed.values():
+        say(f"not run: `{entry['control']}` — {note} among those citing {', '.join(entry['expect'])}; "
+            "write one that does, or remove `files` from the control to run them all")
     for entry in plan:
         if len(entry["_tests"]) > WIDE_CONTROL and not entry.get("files"):
             say(f"wide: `{entry['control']}` may run {len(entry['_tests'])} test files — the ones naming "
@@ -3321,6 +3342,8 @@ def falsify_run(project: Project, plan_path: str, dry: bool = False, say=print, 
         for entry in plan:
             say(f"would remove: {entry['control']} — {describe(entry)} — then run {', '.join(entry['_tests'])}")
         return []
+    if not plan:
+        return [unnamed[id(e)] for e in whole]
     previous = signal.getsignal(signal.SIGTERM)
 
     def interrupt(*_):
@@ -3337,7 +3360,8 @@ def falsify_run(project: Project, plan_path: str, dry: bool = False, say=print, 
     dirty = [e["file"] for e in plan if not git_clean(project.root, e["file"])]
     if dirty:
         raise PlanError("after the run these files are not as committed — check them now: " + ", ".join(dirty))
-    return results
+    ran = iter(results)
+    return [unnamed[id(e)] if e["_unnamed"] else next(ran) for e in whole]
 
 
 def slot_env(slot: int, slots: int) -> dict:
@@ -3639,24 +3663,139 @@ def record_falsify(project: Project, slice_id: str, rows: list, replace: bool = 
     return item.doc, len(kept) - len(touched)
 
 
-CONTROL_LINE = re.compile(r"^\s*(if\b|elif\b|else if\b|unless\b|guard\b|throw\b|raise\b|return\s+(err|Err|error|None|null|false|False)\b|assert\b|require\b)|(\|\||&&|>=|<=|===|!==|==|!=)")
+# A control is a line that refuses, stops or decides. An operator in an expression that only builds
+# a value — a default (`a || b`), a pass-through (`x === undefined ? {} : { x }`), a JSX condition — is
+# not one: about a third of one slice's drafted controls guarded nothing.
+GUARD_LINE = re.compile(r"^\s*(?:\}\s*)?(if\b|elif\b|else if\b|unless\b|guard\b|throw\b|raise\b"
+                        r"|return\s+(err|Err|error|None|null|false|False)\b|assert\b|require\b)")
+OPERATOR = re.compile(r"\|\||&&|>=|<=|===|!==|==|!=")
+# a comparison that decides which rows a query reads: SQL's WHERE and its AND / OR lines, a builder's `.where(`
+WHERE_LINE = re.compile(r"\bWHERE\b.*(?:[=<>]|\b(?:IN|IS|LIKE|BETWEEN)\b)|^\s*[\"'`]?\s*(?:AND|OR)\b.*(?:[=<>]|\b(?:IN|IS|LIKE|BETWEEN)\b)"
+                        r"|\.where\(")
+COMMENT_ONLY = re.compile(r"^\s*(#|//|/\*|\*|--\s)")
+CONDITION_HEAD = re.compile(r"(?:\b(?:if|elif|while|unless|guard)|\belse\s+if)\s*$")
+CONTROL_RULES = ("guards", "operators")
+# what `falsify.controls: operators` restores: any line holding one of these operators, wherever it stands
+CONTROL_LINE = re.compile(GUARD_LINE.pattern + "|(" + OPERATOR.pattern + ")")
 # Boundaries only: `==` ↔ `!=` is negation (§16). A bare `>` / `<` needs spaces round it, so a
 # generic (`Array<Item>`) is never taken for a comparison.
 COMPARISON_FLIPS = [(">=", ">"), ("<=", "<"), (" > ", " >= "), (" < ", " <= ")]
+WRITE_ONE = "write one"
+QUOTED = re.compile(r"""(["'`])(?:\\.|(?!\1).)*\1""")
+ENDS_OPEN = re.compile(r"(?:[,(\[+\-*/%&|=?<>\\.]|\b(?:and|or|not)\b)\s*$")
+STARTS_OPEN = re.compile(r"^\s*(?:[)\]}.?:&|,]|(?:and|or)\b)")
+BARE_BLOCK = re.compile(r"^\s*(?:\}\s*)?(?:(?:if|else if|for|while)\b.*\)|else)\s*$")
 
 
-def mutations_for(line: str) -> list:
-    """Candidate (with, label) mutations for one added source line, most telling first."""
+def inside_condition(text: str, at: int) -> bool:
+    """Whether the line starting at offset `at` stands inside the brackets of an `if` or a `while`
+    opened on an earlier line — a clause of a condition written over several lines."""
+    depth, i, floor = 0, at - 1, max(0, at - 4000)
+    while i >= floor:
+        c = text[i]
+        if c == ")":
+            depth += 1
+        elif c == "(":
+            if depth:
+                depth -= 1
+            elif CONDITION_HEAD.search(text[max(0, i - 12):i]):
+                return True
+        elif c in ";{}" and depth == 0:
+            return False  # a statement ended, or a block opened, between here and any condition
+        i -= 1
+    return False
+
+
+def is_control(line: str, text: str = "", rule: str = "guards") -> bool:
+    """Whether an added source line is a safeguard falsify should remove. `text` is its file, in
+    which it occurs once."""
+    if rule == "operators":
+        return bool(CONTROL_LINE.search(line))
+    if COMMENT_ONLY.match(line):
+        return False
+    if GUARD_LINE.match(line) or WHERE_LINE.search(line):
+        return True
+    at = text.find(line) if text else -1
+    return bool(OPERATOR.search(line)) and at >= 0 and inside_condition(text, at)
+
+
+def neighbours(text: str, line: str) -> tuple:
+    """(the line of code before, the line after) the one line of `text` equal to `line`; blank
+    lines and comments skipped, '' at either end of the file."""
+    lines = text.split("\n")
+    at = next((i for i, l in enumerate(lines) if l == line), None)
+    if at is None:
+        return "", ""
+    code = lambda l: l.strip() and not COMMENT_ONLY.match(l)
+    before = next((l for l in reversed(lines[:at]) if code(l)), "")
+    after = next((l for l in lines[at + 1:] if code(l)), "")
+    return before, after
+
+
+def whole_statement(line: str, before: str, after: str) -> bool:
+    """Whether deleting `line` leaves a file that still parses: it is a statement by itself — its
+    brackets closed, nothing carried over from the line before or on to the line after."""
+    bare = QUOTED.sub('""', line)
+    if any(bare.count(o) != bare.count(c) for o, c in ("()", "[]", "{}")):
+        return False
+    if ENDS_OPEN.search(bare):
+        return False
+    if STARTS_OPEN.match(bare):
+        return False
+    before = QUOTED.sub('""', before)
+    if ENDS_OPEN.search(before) or BARE_BLOCK.match(before):
+        return False  # the tail of an expression, or the only statement of an `if` without braces
+    return not re.match(r"^\s*(?:[.?&|]|(?:and|or|AND|OR)\b)", after)
+
+
+def indent_of(line: str) -> int:
+    return len(line) - len(line.lstrip())
+
+
+def never_true(line: str):
+    """The line with its `if (…)` or `while (…)` made never true, or None when the condition does not
+    close on this line."""
+    m = re.match(r"^(\s*(?:\}\s*)?(?:else\s+)?(?:if|while)\s*)\(", line)
+    if not m:
+        return None
+    depth, quote, i = 0, None, m.end() - 1
+    while i < len(line):
+        c = line[i]
+        if quote:
+            if c == "\\":
+                i += 1
+            elif c == quote:
+                quote = None
+        elif c in "\"'`":
+            quote = c
+        elif c == "(":
+            depth += 1
+        elif c == ")":
+            depth -= 1
+            if depth == 0:
+                return f"{line[:m.end()]}false && ({line[m.end():i]}){line[i:]}"
+        i += 1
+    return None
+
+
+def mutations_for(line: str, before: str | None = None, after: str = "") -> list:
+    """Candidate (with, label) mutations for one added source line, most telling first. Given the
+    lines of code round it (`before`, `after`), never one that cannot parse: a line that is not a
+    statement by itself gets (None, "write one"), for a person to fill."""
     stripped = line.strip()
     out = []
     # A guard is removed by making it never true. Negating it would also break the normal path,
     # so any test at all would "catch" it — a false catch, the one result falsify must not give.
-    m = re.match(r"^(\s*(?:if|else if|while)\s*)\((.*)\)(\s*\{?\s*)$", line)
-    if m:
-        out.append((f"{m.group(1)}(false && ({m.group(2)})){m.group(3)}", "never true"))
+    never = never_true(line)
+    if never:
+        out.append((never, "never true"))
     m = re.match(r"^(\s*(?:if|elif|while)\s+)(.*?)(:\s*)$", line)
     if m and not out:
         out.append((f"{m.group(1)}False and ({m.group(2)}){m.group(3)}", "never true"))
+    # Go, Rust, Swift: `if cond {` with no brackets — but not one that also declares (`if x := f(); …`, `if let`)
+    m = re.match(r"^(\s*(?:\}\s*else\s+)?if\s+)([^(\s].*?)(\s*\{\s*)$", line)
+    if m and not out and not re.search(r";|:=|\b(?:let|var|case)\b", m.group(2)):
+        out.append((f"{m.group(1)}false && ({m.group(2)}){m.group(3)}", "never true"))
     for old, new in COMPARISON_FLIPS:
         at = re.search(r"(?<![=!<>])" + re.escape(old) + r"(?![=>])", line)
         if at and old.strip() in "<>" and re.search(r"\w<\w|<\w[\w.]*>", line):
@@ -3664,27 +3803,51 @@ def mutations_for(line: str) -> list:
         if at:
             out.append((line[:at.start()] + new + line[at.end():], f"`{old}` → `{new}`"))
             break
+
+    def delete():
+        # one `AND …` line of a query's WHERE goes whatever follows it; the WHERE line itself only
+        # when no `AND` hangs from it — a query that no longer parses fails every test, a false catch
+        more = "" if re.match(r"^\s*(?:AND|OR)\b", line) else after
+        if before is None or whole_statement(line, before, more):
+            # the only statement under a Python `if x:` — deleting it leaves a block with no body
+            if before and before.rstrip().endswith(":") and indent_of(before) < indent_of(line) and indent_of(after) < indent_of(line):
+                return (line[:indent_of(line)] + "pass", "replace with `pass`")
+            return ("", "delete the line")
+        return (None, WRITE_ONE)
+
     if re.match(r"^\s*(throw|raise|return\s+(err|Err|error|None|null|false|False)\b|assert\b|require\b)", line):
-        out.append(("", "delete the line"))
+        out.append(delete())
     if not out and stripped:
-        out.append(("", "delete the line"))
+        out.append(delete())
     return out
 
 
-def added_source(project: Project, base: str) -> list:
-    """[(path, line)] — every line this branch added outside tests, `spry/` and `checks.docs`."""
+def diff_source(project: Project, base: str) -> tuple:
+    """([(path, line)] added outside tests, `spry/` and `checks.docs`; Counter of the lines the
+    branch removed, spaces squeezed) — from the diff against `base`."""
     diff = git(project.root, "diff", "--relative", "-U0", f"{base}...HEAD", "--", ".", ":(exclude)spry")
     if diff.returncode != 0:
         raise PlanError(f"git diff against {base} failed: {diff.stderr.strip()}")
     skip = project._test_globs() + [glob_regex(g) for g in project.config.get("checks", {}).get("docs") or DEFAULT_DOCS]
-    out, current = [], None
+    out, removed, current, body = [], collections.Counter(), None, False
     for line in diff.stdout.split("\n"):
-        if line.startswith("+++ "):
+        if line.startswith("diff --git "):
+            body = False
+        elif line.startswith("@@"):
+            body = True
+        elif not body and line.startswith("+++ "):
             path = line[6:] if line.startswith("+++ b/") else None
             current = path if path and not any(g.match(path) for g in skip) else None
-        elif current and line.startswith("+"):
+        elif body and line.startswith("-"):
+            removed[" ".join(line[1:].split())] += 1
+        elif body and current and line.startswith("+"):
             out.append((current, line[1:]))
-    return out
+    return out, removed
+
+
+def added_source(project: Project, base: str) -> list:
+    """[(path, line)] — every line this branch added outside tests, `spry/` and `checks.docs`."""
+    return diff_source(project, base)[0]
 
 
 # A line worth deleting when a slice adds no guard: it computes or stores something. Not an import,
@@ -3694,10 +3857,19 @@ STATEMENT_LINE = re.compile(r"^\s*(?!(import|from|export|def|class|function|inte
 FALLBACK_CONTROLS = 5
 
 
-def falsify_suggest(project: Project, slice_id: str, base: str, fallback: bool = True) -> list:
-    """A draft plan from the source lines this branch added, for a person to prune.
-    With no guard among them, the lines that compute or store something are offered instead
-    (`fallback`), so a slice that changes a value — a key, a digest — still has candidates."""
+def control_rule(project: Project) -> str:
+    rule = project.config.get("falsify", {}).get("controls", "guards")
+    if rule not in CONTROL_RULES:
+        raise PlanError(f"falsify.controls must be one of {', '.join(CONTROL_RULES)}, not {rule!r}")
+    return rule
+
+
+def falsify_suggest(project: Project, slice_id: str, base: str, fallback: bool = True, notes: list | None = None) -> list:
+    """A draft plan from the source lines this branch added: the lines that refuse, stop or decide.
+    A line the branch only moved — its text was removed elsewhere in the same diff — is left out: its
+    tests were another slice's. With no guard among them, the lines that compute or store something
+    are offered instead (`fallback`), so a slice that changes a value — a key, a digest — still has
+    candidates. `notes` collects what a person should know about the draft."""
     item = project.items.get(slice_id)
     if item is None or item.type != "slice":
         raise PlanError(f"no slice {slice_id}")
@@ -3705,32 +3877,60 @@ def falsify_suggest(project: Project, slice_id: str, base: str, fallback: bool =
     expect = [f"{story}/{ac}" for ac in item.fm.get("covers") or []] if story else []
     if item.parent and item.parent.type in ("bug", "task"):
         expect = [item.parent.id]  # no criteria: its tests cite the bug or the task
-    added = added_source(project, base)
+    rule = control_rule(project)
+    added, removed = diff_source(project, base)
     texts: dict = {}
 
-    def once(path, source):
+    def text_of(path):
         if path not in texts:
             try:
                 texts[path] = read(os.path.join(project.root, path))
             except (OSError, UnicodeDecodeError):
                 texts[path] = ""
-        return texts[path].count(source) == 1
+        return texts[path]
 
-    plan = []
+    def once(path, source):
+        return text_of(path).count(source) == 1
+
+    cited = sorted({path for ref in expect for path, _, _ in project.tests.get(ref, []) + project.item_tests.get(ref, [])})
+
+    def entry(path, source, with_, label):
+        out = {"control": " ".join(source.split())[:70], "file": path, "find": source,
+               "with": with_, "mutation": label, "expect": list(expect)}
+        if cited:  # only the tests that can notice: those naming the source file; none → nothing to run
+            out["files"] = naming_tests(project, path, cited)
+        return out
+
+    plan, moved = [], 0
     for path, source in added:
-        if CONTROL_LINE.search(source) and once(path, source):
-            for with_, label in mutations_for(source)[:1]:
-                plan.append({"control": " ".join(source.split())[:70], "file": path, "find": source,
-                             "with": with_, "mutation": label, "expect": list(expect)})
+        if once(path, source) and is_control(source, text_of(path), rule):
+            squeezed = " ".join(source.split())
+            if removed[squeezed] > 0:
+                removed[squeezed] -= 1
+                moved += 1
+                continue
+            for with_, label in mutations_for(source, *neighbours(text_of(path), source))[:1]:
+                plan.append(entry(path, source, with_, label))
+    if notes is not None:
+        if moved:
+            notes.append(f"{moved} guard{'s' if moved != 1 else ''} the branch only moved "
+                         f"{'are' if moved != 1 else 'is'} left out: the text was removed elsewhere in the same diff")
+        unwritten = sum(1 for e in plan if e["mutation"] == WRITE_ONE)
+        if unwritten:
+            notes.append(f"{unwritten} control{'s' if unwritten != 1 else ''} with `mutation: {WRITE_ONE}`: deleting the "
+                         "line would not parse — set `with` and `mutation` before the run")
+        unnamed = sum(1 for e in plan if e.get("files") == [])
+        if unnamed:
+            notes.append(f"{unnamed} control{'s' if unnamed != 1 else ''} with `files: []`: no test citing `expect` names the "
+                         "source file, so the run reports `survived` without running — write a test that does, or remove "
+                         "`files` to run them all")
     if plan or not fallback:
         return plan
     for path, source in added:
         if len(plan) == FALLBACK_CONTROLS:
             break
-        if STATEMENT_LINE.match(source) and once(path, source):
-            plan.append({"control": " ".join(source.split())[:70], "file": path, "find": source, "with": "",
-                         "mutation": "delete the line — no guard was added; keep the lines a test must notice",
-                         "expect": list(expect)})
+        if STATEMENT_LINE.match(source) and once(path, source) and whole_statement(source, *neighbours(text_of(path), source)):
+            plan.append(entry(path, source, "", "delete the line — no guard was added; keep the lines a test must notice"))
     return plan
 
 
@@ -4880,7 +5080,10 @@ def merge_check(project: Project, slice_id: str, base: str | None = None) -> lis
         result = cells[-1].strip()
         control = cells[0].replace("\\|", "|")
         reason = re.sub(r"^\w+\s*(—|--|-|:)?\s*", "", result)
-        if result.lower() == "survived":
+        if result.lower().startswith("survived — no test names"):
+            out.append(("block", f"falsify: `{control}` was not run — {reason}: write a test that does and re-run, "
+                                 "or remove `files` from the control to run every test citing its `expect`"))
+        elif result.lower() == "survived":
             out.append(("block", f"falsify: `{control}` survived — add a test and re-run, or write the reason after `survived`"))
         elif result.lower().startswith("survived"):
             out.append(("warn", f"falsify: `{control}` survived, because \"{reason}\" — a person accepts this at the merge, or it gets a test"))
@@ -4930,7 +5133,8 @@ def added_or_none(project: Project, base: str) -> bool:
 
 
 def required_controls(project: Project, item: Item, rows: list, base: str) -> list:
-    """Every control `falsify suggest` finds in the diff must have a row: the agent adds, never drops."""
+    """Every control `falsify suggest` finds in the diff must have a row: the agent adds, never drops.
+    It follows `suggest`, so a line that only builds a value, or that the branch only moved, needs none."""
     try:
         wanted = falsify_suggest(project, item.id, base, fallback=False)
     except PlanError as e:
@@ -7876,7 +8080,8 @@ def main(argv=None) -> int:
         try:
             if args.action == "suggest":
                 base = args.base or project.config.get("main_branch", "main")
-                plan = falsify_suggest(project, args.slice, base)
+                notes: list = []
+                plan = falsify_suggest(project, args.slice, base, notes=notes)
                 out = args.out or os.path.join(project.root, ".spry", "falsify", f"{args.slice}.json")
                 os.makedirs(native(os.path.dirname(out)), exist_ok=True)
                 write(out, json.dumps(plan, indent=2, ensure_ascii=False) + "\n")
@@ -7887,7 +8092,9 @@ def main(argv=None) -> int:
                 if plan and not plan[0]["expect"]:
                     print("fill in `expect` — the slice covers no story criteria and is not under a bug or a task; "
                           "name a test file if one guards it")
-                print("prune it to the safeguards that matter, then: falsify run " + project.rel(out))
+                for note in notes:
+                    print(note)
+                print("then: falsify run " + project.rel(out))
                 return 0
             started = time.time()
             results = falsify_run(project, args.plan, dry=args.dry_run, jobs=args.jobs)

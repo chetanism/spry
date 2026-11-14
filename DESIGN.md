@@ -453,6 +453,20 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 - **Plan drafted by `/spry:slice-close` from the diff**, not by hand: guards, validation,
   authorisation and error branches the slice added. A person can edit it before it runs.
+- **A control is a line that refuses, stops or decides:** `if` / `else if` / `unless` / `guard`,
+  `throw`, `raise`, an error return, `assert`, `require`; a clause of an `if` or `while` condition
+  written over several lines; a comparison in a `WHERE` (SQL's, its `AND` / `OR` lines, a builder's
+  `.where(`). An operator in an expression that only builds a value — a default, a pass-through, a
+  JSX condition — is not one: about a third of one slice's controls guarded nothing.
+  `falsify.controls: operators` restores the old reach, any line holding `||`, `&&` or a comparison.
+- **A guard the branch only moved is not drafted:** an added line whose text the same diff removed
+  elsewhere, spaces aside, once per removed copy. Its tests cite another slice's criteria, so it
+  could only read `survived`. `suggest` says how many it left out.
+- **Never a mutation that cannot parse.** A line is deleted only when it is a statement by itself:
+  its brackets closed, nothing carried over from the line before or on to the line after, not the
+  one statement of an `if` without braces. The only statement under a Python `if x:` becomes
+  `pass`. Anything else is drafted `mutation: write one` with no `with`, and `run` refuses the plan
+  until a person fills it — before, such a row read `unreliable — failed, but no test did`.
 - **Mutations offered automatically** for each control (`falsify suggest`): a guard made *never true*,
   a comparison's boundary flipped (`>=` ↔ `>`; never `==` ↔ `!=`, and never a generic's `<…>`), a
   `throw` / `raise` / error return deleted. **Not negation:**
@@ -465,8 +479,13 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   names a test file by its path (one `tests.match` takes): a task's guard is often covered by a
   test that was there before the task, and names nothing.
 - **Runs only those test files**, through per-runner commands with `{files}`, using the runner's
-  fail-fast flag — one failure is enough. Files that name the control's source file run first; the
-  rest run only if those miss it. A control cited by more than 20 files is named `wide:` at the run.
+  fail-fast flag — one failure is enough.
+- **Only the tests that can notice.** `suggest` drafts each control's `files`: the tests citing its
+  `expect` that also name its source file. A control with `files` runs only those — a survivor
+  used to run every file citing the slice's criteria, integration tests included. `files: []` —
+  no citing test names the file — is reported `survived — no test names <file>` with nothing run,
+  and `merge-check` blocks on that row. Without `files`, the naming tests run first and the rest
+  only if those miss it; more than 20 is named `wide:` at the run.
 - **Baseline once** for the union of files; a red baseline marks the group `unreliable`.
 - **`caught` only when a test failed**, by the runner's own report — a summary line such as
   `1 failed` (pytest, vitest, jest, mocha, go, cargo, unittest, rspec, `node --test`), or the
@@ -1031,3 +1050,10 @@ in `spry/history/writ.md`, then retires `canon/`.
   line, so `index` writes the same READMEs on every file system; a slice's line budget does not
   count the rows of its tool-written `### Falsify` table. From pulse-v2's Windows users (issue #12)
   and a slice whose 357 recorded controls alone passed its budget (issue #15).
+- 2026-11-14 — falsify drafts fewer controls, valid mutations and only the tests that can notice
+  (CH-54, 0.43.0): a control is a line that refuses, stops or decides, not any line with an
+  operator (`falsify.controls`); a guard the branch only moved is left out; a deletion that would
+  not parse is drafted `write one`; each control's `files` are the citing tests that name its
+  source file, and `files: []` is `survived` with nothing run. `merge-check` follows the draft.
+  From one project's ten days (issue #17): 16.1 hours of falsify over 101 slices, 1,100 of 5,106
+  controls `unreliable`.

@@ -144,13 +144,23 @@ that merges.
    Ask 1; on *c* or *d* it goes on to *Falsify* with nothing fixed.
 6. **Falsify** — prove the tests notice each safeguard the slice added:
    - `python3 spry/tool/spry.py falsify suggest SL-<n>` drafts `.spry/falsify/SL-<n>.json` from the
-     source lines the branch added: one candidate per guard, comparison or error line, each with a
-     mutation that removes it (a guard made *never true*, a boundary flipped, a `throw` deleted) and
-     `expect` taken from `covers` — or, for a bug's or a task's slice, the bug or the task
+     source lines the branch added: one candidate per line that refuses, stops or decides — an `if`,
+     a `throw` or `raise`, an error return, an `assert`, a clause of a condition, a `WHERE` — each
+     with a mutation that removes it (a guard made *never true*, a boundary flipped, a `throw`
+     deleted) and `expect` taken from `covers` — or, for a bug's or a task's slice, the bug or the task
      (`["B-4"]`, `["T-7"]`), which its tests name, since neither has criteria. **No guard added** — the slice changes a value, a key, a digest —
      it offers up to five lines that compute or store something, each deleted: keep the ones a test
      must notice. **No source line added** — only tests or documents — it says so, and there is
-     nothing to falsify: `merge-check --base` accepts the empty table.
+     nothing to falsify: `merge-check --base` accepts the empty table. A line that only builds a
+     value (a default, a pass-through) and a guard the branch only moved are not drafted; `suggest`
+     says how many it left out as moved.
+   - **`mutation: write one`** — deleting that line would not parse (it is part of a longer
+     expression). Set `with` to what the line becomes with the control gone, and `mutation` to a
+     few words saying so; the run refuses the plan until then.
+   - **`files`** lists the tests that cite `expect` *and* name the control's source file: only
+     those run. `files: []` means none does — the run reports `survived — no test names <file>`
+     without running, and `merge-check` blocks on it: write a test that names the file, or remove
+     `files` from the control to run every test citing its `expect`.
    - **Keep every control the draft lists** — `merge-check` blocks when one has no row. Narrow
      each `expect` to the criteria that control serves, and add any the draft missed (same
      `find` / `with` form). A guard that a test no ID names already covers — common in a task's
@@ -159,11 +169,10 @@ that merges.
    - Rename a `control` in plain words if it helps the reader — before the run or in the table
      after. The `<!-- f:… -->` in each row names the control by its file and line, so keep it.
    - `falsify run .spry/falsify/SL-<n>.json --dry-run`, then
-     `falsify run .spry/falsify/SL-<n>.json --record SL-<n>` — it runs only the tests citing each
-     `expect` — those naming the control's source file first, the rest only if they do not
-     notice — stops at the first failure, restores every file, and writes the table. A control
-     whose `expect` is cited by many files is named `wide:`; list the files that matter under
-     `files` to cap it. With
+     `falsify run .spry/falsify/SL-<n>.json --record SL-<n>` — it runs each control's `files`,
+     stops at the first failure, restores every file, and writes the table. A control with no
+     `files` runs every test citing its `expect` — those naming its source file first — and is
+     named `wide:` when they are many. With
      `falsify.parallel` set (or `--jobs N`) it spreads controls over git worktrees and never
      touches this tree; commit first, or it runs serially and says why.
    - `survived` → a new test, then run again until `caught` — a plan of only the survivors will do:
