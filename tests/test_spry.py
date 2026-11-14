@@ -3013,6 +3013,35 @@ class Falsify(unittest.TestCase):
             line = json.loads(handle.read())
         self.assertEqual((line["ok"], line["tests"], [s[0] for s in line["steps"]]), (False, False, ["spry check", "lint"]))
 
+    def test_gate_logs_the_rules_a_red_check_names(self):
+        self.gate_config("echo 'a.ts:1:2: error oxc(no-map-spread): slow'; echo 'a.ts:9:2: error oxc(no-map-spread): slow'; "
+                         "echo 'b.ts(3,7): error TS2741: missing'; exit 1")
+        self.gate()
+        with open(os.path.join(self.root, ".spry", "pace", "steps.jsonl")) as handle:
+            line = json.loads(handle.read())
+        self.assertEqual(line["red"], {"lint": {"oxc(no-map-spread)": 2, "TS2741": 1}})
+        self.gate_config("echo 'x.ts (0ms)'; echo 'Format issues found in above 1 files.'; exit 1")
+        self.gate()
+        with open(os.path.join(self.root, ".spry", "pace", "steps.jsonl")) as handle:
+            line = [json.loads(x) for x in handle][-1]
+        self.assertNotIn("red", line, "a check that names no rule adds nothing: its failed step already says it was red")
+
+    def test_a_rule_is_read_from_each_linter_s_own_line(self):
+        said = {"a.ts:1:2: error unicorn(no-array-sort): Use toSorted": "unicorn(no-array-sort)",
+                "  × eslint(no-unused-vars): 'x' is declared but never used.": "eslint(no-unused-vars)",
+                "@app/api:typecheck: src/a.ts(33,7): error TS2741: Property 'x' is missing": "TS2741",
+                "  12:5  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any": "@typescript-eslint/no-explicit-any",
+                "src/a.py:1:8: F401 `os` imported but unused": "F401",
+                "F401 [*] `os` imported but unused": "F401",
+                "src/a.py:3: error: Argument 1 has incompatible type \"str\"  [arg-type]": "arg-type",
+                "a.ts:2:1 lint/style/noVar  FIXABLE": "lint/style/noVar"}
+        for line, rule in said.items():
+            self.assertEqual(spry.gate_rules(line), {rule: 1}, line)
+        self.assertEqual(spry.gate_rules("Checking formatting...\napps/a.ts (0ms)\n  12:5  warning  later  no-console\n"
+                                         "see index of(things): here\n"), {})
+        many = "\n".join(f"a.ts:1:1: error p(rule-{n}): x" for n in range(30)) + "\na.ts:1:1: error p(rule-7): x"
+        self.assertEqual((len(spry.gate_rules(many)), next(iter(spry.gate_rules(many)))), (spry.GATE_RULES_KEPT, "p(rule-7)"))
+
     def test_gate_writes_each_run_to_the_step_log(self):
         self.gate_config("echo f >> LOG")
         self.gate()
@@ -3721,6 +3750,131 @@ class Pace(Base):
         p = t.project()
         s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
         self.assertFalse(any("design review" in line for line in spry.pace_slice_lines(s, [], spry.pace_config(p))))
+
+    def launched(self, t, ident, agent, description, branch="sl-1-a"):
+        """The two records of a subagent started and left to work: the call and its launch notice."""
+        return [tool(t, ident, name="Agent", branch=branch, description=description, prompt="go", subagent_type="general-purpose"),
+                result(t + 1, ident, f"Async agent launched successfully.\nagentId: {agent} (internal ID)", branch=branch)]
+
+    def handed_back(self, t, agent, branch="sl-1-a"):
+        record = said(t, f"Another Claude session sent a message:\n<agent-message from=\"{agent}\">\n[Subagent hand-back] done", branch=branch)
+        record["origin"] = {"kind": "peer", "from": agent, "senderTaskId": agent}
+        return record
+
+    def subagent(self, path, agent, description, first, last, **usage):
+        folder = os.path.join(path[:-6], "subagents")
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, f"agent-{agent}.jsonl"), "w") as handle:
+            handle.write("".join(json.dumps(r) + "\n" for r in [
+                said(first, "your task", origin=None), used(reply(last), f"u-{agent}", **usage)]))
+        if description:
+            with open(os.path.join(folder, f"agent-{agent}.meta.json"), "w") as handle:
+                json.dump({"agentType": "general-purpose", "description": description}, handle)
+
+    def test_a_wait_for_its_own_subagent_is_not_another_session(self):
+        t = self.tree()
+        records = ([said(0, "close it")] + self.launched(10, "a", "r1", "Review SL-1 step 1") + self.launched(12, "b", "r2", "Review SL-1 seams")
+                   + [reply(20),
+                      self.handed_back(2500, "r1"),            # 41 minutes on: longer than `away`, and the slice was not idle
+                      reply(2510),
+                      self.handed_back(2600, "r2"), reply(2610),
+                      said(2700, "<agent-message from=\"zz\">hello</agent-message>", origin="peer"), reply(2710)]
+                   + self.launched(2720, "c", "f1", "Fix SL-1 step 1 finding") + [reply(2730), said(2790, "and?"), reply(2800),
+                                                                                  said(4000, "still there?"), reply(4010)])
+        path = self.log(t, "a", records)
+        self.subagent(path, "r1", "Review SL-1 step 1", 11, 2490, input_tokens=1000)
+        self.subagent(path, "r2", "Review SL-1 seams", 13, 2590, input_tokens=1000)
+        self.subagent(path, "f1", "Fix SL-1 step 1 finding", 2722, 2795, input_tokens=4000)
+        self.subagent(path, "old", "", 30, 40, input_tokens=10)
+        d = spry.pace_read_log(path, 1800, [])
+        kinds = d["branches"]["sl-1-a"]["kinds"]
+        self.assertEqual(kinds["subagent"], 3 + (2500 - 20) + (2600 - 2510) + (2790 - 2730),
+                         "a second for each launch, the hand-back's wait, and a prompt typed while one still worked")
+        self.assertEqual(kinds["session"], 90, "a message from a session it did not start is still another session")
+        self.assertEqual(kinds["you"], 1200, "a subagent that stopped without reporting takes no later wait")
+        phases = d["branches"]["sl-1-a"]["phases"]
+        self.assertEqual(phases["review"]["subagent"], 2 + 2480 + 90, "the review lasts until the last reviewer reports")
+        self.assertEqual([a[4] for a in d["agents"]], ["fix", "other", "review", "review"])
+        p = t.project()
+        s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
+        self.assertEqual(len(s["reviews"]), 2)
+        lines = "\n".join(spry.pace_slice_lines(s, [], spry.pace_config(p)))
+        self.assertIn("- subagents: 4, 1h25 of their own work — review 2 (1h24, 2k), fix 1 (1m13, 4k), other 1 (0m10, 10)", lines)
+        self.assertIn("| subagents waited on | 43m53 |", lines)
+        page = spry.pace_page(p, {"SL-1": s})
+        self.assertIn("| review | 2 | 1 | 1h24 | 42m08 | 2k |", page)
+        self.assertIn("| **subagents** | 43m53 |", page)
+
+    def test_a_subagent_s_kind_is_the_first_word_that_says_one(self):
+        said_for = {"Review SL-886 step 5": "review", "Fresh-eyes review of SL-489": "review", "Design review of SL-580": "design review",
+                    "Fix SL-582 step 2 review findings": "fix", "Build SL-580 step 3": "build", "Implement the limit": "build",
+                    "Falsify tests for SL-573 db": "tests", "SL-576 step 2 survivor tests": "tests", "Docs pass: security pages": "other"}
+        for words, kind in said_for.items():
+            self.assertEqual(spry.pace_agent_kind(words), kind, words)
+
+    def test_a_slice_shows_what_its_reviews_found_and_the_checks_that_went_red(self):
+        text = (slice_("SL-1") + "\n### Choices taken\n\n- **A** — because\n  more of it\n- **B** — because\n"
+                "\n### Design review\n\n- 1 Blocker, 4 Should — 1 asked\n\n## Close summary\n"
+                "\n### Review\n\n- 1 Blocker, 3 Should, 2 Nit — 4 fixed\n- 0 Blocker, 1 Should — 1 fixed\n")
+        t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): text})
+        self.log(t, "a", self.session())
+        steps = [{"command": "gate", "at": 1, "seconds": 9, "ok": False, "fast": True, "tests": False,
+                  "steps": [["spry check", 1, True], ["lint", 5, False], ["format", 1, False]], "red": {"lint": {"oxc(no-map-spread)": 6, "TS1": 1}}},
+                 {"command": "gate", "at": 2, "seconds": 9, "ok": False, "fast": True, "tests": False,
+                  "steps": [["lint", 5, False]], "red": {"lint": {"oxc(no-map-spread)": 1}}},
+                 {"command": "gate", "at": 3, "seconds": 90, "ok": False, "fast": False, "tests": True,
+                  "steps": [["lint", 5, True], ["affected tests", 80, False]]}]
+        os.makedirs(os.path.join(t.root, ".spry", "pace"))
+        with open(os.path.join(t.root, ".spry", "pace", "steps.jsonl"), "w") as handle:
+            handle.write("".join(json.dumps({"branch": "sl-1-a", **step}) + "\n" for step in steps))
+        p = t.project()
+        s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
+        self.assertEqual(s["review"], {"reviews": 2, "blockers": 1, "shoulds": 4, "nits": 2, "fixed": 5})
+        lines = spry.pace_slice_lines(s, [], spry.pace_config(p))
+        self.assertIn("- review: 1 Blocker, 4 Should, 2 Nit — 5 fixed, over 2 reviews", lines)
+        self.assertIn("- choices taken without asking: 2", lines)
+        self.assertIn("- red checks: lint 2× — oxc(no-map-spread) 7, TS1 1; format 1×", lines, "a failed test step is not a red check")
+        page = spry.pace_page(p, {"SL-1": s})
+        self.assertIn("| SL-1 | 1 | 4 | 1 | 1 | 4 | 2 | 5 | 0 | 2 |", page)
+        self.assertIn("| lint | 2 | 1 |", page)
+        self.assertIn("| lint | `oxc(no-map-spread)` | 2 | 7 | 1 |", page)
+        self.assertIn(("ok", "review: 1 Blocker, 4 Should, 2 Nit — 5 fixed, over 2 reviews"), spry.merge_check(p, "SL-1"))
+        self.assertEqual(spry.pace_measures(s)["fast checks failed"], 3)
+        plain = self.tree()
+        self.log(plain, "a", self.session())
+        p = plain.project()
+        s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
+        said_of = "\n".join(spry.pace_slice_lines(s, [], spry.pace_config(p))) + spry.pace_page(p, {"SL-1": s})
+        for words in ("- review:", "choices taken", "red checks", "## Findings", "## Red checks", "## Subagents"):
+            self.assertNotIn(words, said_of)
+        self.assertFalse([said for _mark, said in spry.merge_check(p, "SL-1") if said.startswith("review:")])
+
+    def test_a_change_is_judged_within_a_size(self):
+        t = self.tree()
+
+        def one(n, at, lines, spend):
+            return {"id": f"SL-{n}", "kinds": {"agent": 600}, "phases": {}, "first": T0 + at - 50, "last": T0 + at, "sessions": 1,
+                    "prompts": 1, "questions": 0, "compactions": 0, "reviews": [], "limit": 0, "slowest": [], "suite": 0,
+                    "gates": [], "lines": lines, "tokens": {"input": spend}}
+        slices = [one(n, -1000 * n, 1000, 100_000 * n) for n in range(1, 13)]             # 12 before, of 700–1299 lines
+        slices += [one(20, 1000, 1000, 2_000_000), one(21, 2000, 1000, 400_000)]          # 2 after, of that size
+        slices += [one(30 + n, -500 * n, 200, 50_000) for n in range(1, 4)] + [one(40, 500, 200, 50_000)]   # too few before
+        rows = spry.pace_compare(slices, T0, "a change", spry.PACE_WEIGHTS, [300, 700, 1300, 2500])
+        self.assertIn("- too few slices to tell: 3 before, 3 after (10 a side needed)", rows)
+        self.assertIn("| 700–1299 | spend per 100 lines | 12 | 40k / 65k / 100k | 2 | 40k / 120k / 200k |", rows)
+        self.assertIn("| 700–1299 | active time per 100 lines | 12 | 1m00 / 1m00 / 1m00 | 2 | 1m00 / 1m00 / 1m00 |", rows)
+        self.assertFalse([r for r in rows if r.startswith("| under 300")], "a size with fewer than 10 slices before has no row")
+        self.assertEqual(spry.pace_compare(slices, T0, "a change", spry.PACE_WEIGHTS)[-1], "", "no buckets, no table")
+        conf = spry.pace_config(t.project())
+        by_id = {s["id"]: s for s in slices}
+        self.assertEqual(spry.pace_against_size(by_id["SL-20"], by_id, conf),
+                         "- against the 13 other slices of 700–1299 lines (p25 / median / p75): spend per 100 lines 200k against "
+                         "40k / 60k / 90k; active time per 100 lines 1m00 against 1m00 / 1m00 / 1m00")
+        self.assertIsNone(spry.pace_against_size(by_id["SL-40"], by_id, conf), "three others are too few to set it against")
+        page = spry.pace_page(t.project(), by_id)
+        self.assertIn("| 700–1299 | 14 | 10m00 | 1m00 / 1m00 / 1m00 | 650k | 40k / 65k / 100k | – |", page)
+        self.assertEqual(spry.pace_quartiles([4, None, 1, 3, 2]), (2, 2.5, 4))
+        self.assertIsNone(spry.pace_quartiles([None]))
 
     def test_token_weights_and_size_buckets_come_from_the_config(self):
         t = self.tree(**{"spry__spry.config.json": json.dumps({**CONFIG, "pace": {"token_weights": {"output": 4}, "buckets": [100, 50]}})})

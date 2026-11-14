@@ -71,7 +71,10 @@ replay the branch's commits on top of the latest main branch.
     before the merge; <em>c</em> post only; <em>d</em> neither. Accepted fixes are applied before falsify; on
     <em>c</em> or <em>d</em> the close goes on to falsify with nothing fixed. A slice
     <a href="slicing.html#built-in-steps">built in steps</a> gets one reviewer per step and one for the seams,
-    and each fix is a fixup of its step.</p></li>
+    and each fix is a fixup of its step.</p>
+    <p>What the review found is written into the slice, under <em>Review</em>: one line,
+    <code>2 Blocker, 5 Should, 3 Nit — 7 fixed</code> — the findings that held up when checked, and how many
+    were fixed. <a href="maintaining.html#see-where-the-time-goes-spry-pace"><code>spry pace</code></a> reads it.</p></li>
   <li><strong>Falsify.</strong>
     <p>Each safeguard the slice added is broken on purpose, one at a time, and the tests citing its
     criteria are run. They should fail. Details below.</p></li>

@@ -51,6 +51,10 @@ related: []
 
 <!-- guide: written at close, from the diff. Only where it differs from the plan, and why. Delete if it matches the plan. -->
 
+### Review
+
+<!-- guide: written at close, once the review's findings are verified: `- <n> Blocker, <n> Should, <n> Nit — <n> fixed`. One line per review; a steps slice counts all its reviewers together. `spry pace` reads it. Delete if the slice was not reviewed at close. -->
+
 ### Falsify
 
 <!-- guide: filled from `spry.py falsify`. Every control the draft lists keeps a row. A `survived` row needs a new test or a reason; a control that cannot run is `skipped — <reason>`. A person accepts each reason at the merge. -->

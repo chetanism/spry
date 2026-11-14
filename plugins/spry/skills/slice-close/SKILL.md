@@ -13,6 +13,8 @@ argument-hint: "[slice ID]"
 - **A slice built in steps:** one reviewer per step and one for the seams; review fixes and
   falsify's new tests are `git commit --fixup=<step commit>`, folded in before the gate by
   `spry.py step SL-<n> --squash` (`slicing.md` → *Steps*).
+- **Record the review** under `### Review` in the close summary — `- <n> Blocker, <n> Should, <n> Nit
+  — <n> fixed`, the findings that stood and how many were fixed (`slicing.md` → *Close* step 5).
 - **Falsify with the tool** (`spry.py falsify suggest`, then `run`) — never by editing files by hand;
   the tool restores every file, even when interrupted. Keep every control the draft lists.
   Confirm `git status` is clean afterwards.

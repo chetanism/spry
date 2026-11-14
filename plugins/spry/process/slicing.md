@@ -165,6 +165,10 @@ that merges.
    reviewer per step and one for the seams; each fix is a fixup of its step (*Steps* → *Close*). The review reads no
    Falsify rows yet; `merge-check` and the merge's ask cover them. The close waits for the review's
    Ask 1; on *c* or *d* it goes on to *Falsify* with nothing fixed.
+   - **Record it** under `### Review` in the close summary: `- <n> Blocker, <n> Should, <n> Nit —
+     <n> fixed` — the findings that stood once verified, every reviewer of a steps slice counted
+     together, and how many were fixed. Another review after the fixes adds its own line.
+     `spry pace` reads the counts; `merge-check` shows them.
 6. **Falsify** — prove the tests notice each safeguard the slice added:
    - `python3 spry/tool/spry.py falsify suggest SL-<n>` drafts `.spry/falsify/SL-<n>.json` from the
      source lines the branch added: one candidate per line that refuses, stops or decides — an `if`,
