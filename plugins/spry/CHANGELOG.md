@@ -1274,3 +1274,40 @@ Entry format:
 - **Migrate:**
   - nothing is required;
   - the project's copy of `slicing.md` *Steps* → *Build* takes the sentence on `fix`.
+
+## CH-60 · A design review of the work order before any code, behind a switch
+
+- **Date:** 2026-11-15 · **Version:** 0.49.0
+- **Touches:** `process/slicing.md` (*Open* step 4, and its steps renumbered), `skills/slice-open`,
+  `tool/spry.py` (`merge-check`, `pace`, `check`), `templates/spry.config.json` (`slices.design_review`)
+- **Why:** nothing read a slice's work order critically before it was built (issue #18). The
+  review at close asks whether the code is what the work order said, so a wrong data model or API
+  shape was found after the code existed, or not at all; and nobody checked that a choice the
+  agent took without asking really was easy to undo.
+  - With `slices.design_review` on, `/spry:slice-open` has **one new agent read the finished work
+    order** before any code. It gets the slice, its parent and feature, `AGENTS.md` and the
+    decisions and conventions indexes, and edits nothing.
+  - It looks for a hard-to-undo choice taken without asking, an assumption no story, feature or
+    decision states, a better option that is harder to build, and, in a steps slice, what one step
+    needs from an earlier one. It reports Blocker, Should or Nit.
+  - The opening agent verifies each finding. **A Blocker becomes an ask before any code.** An
+    accepted Should changes the work order.
+  - The work order's last section, `### Design review`, records `<n> Blocker, <n> Should — <n>
+    asked` and each Blocker's answer.
+  - `merge-check` warns when the section is missing or fewer were asked than there were Blockers.
+    It does not block. `spry pace SL-n` shows the counts.
+  - In one project, on three slices: 11 Blockers and 44 Shoulds, about five minutes and one agent
+    a slice, and no seams Blocker at close.
+- **Adapt:**
+  - `slices.design_review` is off by default, and off changes nothing: no step, no section, no
+    warning;
+  - turn it on when reviews at close find shapes that should have been asked about, or when the
+    agent's "easy to undo" has been wrong; leave it off for small slices on settled ground;
+  - the four checks in *Open* step 4 are the place to name what is hard to undo in your product:
+    tenancy, money, an event other teams read.
+- **Migrate:**
+  - nothing is required;
+  - the project's copy of `slicing.md` *Open* takes step 4, and its later steps move down one; a
+    local note that cites *Open* step 4, 5 or 6 by number now means 5, 6 or 7;
+  - a slice already open when the switch is turned on shows the warning at its merge; accept it
+    there.

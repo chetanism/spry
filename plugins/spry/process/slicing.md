@@ -78,15 +78,38 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
    - `Tests`: one per criterion at least, each name containing `<story>/AC-<n>`.
    - `Demo`: copy-pasteable; no value to fill in by hand.
 3. **Conflict check** — `conflicts.md`, including open slices on the same files (`spry.py related`).
-4. **Show the summary and the plan.** Ask to approve only when the plan does something hard to undo
-   (*When to stop and ask*) or departs from the story; otherwise go on.
-5. Then:
+4. **Design review** — only with `slices.design_review` on. The review at close asks whether the
+   code is what the work order said; this one asks whether the work order is right, while changing
+   it costs nothing.
+   - **One new agent**, never a fork of this session, given only: the slice file, its parent and
+     the parent's feature, `AGENTS.md`, the decisions and conventions indexes, and the four checks
+     below. It may read the code; it edits nothing. Leave out why the plan is as it is.
+   - It checks:
+     1. each choice the plan makes without asking — is it truly easy to undo (*When to stop and
+        ask*)? A data model, an API or event shape, a module boundary, who owns a record, what
+        happens on failure;
+     2. what the plan assumes that no story, feature or decision says;
+     3. for each such choice, an option harder to build and better for the product;
+     4. in a steps slice, what each step needs from an earlier one, and whether the plan names it.
+   - It reports **Blocker** (hard to undo, and not asked), **Should** or **Nit**, each with the
+     line of the work order it rests on.
+   - **Verify each finding** against the plan and the code; drop what does not hold. A Blocker
+     that stands becomes an ask in step 5, before any code. An accepted Should changes the work
+     order now.
+   - Record it as the work order's last section, `### Design review`: `- <n> Blocker, <n> Should —
+     <n> asked` — the findings that stood, and how many went to the person — then one line for
+     each Blocker and its answer. `merge-check` warns when the section is missing or a Blocker
+     went unasked; `spry pace` shows the counts.
+5. **Show the summary and the plan.** Ask to approve only when the plan does something hard to undo
+   (*When to stop and ask*), departs from the story, or the design review left a Blocker; otherwise
+   go on.
+6. Then:
    - set `state: open`, and `spry.py link SL-<n> --branch <branch> --owner` (`--owner <name>` when
      building it for someone else); `spry.py check`; commit `docs(slice): SL-<n> work order` —
      the branch's first commit, before any code;
    - push; open a **draft** pull request titled `SL-<n> <title>`, body from
      `spry.py pr-body SL-<n>`; `spry.py link SL-<n> --pr <number>`; commit and push.
-6. **Build**, in this session, unless the person asked to open only. Then close.
+7. **Build**, in this session, unless the person asked to open only. Then close.
 
 ## While building
 

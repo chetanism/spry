@@ -82,7 +82,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.48.0"
+VERSION = "0.49.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -915,6 +915,10 @@ def check(project: Project):
     if mode not in (None, "split", "steps"):
         project.problem(os.path.join(project.spry, "spry.config.json"), 1,
                         f"`slices.mode` is `{mode}` — `split` or `steps`")
+    review = (project.config.get("slices") or {}).get("design_review")
+    if review not in (None, True, False):
+        project.problem(os.path.join(project.spry, "spry.config.json"), 1,
+                        f"`slices.design_review` is `{review}` — `true` or `false`")
     known = set(project.items) | set(project.decisions)
     for item in project.items.values():
         for key in ("blocked_by", "related"):
@@ -5207,6 +5211,7 @@ def merge_check(project: Project, slice_id: str, base: str | None = None) -> lis
                else ("block", f"no `owner:` — who built it: `link {item.id} --owner`"))
     out.append(("ok", f"PR #{item.fm['pr']}") if str(item.fm.get("pr", "")).isdigit()
                else ("block", "no `pr:` number in the slice"))
+    out += design_review_lines(project, item)
     rows = falsify_table(item)
     if not rows and base and not added_or_none(project, base):
         out.append(("ok", "falsify: the branch adds no source lines — nothing to falsify"))
@@ -5258,6 +5263,39 @@ def merge_check(project: Project, slice_id: str, base: str | None = None) -> lis
         if p.level == "warning" and "changed since" in p.message:
             out.append(("warn", p.message))
     return out
+
+
+DESIGN_REVIEW = re.compile(r"(\d+)\s+Blockers?\s*,\s*(\d+)\s+Shoulds?\s*(?:—|–|--|-)\s*(\d+)\s+asked", re.I)
+
+
+def design_review(text: str) -> dict | None:
+    """What a slice's `### Design review` says: the findings that stood, and how many went to the person.
+    None when the section or its count line is missing."""
+    for _i, line in section_lines(text, "Design review") or []:
+        m = DESIGN_REVIEW.search(line)
+        if m:
+            return {"blockers": int(m.group(1)), "shoulds": int(m.group(2)), "asked": int(m.group(3))}
+    return None
+
+
+def design_review_said(found: dict) -> str:
+    return f"{found['blockers']} Blocker, {found['shoulds']} Should — {found['asked']} asked"
+
+
+def design_review_lines(project: Project, item: Item) -> list:
+    """With `slices.design_review` on, a work order nobody read before the code is a warning, and so is
+    a Blocker that was not asked. Never a block: the review is a reading, and the merge is the person's."""
+    if not (project.config.get("slices") or {}).get("design_review"):
+        return []
+    found = design_review(item.text)
+    if found is None:
+        return [("warn", "design review: none recorded — `slices.design_review` is on and the work order has no "
+                         "`### Design review` with `<n> Blocker, <n> Should — <n> asked` (slicing.md *Open* step 4); "
+                         "the plan was built unread")]
+    if found["asked"] < found["blockers"]:
+        return [("warn", f"design review: {design_review_said(found)} — every Blocker is an ask before any code; "
+                         f"{found['blockers'] - found['asked']} went unasked")]
+    return [("ok", f"design review: {design_review_said(found)}")]
 
 
 def added_or_none(project: Project, base: str) -> bool:
@@ -6887,6 +6925,8 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
             slices[slice_id] = stored
     for slice_id, s in slices.items():
         item = project.items.get(slice_id)
+        if item is not None and design_review(item.text):
+            s["design"] = design_review(item.text)
         if item is not None and item.state == "closed" and s["first"] is not None:
             try:
                 os.makedirs(native(folder), exist_ok=True)
@@ -7182,6 +7222,8 @@ def pace_check_lines(s: dict, conf: dict) -> list:
         rows.append(row)
     if s.get("lines"):
         rows.append(f"- size: {pace_bucket(s['lines'], conf['buckets'])} lines; {pace_time(pace_active(s) / s['lines'] * 100)} active per 100 lines")
+    if s.get("design"):
+        rows.append(f"- design review: {design_review_said(s['design'])}")
     f = pace_falsify(s)
     if f:
         row = (f"- falsify: {f['runs']} run{'s' if f['runs'] != 1 else ''}, {f['controls']} control{'s' if f['controls'] != 1 else ''} — "

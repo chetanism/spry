@@ -135,8 +135,9 @@ changed a criterion and code together without <code>criteria_approved_by:</code>
 when a slice built in steps has a step with no commit, one made twice or out of order, code committed
 without a <code>Step:</code> trailer, or a fixup not folded in, or when <code>check</code> is not clean. It warns (<code>!</code>) about things a person must accept
 at the merge — a survivor or skipped control with a reason, a covered criterion no test cites (QA
-checks it by hand after the merge), one whose latest manual check failed, or a steps slice over
-<code>slices.steps.max_lines</code>. Lines in <code>checks.generated</code> files are not part of that size;
+checks it by hand after the merge), one whose latest manual check failed, a steps slice over
+<code>slices.steps.max_lines</code>, or, with <code>slices.design_review</code> on, a work order with no
+<em>Design review</em> or with a Blocker that was not asked. Lines in <code>checks.generated</code> files are not part of that size;
 they are printed beside it.</p>
 
 <h3 id="review-check">review-check</h3>
@@ -237,6 +238,7 @@ search is <code>find</code>; the <a href="#pace">pace</a> page is at <code>/-/pa
   <li>a row per slice, with its lines changed — and, apart from them, the lines in <code>checks.generated</code> files</li>
   <li>by size: the medians of active time and spend, each per 100 changed lines, for slices of each size</li>
   <li>tokens per slice: the spend in input-token equivalents, the subagents' share, the largest context, and the context when the close started</li>
+  <li>the design review per slice, when it had one: Blockers, Shoulds and how many were asked (shown by <code>pace SLICE</code>)</li>
   <li>falsify per slice: runs, controls, how many were caught, survived and unreliable, and the seconds a control took</li>
   <li>reruns per slice: full gates that ran tests, how many ran on code already tested, and the time quiet retries lost</li>
   <li>gate steps</li>

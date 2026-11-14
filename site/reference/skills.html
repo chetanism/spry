@@ -179,6 +179,7 @@ plan does something hard to undo or departs from the story.</p>
 <ul>
   <li><strong>Arguments:</strong> a slice ID. Without one, it reads <em>Ready to build</em> on the backlog and offers the first row (or lists four, with <code>slices.pick: ask</code>).</li>
   <li><strong>Audience:</strong> 8 — except the work order's summary, which anyone can read.</li>
+  <li><strong>With <code>slices.design_review</code> on:</strong> a new agent reads the work order before any code, and a hard-to-undo choice it finds is asked first. See <a href="../guides/building.html#the-design-review">The design review</a>.</li>
   <li><strong>Writes:</strong> the slice file's <em>Work order</em>, the branch <code>sl-n-&lt;slug&gt;</code>, and a draft PR whose body comes from the slice file. Then the code and tests.</li>
   <li><strong>Guide:</strong> <a href="../guides/building.html">Build a slice</a>.</li>
 </ul>

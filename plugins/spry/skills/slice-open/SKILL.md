@@ -16,6 +16,9 @@ argument-hint: "[slice ID]"
 - **A slice with `### Steps`** gets each step's plan under its heading, and is built one step at a
   time: `spry.py step SL-<n>`, then `spry.py step SL-<n> --commit` — never `git commit` of code by
   hand (`slicing.md` → *Steps*).
+- **With `slices.design_review` on**, one new agent reads the finished work order before any code
+  and its findings are recorded under `### Design review`; a Blocker is asked first (`slicing.md` →
+  *Open* step 4).
 - **Ask only** when the plan does something hard to undo or departs from the story (`slicing.md` →
   *When to stop and ask*). Otherwise open the branch and the draft PR, build, and close — unless
   the person said to open only.

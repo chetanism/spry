@@ -51,9 +51,12 @@ not settled, an outside team's date — is the person's call. See <a href="team.
     <p>Against the story, its siblings, decisions — and every open slice, including which files each
     one touches. Findings and how each was resolved are written into the work order. See
     <a href="../design/conflicts.html">The conflict check</a>.</p></li>
+  <li><strong>Design review</strong> — only when the project turned it on.
+    <p>A new agent reads the work order and looks for choices that would be hard to undo. See
+    <a href="#the-design-review">The design review</a> below.</p></li>
   <li><strong>Show the summary and the plan.</strong>
-    <p>The agent asks for approval <em>only</em> when the plan does something hard to undo or departs from
-    the story. Otherwise it goes straight on.</p></li>
+    <p>The agent asks for approval <em>only</em> when the plan does something hard to undo, departs from
+    the story, or the design review found a Blocker. Otherwise it goes straight on.</p></li>
   <li><strong>Open the pull request.</strong>
     <p>The slice goes <code>open</code>, with you as its <code>owner</code>; the work order is the branch's first commit, before any code. It's
     pushed, and a <strong>draft</strong> pull request titled <code>SL-2 Refuse a loan over the limit</code> is
@@ -75,6 +78,7 @@ not settled, an outside team's date — is the person's call. See <a href="team.
     <tr><td><strong>Tests</strong></td><td>At least one per criterion, each name containing the criterion, like <code>S-2/AC-1</code></td></tr>
     <tr><td><strong>Demo</strong></td><td>Steps anyone can copy and paste to see it working — no values to fill in by hand</td></tr>
     <tr><td><strong>Conflict check</strong></td><td>What it was checked against, each finding, and its resolution</td></tr>
+    <tr><td><strong>Design review</strong></td><td>Only with <code>slices.design_review</code> on: how many Blockers and Shoulds a fresh reader found, how many were asked, and each Blocker's answer</td></tr>
   </tbody>
 </table></div>
 
@@ -143,6 +147,51 @@ only the third comes up:</p>
 
 <p>Everything else runs as one piece of work, because the checks stand in for a person watching. See
 <a href="../design/decisions.html">Where a person decides</a>.</p>
+
+<h2>The design review</h2>
+
+<p>The agent itself judges whether a choice is hard to undo, and nobody checks that judgement. The
+review at close comes too late for it: by then the code exists, and that review asks whether the code matches the
+work order, not whether the work order was right. A project can set
+<code>slices.design_review</code> to <code>true</code> in its <a href="../reference/config.html">config</a>
+to have the work order read before anything is built. It is off by default.</p>
+
+<ul>
+  <li><strong>Who reads it.</strong> One new agent, which did not write the work order and is not told the
+  reasoning behind it. It gets the slice, its story and feature, <code>AGENTS.md</code>, and the lists
+  of decisions and conventions. It changes nothing.</li>
+  <li><strong>What it looks for.</strong>
+    <ul>
+      <li>A choice the plan makes without asking that would be hard to undo: a data model, the shape
+      of an API, where one module ends, who owns a record, what happens on failure.</li>
+      <li>Something the plan assumes that no story, feature or decision says.</li>
+      <li>An option that is harder to build and better for the product.</li>
+      <li>In a slice <a href="slicing.html#built-in-steps">built in steps</a>, what one step needs from an earlier one.</li>
+    </ul></li>
+  <li><strong>What it reports.</strong> Each finding is a <em>Blocker</em>, a <em>Should</em> or a <em>Nit</em>,
+  and names the line of the work order it rests on. The agent opening the slice checks each one and drops what
+  does not hold.</li>
+  <li><strong>What happens next.</strong> A Blocker becomes a question to you, before any code. A
+  Should the agent accepts changes the work order there and then.</li>
+</ul>
+
+<p>The result is kept as the last section of the work order:</p>
+
+<pre data-label="In the slice file"><code>### Design review
+
+- 1 Blocker, 4 Should — 1 asked
+- Blocker: the limit is stored per branch, not per member — asked; per member</code></pre>
+
+<p>With the switch on, <code>merge-check</code> warns when a slice has no such section, or when it
+records more Blockers than questions asked. It is a warning for you to accept at the merge, never a
+block. <code>spry pace SL-2</code> prints the counts beside the slice's time.</p>
+
+<div class="callout note">
+  <span class="callout-title">What it costs</span>
+  <p>One agent and about five minutes a slice. In the project it came from, the reviews of three slices found 11
+  Blockers: each was a hard-to-undo choice the plan had treated as an easy one. Small slices on settled
+  ground gain little from it.</p>
+</div>
 
 <h2>While building</h2>
 

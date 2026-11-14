@@ -473,6 +473,37 @@ it grows with the guards a diff adds, not with the number of slices.
   - The agent holds one story in context for longer. The pace flag for compactions shows whether
     the cap is too high.
 
+### Design review — the work order read before any code
+
+> **Status:** built in CH-60 (0.49.0), behind `slices.design_review`, off by default. From issue #18.
+
+Purpose: find a wrong shape while changing it costs a line of the work order. The review at close
+asks "is this what the work order said", so a wrong data model or API shape is found after the
+code exists, or not at all. And the agent decides alone what counts as hard to undo (§22, the
+three decisions): nothing checked that a choice it took without asking really was easy to undo.
+
+- **Where:** `slice-open`, after the work order and the conflict check, before the summary is
+  shown and before any code (`slicing.md` *Open* step 4).
+- **Who:** one new agent, as in every review (`reviewing.md` §2): never the session that wrote the
+  work order, and told nothing of why it reads as it does. It gets the slice file, its parent and
+  the parent's feature, `AGENTS.md`, and the decisions and conventions indexes. It edits nothing.
+- **What it checks:** each choice the plan takes without asking, against *When to stop and ask*;
+  what the plan assumes that no story, feature or decision says; for each choice, an option harder
+  to build and better for the product; in a steps slice, what each step needs from an earlier one.
+- **What comes of it:** Blocker / Should / Nit, each resting on a line. The opening agent verifies
+  each. A Blocker that stands is an ask before any code — the third decision, found by a second
+  reader. An accepted Should changes the work order then.
+- **The record:** the work order's last section, `### Design review`, with one count line —
+  `<n> Blocker, <n> Should — <n> asked` — and a line per Blocker and its answer. The section is
+  added at open, like `### Steps`; the slice template does not carry it, so a project with the
+  switch off sees no change.
+- **The tool only reads the line.** With the switch on, `merge-check` warns when there is none
+  and when fewer were asked than there were Blockers. It never blocks: the review is a reading,
+  and its proof is the answers in the slice. `pace <slice>` prints the counts.
+- **Cost:** one agent and about five minutes a slice. On three slices of one project it found 11
+  Blockers and 44 Shoulds; each Blocker was a hard-to-undo shape taken as an easy one, and none of
+  the slices had a seams Blocker at close.
+
 ## 16. Falsify (kept, optimised)
 
 Purpose: prove a slice's tests notice its safeguards — remove each, expect a failure.
@@ -785,7 +816,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `link <slice> [--branch] [--pr] [--owner [name]]` · `link <item> --issue <n>` | set them in the slice's front-matter; a bare `--owner` is the person at this clone. On a plan item, add an issue to its `issues:` |
 | `issues [--sync [--dry-run]] [--offline] [--json]` · `issues --legacy [--close]` | each issue plan items name, its stage (§14) and whether its label shows it; `--sync` sets the label and comments when the stage changes, never closing one; `--legacy` the per-slice issues from before CH-52 still open, `--close` closes them with a comment |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
-| `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean |
+| `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean; with `slices.design_review`, a warning when the work order has no design review or a Blocker went unasked |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
 | `step <slice> [--commit] [--ranges [--head]] [--squash] [--base]` | steps mode (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` — and, with `slices.steps.tests`, the test files the step added or changed — and commits it with its `Step:` trailer, first running the `fix` of the red checks when each has one; `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
@@ -813,7 +844,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `feature` | 3 | Interview → feature spec (not its stories); conflict check |
 | `story` | 3 | Interview → stories with acceptance criteria; conflict check |
 | `slice` | 8 | Split a ready story / task / bug into `planned` slices: one slice is reviewable in one sitting and demos one visible change |
-| `slice-open` | 8 | Work order (opening with a brief summary of what will be done), conflict check, branch, draft PR with the work order as its body; then builds — asking first only for something hard to undo |
+| `slice-open` | 8 | Work order (opening with a brief summary of what will be done), conflict check, with `slices.design_review` a review of the work order by a new agent, branch, draft PR with the work order as its body; then builds — asking first only for something hard to undo |
 | `slice-close` | 8 | Rebase, then the close summary from the diff, AC proof, done list; review and its fixes on the draft PR; then falsify and the gate, once; PR body refreshed with both parts |
 | `review` | 8 | Fresh eyes — a new agent, never the author's session — on a slice PR (against its work order), a plan PR or item (against its parent, the code and the glossary), or any other PR; verified findings as blocker / should / nit, posted only on a yes as one inline comment per line with a suggested change for wording; `COMMENT` only on your own PR; on your own PR one answer can be *post, fix, then merge*, done by this session, never the reviewing agent (`process/reviewing.md`) |
 | `merge` | 8 | Checks green — or, when CI never started, the gate on the PR's head, accepted at the ask and named in a `CI:` trailer —, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main if main moved under the PR → progress tables written when CI left them stale → what is unblocked |
@@ -913,6 +944,16 @@ in `spry/history/writ.md`, then retires `canon/`.
   a tricky one is asked alone, the person editing it recommended — the person's call (2026-10-31).
   `gh` is asked once per hundred numbers through GraphQL, not once per number: Pulse's memory names
   over 200.
+- 2026-11-15 — the design review is **a step of `slice-open` behind a switch, recorded in the
+  slice, and warned about, not enforced** (CH-60). A step of open, not a skill of its own: it is
+  worth something only before the first code, and a skill a person must remember is the
+  instruction that sometimes is not followed. Off by default: it costs an agent a slice, and a
+  project whose slices are small and whose shapes are settled gets little for it. A warning at
+  `merge-check`, not a block: the tool can see that a count line exists, not that anyone read the
+  plan, and a block would be satisfied by a line typed in. The section is added at open and is
+  not in the template, so the switch off changes nothing. **Not taken:** building each step in
+  its own subagent, tried on the same slices — tokens per changed line did not fall (0.28M–0.57M
+  against a 0.32M median) and the opening session still reached 168k–281k of context at close.
 - 2026-11-15 — the formatter's write command is **a `fix` on its `checks.fast` entry**, not a
   second list and not a guess from the check's name (CH-59). The entry already names the tool,
   so the two modes sit together, and the tool need not know which check is the formatter: a
@@ -1157,3 +1198,8 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-11-15 — a step's commit formats the step's files when format is the only red check
   (CH-59, 0.48.0): `fix` on a `checks.fast` entry. From issue #26: 28% of one project's fast
   gates red in ten days, 27 on format alone, each a turn at 200k+ tokens of context.
+- 2026-11-15 — a design review of the work order before any code (CH-60, 0.49.0):
+  `slices.design_review`, off by default; one new agent reads the work order at `slice-open`, a
+  Blocker becomes an ask, and the counts are recorded under `### Design review` for `merge-check`
+  and `pace`. From issue #18: 11 Blockers and 44 Shoulds on three slices, at about five minutes
+  and one agent each.
