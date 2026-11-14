@@ -1351,3 +1351,33 @@ Entry format:
   - the first `spry pace` after the update reads every session log again, once;
   - rules are recorded from this version on: an older red gate shows its check and no rule. A
     closed slice whose session logs are gone keeps the waits it had, *another session* included.
+
+## CH-62 · A bug records the slice that introduced it, and pace counts it
+
+- **Date:** 2026-11-15 · **Version:** 0.51.0
+- **Touches:** `templates/bug.md`, `process/planning.md` (*Bugs and tasks*), `skills/bug`,
+  `skills/pace`, `tool/spry.py` (`check`, `pace`, `serve`)
+- **Why:** issue #28. `pace` counted what the reviews found and nothing that got past them. Whether
+  bigger slices, or a process change, cost quality had no number.
+  - **The field:** a bug's front matter takes `introduced_by: SL-n` — the slice whose change
+    brought the bug in. `/spry:bug` asks for it once and writes it only on the person's answer.
+    Empty is allowed.
+  - **`check`** refuses an `introduced_by` that names anything but a slice.
+  - **`spry pace SL-n`** lists the bugs later filed against the slice, with their severity. The
+    page's *Findings* table has them in a column, and *By size* counts them per size.
+  - **`pace --compare`** shows bugs per slice before and after the point, and under it a row per
+    size bucket: slices, bugs and bugs per slice on each side.
+  - A dropped bug is not counted. While no bug in the plan names a slice the page shows `–`:
+    the count is unknown, not zero.
+- **Adapt:**
+  - nothing to switch on. A project that never fills the field sees no change;
+  - the later side of a comparison reads low until its slices have aged as long as the earlier
+    ones: their bugs have had less time to be found. The page says so under the table;
+  - a bug that two slices made together may name both: `introduced_by: [SL-3, SL-7]`. It counts
+    against each.
+- **Migrate:**
+  - nothing is required;
+  - the project's copy of `templates/bug.md` takes the `introduced_by:` line, and `planning.md`
+    *Bugs and tasks* its bullet;
+  - open and closed bugs whose slice is known can take the field now: the count reaches back as
+    far as the bugs are filled in.

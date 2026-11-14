@@ -595,7 +595,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 ## 17. Pace — where a slice's time goes
 
-> **Status:** built in CH-44 (0.33.0); the `/spry:pace` skill in CH-47 (0.36.0); `/spry:retro`, which joins it with memory-check, in CH-48 (0.37.0); tokens, falsify outcomes and gate reruns in CH-57 (0.46.0); red checks by rule, subagents by kind, review findings and a comparison within one size in CH-61 (0.50.0). Prototype: `docs/spikes/pace.py`.
+> **Status:** built in CH-44 (0.33.0); the `/spry:pace` skill in CH-47 (0.36.0); `/spry:retro`, which joins it with memory-check, in CH-48 (0.37.0); tokens, falsify outcomes and gate reruns in CH-57 (0.46.0); red checks by rule, subagents by kind, review findings and a comparison within one size in CH-61 (0.50.0); bugs filed later, by the slice that introduced them, in CH-62 (0.51.0). Prototype: `docs/spikes/pace.py`.
 
 Purpose: show where each slice's time and tokens went — the agent, the checks, waiting on a person —
 so that person can judge what to change: the process, the config, the tests, or spry. Report only;
@@ -690,6 +690,12 @@ it never changes anything.
   review, written at `slice-close` step 5 — and the bullets under `### Choices taken` where a
   project's own process keeps that section; spry's does not ask for it. Questions put to the
   person come from the session log. `merge-check` shows the review line and never asks for it.
+- **Bugs filed later** — what got past the reviews. A bug's front matter may name the slice whose
+  change brought it in: `introduced_by: SL-n`, or a list when two slices made it together.
+  `/spry:bug` asks once and writes it only on the person's answer; empty is allowed, and `check`
+  refuses anything that is not a slice. Pace counts each bug against the slice it names, on every
+  run, from the plan. A dropped bug is not counted. While no bug names a slice the count is
+  unknown and shown as `–`, never as zero.
 - **When it runs:** `merge-check`, once it passes, writes the slice's summary with no extra call. It
   reads only logs changed since a day before the slice's file was made, and any failure is
   swallowed, because pace never stands between a slice and its merge.
@@ -707,10 +713,12 @@ it never changes anything.
     (`checks.generated`) beside them and not in them.
   - **By phase:** each category's share.
   - **By size:** per size bucket, the medians of active time, spend, each per 100 lines, and peak
-    context; each *per 100 lines* as p25 / median / p75 once a bucket has four slices.
+    context; each *per 100 lines* as p25 / median / p75 once a bucket has four slices; the bugs
+    filed later, in all and per slice.
   - **Subagents:** per kind, how many, in how many slices, their time, the median, the spend.
   - **Findings, a row per slice:** the design review's Blockers, Shoulds and asks; the close
-    review's Blockers, Shoulds, Nits and fixes; questions asked; choices taken.
+    review's Blockers, Shoulds, Nits and fixes; questions asked; choices taken; the bugs filed
+    later against the slice, by ID and severity.
   - **Red checks:** red runs and slices per check, then the twenty rules behind the most red runs.
   - **Tokens, falsify and reruns, a row per slice:** spend, per 100 lines, the subagents' share,
     peak context and context entering close; falsify runs, controls, caught, survived, unreliable
@@ -729,14 +737,17 @@ it never changes anything.
     compares medians of active time, each category's share, gate failures, retries and waits, raw
     and per 100 changed lines, because slices differ in size — and spend, spend per 100 lines,
     peak context, context entering close, falsify controls and survivors, and reruns on unchanged
-    code, fast checks failed, questions asked and the reviews' Blockers. With fewer than 10
+    code, fast checks failed, questions asked, the reviews' Blockers and bugs filed later per
+    slice. With fewer than 10
     slices on a side it says *too few slices to tell* instead of a difference. `spry pace --compare
     <date|CH-n|commit>` does the same for any point.
   - **Within one size.** Under each change, a row per size bucket and measure — spend per 100
     lines, active time per 100 lines, context entering close — with p25 / median / p75 of the 20
     slices before and of those after. A bucket needs 10 before; one slice after is already a
     reading against them, and the table says it is not yet a difference. `spry pace <slice>` sets
-    one slice against the others of its bucket the same way, from four others up.
+    one slice against the others of its bucket the same way, from four others up. A second
+    table gives each bucket's slices, bugs filed later and bugs per slice on each side, and says
+    that the later side reads low until its slices have aged as long.
   - **Flags:** each is a rule with its threshold in `pace.flags`, shown with its evidence (slice,
     number) and what it usually means. Flags describe and never judge. The first set comes from
     the prototype:
@@ -1049,6 +1060,11 @@ in `spry/history/writ.md`, then retires `canon/`.
   deleted after a month and says what an agent reported, not what stood once verified. No
   warning when the line is missing — the review itself is the rule, and a team whose people
   review by hand has no counts to write.
+- 2026-11-15 — the slice that introduced a bug is **a field a person fills, not one the tool
+  derives** (CH-62). `git blame` on the fix names the last slice to touch a line, which is often
+  not the one that made it wrong; a wrong slice spoils the count more than an empty field does.
+  So the count is unknown (`–`) until a bug names a slice, and the page states that recent
+  slices have had less time for their bugs to be found, in place of any correction for age.
 - 2026-11-15 — a change is judged **within a size bucket, as quartiles** (CH-61). One project's
   slices ran from 200 to 7,000 lines, and spend per 100 lines fell fivefold across that range, so
   a change that moved the sizes moved every median. Ten slices before make the bucket's row;
@@ -1253,3 +1269,7 @@ in `spry/history/writ.md`, then retires `canon/`.
   session's own subagent is no longer *another session*; the close review is recorded under
   `### Review`; `--compare` and *By size* give p25 / median / p75 per size bucket. Items 5–8 of
   issue #19.
+- 2026-11-15 — a bug records the slice that introduced it, and pace counts it (CH-62, 0.51.0):
+  `introduced_by: SL-n` in a bug's front matter, asked by `/spry:bug` and never guessed; `pace`
+  shows the bugs on the slice's row, and `--compare` gives bugs per slice before and after a
+  point, in all and per size bucket. Issue #28.

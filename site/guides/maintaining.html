@@ -233,8 +233,10 @@ tests to change.</p>
   and its spend. That time runs beside the session's; the session's share is the wait above.</li>
   <li><strong>Findings</strong>, a row per slice, from the slice file: what the
   <a href="building.html#the-design-review">design review</a> found before any code, what the review at
-  close found and how much of it was fixed (the slice's <em>Review</em> section), and how many questions
-  the agent put to you.</li>
+  close found and how much of it was fixed (the slice's <em>Review</em> section), how many questions
+  the agent put to you, and the bugs filed later against the slice — what got past both reviews. A bug
+  counts once it <a href="bugs-and-tasks.html#the-slice-that-introduced-it">names the slice that
+  introduced it</a>.</li>
   <li><strong>Red checks:</strong> how often each fast check failed a gate, and the rules behind most of
   those failures — a lint rule, a type error's number. A rule that fails the gate in slice after slice is
   a convention the agent was never taught, or one the linter could fix by itself.</li>
@@ -245,7 +247,8 @@ tests to change.</p>
 <ul>
   <li><strong>Did a change help?</strong> Every row in <code>process-changes.md</code> and every commit to the
   config marks a point. The page sets the slices after each point against as many before it — time,
-  spend, context, falsify, reruns and findings alike.</li>
+  spend, context, falsify, reruns, findings and bugs filed later alike. Slices merged lately have had
+  less time for their bugs to be found, so a lower count after a change is not yet an improvement.</li>
   <li><strong>For slices of one size.</strong> Big slices cost less per line than small ones, so a change
   that only moved the sizes moves every median. Under each point, a row per size sets the slices after
   it against the 20 before, as p25 / median / p75. A size needs 10 slices before the change. With fewer

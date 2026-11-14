@@ -30,7 +30,7 @@ else, and neither counts toward its parent's progress.</p>
 <tbody>
 <tr><td><strong>Attached to</strong></td><td>the feature or story it breaks, in a <code>bugs/</code> folder</td><td>the milestone or epic it serves, in a <code>tasks/</code> folder</td></tr>
 <tr><td><strong>Written for</strong></td><td>anyone who found it, QA, developers <span class="badge">audience 4</span></td><td>developers <span class="badge">audience 7</span> — on spry's 1–10 scale of how technical a page is (<a href="../design/audience.html">Written for its reader</a>)</td></tr>
-<tr><td><strong>Settles</strong></td><td>what happens, what should, steps to reproduce, where, impact, severity, the criterion it breaks</td><td>why, what changes, done when, risks</td></tr>
+<tr><td><strong>Settles</strong></td><td>what happens, what should, steps to reproduce, where, impact, severity, the criterion it breaks, the slice that introduced it (if known)</td><td>why, what changes, done when, risks</td></tr>
 <tr><td><strong>Before ready</strong></td><td>reproduced by the reporter or the agent; checked for duplicates among open bugs</td><td>a conflict check</td></tr>
 <tr><td><strong>Next</strong></td><td colspan="2"><code>/spry:slice &lt;ID&gt;</code> — then slices as usual</td></tr>
 </tbody>
@@ -52,6 +52,7 @@ else, and neither counts toward its parent's progress.</p>
 
 <pre data-label="B-1 · Due date a day early on evening receipts (excerpt)"><code>severity: major
 breaks: [S-1/AC-2]
+introduced_by: SL-1
 
 ## What happens
 - A receipt printed after about 18:30 shows a due date one day earlier than 14 days from today.
@@ -82,6 +83,16 @@ breaks: [S-1/AC-2]
 <p>Name it in <code>breaks: [S-1/AC-2]</code>. If QA saw it on a build, they also add a <code>fail</code> row
 to the story's check log — that's what un-proves the criterion, so the story stops showing as done
 until the fix lands and QA logs a new <code>pass</code> for that criterion. See <a href="qa.html">Checks for QA</a>.</p>
+
+<h3 id="the-slice-that-introduced-it">The slice that introduced it</h3>
+
+<p>When someone knows which slice's change brought the bug in, the bug names it:
+<code>introduced_by: SL-1</code>. <code>/spry:bug</code> asks once and writes it only on your answer — it
+never guesses, and leaving it empty is fine. <code>spry check</code> refuses anything that is not a slice.</p>
+
+<p><a href="maintaining.html">Pace</a> then counts the bug against that slice. That is the one number for
+what got past review: it shows on the slice's row, per slice size, and before and after each change to
+how you work.</p>
 
 <h3>A bug's slices and their tests</h3>
 

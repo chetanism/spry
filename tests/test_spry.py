@@ -339,6 +339,15 @@ class Check(Base):
         t = self.tree(**{f"{F}/bugs/B-1-x/README.md".replace("/", "__"): bug})
         self.assertProblem(t.problems(), "`breaks` names S-1/AC-4")
 
+    def test_a_bug_names_the_slice_that_introduced_it_or_nothing(self):
+        def problems(extra):
+            bug = item("B-1", extra=extra, check=False)
+            return self.tree(**{f"{F}/bugs/B-1-x/README.md".replace("/", "__"): bug}).problems()
+        self.assertProblem(problems("introduced_by: SL-9\n"), "`introduced_by` names SL-9, which is not a slice")
+        self.assertProblem(problems("introduced_by: S-1\n"), "`introduced_by` names S-1, which is not a slice")
+        for fine in ("introduced_by: SL-1\n", "introduced_by: [SL-1]\n", "introduced_by:\n", ""):
+            self.assertFalse([p for p in problems(fine) if "introduced_by" in p], fine)
+
 
 class Status(Base):
     def done(self, t, ident):
@@ -3875,6 +3884,51 @@ class Pace(Base):
         self.assertIn("| 700–1299 | 14 | 10m00 | 1m00 / 1m00 / 1m00 | 650k | 40k / 65k / 100k | – |", page)
         self.assertEqual(spry.pace_quartiles([4, None, 1, 3, 2]), (2, 2.5, 4))
         self.assertIsNone(spry.pace_quartiles([None]))
+
+    def test_a_bug_shows_on_the_slice_that_introduced_it(self):
+        def bug(ident, extra, state="ready"):
+            return item(ident, state, extra=f"severity: major\n{extra}", check=False)
+        bugs = {f"{F}/bugs/B-1-x/README.md": bug("B-1", "introduced_by: SL-1\n"),
+                f"{F}/bugs/B-2-y/README.md": bug("B-2", "introduced_by: SL-1\n", state="dropped"),
+                f"{F}/bugs/B-3-z/README.md": bug("B-3", "introduced_by:\n"),
+                f"{S}/SL-2-b.md": slice_("SL-2")}
+        t = self.tree(**{k.replace("/", "__"): v for k, v in bugs.items()})
+        self.log(t, "a", self.session())
+        self.log(t, "b", [{**r, "gitBranch": "sl-2-b"} for r in self.session()])
+        p = t.project()
+        slices = spry.pace_slices(p, spry.pace_logs(p))
+        self.assertEqual(slices["SL-1"]["bugs"], [["B-1", "major"]], "a dropped bug and a bug that names no slice are not counted")
+        self.assertEqual(slices["SL-2"]["bugs"], [])
+        self.assertIn("- bugs filed later: 1 — B-1 (major)", spry.pace_slice_lines(slices["SL-1"], [], spry.pace_config(p)))
+        self.assertFalse([r for r in spry.pace_slice_lines(slices["SL-2"], [], spry.pace_config(p)) if "bugs filed" in r])
+        page = spry.pace_page(p, slices)
+        self.assertIn("| SL-1 | – | – | – | – | – | – | – | 0 | – | B-1 (major) |", page)
+        self.assertEqual((spry.pace_measures(slices["SL-1"])["bugs filed later"], spry.pace_measures(slices["SL-2"])["bugs filed later"]), (1, 0))
+        plain = self.tree()
+        self.log(plain, "a", self.session())
+        p = plain.project()
+        s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
+        self.assertIsNone(s["bugs"], "no bug names a slice: the count is unknown, not zero")
+        self.assertIsNone(spry.pace_measures(s)["bugs filed later"])
+        self.assertNotIn("## Findings", spry.pace_page(p, {"SL-1": s}))
+
+    def test_compare_counts_bugs_per_slice_before_and_after(self):
+        def one(n, at, lines, bugs):
+            return {"id": f"SL-{n}", "kinds": {"agent": 600}, "phases": {}, "first": T0 + at - 50, "last": T0 + at, "sessions": 1,
+                    "prompts": 1, "questions": 0, "compactions": 0, "reviews": [], "limit": 0, "slowest": [], "suite": 0,
+                    "gates": [], "lines": lines, "bugs": [[f"B-{n}-{i}", "minor"] for i in range(bugs)]}
+        slices = [one(n, -1000 * n, 200, 1 if n <= 3 else 0) for n in range(1, 11)]                # small: 3 bugs in 10; the 10 before mix both sizes
+        slices += [one(n, 1000 * (n - 10), 1000, 2 if n <= 15 else 0) for n in range(11, 21)]      # after, larger: 10 bugs in 10
+        slices += [one(n, -1000 * (n - 20) - 500, 1000, 1 if n <= 22 else 0) for n in range(21, 31)]   # before, larger: 2 in 10
+        rows = spry.pace_compare(slices, T0, "a change", spry.PACE_WEIGHTS, [300, 700, 1300, 2500])
+        self.assertIn("| bugs filed later, per slice | 0.50 | 1.00 |", rows)
+        self.assertIn("| 700–1299 | 10 | 2 | 0.20 | 10 | 10 | 1.00 |", rows)
+        self.assertFalse([r for r in rows if r.startswith("| under 300 | 10 | 3")], "a size with no slice after has no row")
+        unknown = [{**s, "bugs": None} for s in slices]
+        said_of = "\n".join(spry.pace_compare(unknown, T0, "a change", spry.PACE_WEIGHTS, [300, 700, 1300, 2500]))
+        self.assertNotIn("bugs", said_of.lower())
+        page = spry.pace_page(self.tree().project(), {s["id"]: s for s in slices})
+        self.assertIn("| 700–1299 | 20 | 10m00 | 1m00 / 1m00 / 1m00 | – | – | – | 12 (0.60 a slice) |", page)
 
     def test_token_weights_and_size_buckets_come_from_the_config(self):
         t = self.tree(**{"spry__spry.config.json": json.dumps({**CONFIG, "pace": {"token_weights": {"output": 4}, "buckets": [100, 50]}})})

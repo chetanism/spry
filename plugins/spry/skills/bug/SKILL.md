@@ -15,4 +15,6 @@ argument-hint: "[#issue] [feature or story ID] [what goes wrong]"
   branch too.
 - **From a GitHub issue** (`#<n>` in `$ARGUMENTS`): read it and its discussion first, and link the
   item to it — `planning.md` → *From a GitHub issue*.
+- **`introduced_by`:** ask which slice's change brought the bug in, once. Write `SL-n` only on the
+  person's answer; leave it empty when nobody knows. `spry pace` counts it against that slice.
 - **Duplicates first:** read the open bugs under the same feature before writing anything.

@@ -38,6 +38,11 @@ and writes nothing but what `spry pace` keeps under `.spry/`.
      review at close that still finds Blockers after a design review, findings recorded and not
      fixed. No `### Review` line in most slices → say the counts are missing, not that the
      reviews found nothing;
+   - **bugs filed later:** bugs whose `introduced_by` names a slice — what got past both reviews.
+     Several against slices of one size, or against slices whose reviews found nothing, is a
+     finding. The slices after a change have had less time for their bugs to be found: a lower
+     count there is not yet an improvement. `–` means no bug in the plan names a slice — say the
+     field is unused, not that nothing escaped;
    - **size:** judge a change by the rows under *Slices of one size*, never by the medians of all
      slices when their sizes differ. A row with fewer than 10 slices after the change is a
      reading, not a difference;
