@@ -2265,6 +2265,33 @@ class Falsify(unittest.TestCase):
         results = self.run_plan(self.both_guards())
         self.assertEqual([r for _, r, _ in results], ["unreliable", "unreliable"], "no slot set up: a red baseline")
 
+    def test_a_slot_with_a_red_baseline_says_why_once_and_hands_its_controls_on(self):
+        # The set-up readies every slot but the second: its baseline breaks, the others' do not.
+        self.slot_config("python3 -c \"import os; n = os.environ['SPRY_FALSIFY_SLOT']; "
+                         "n == '2' or open('.slot-' + n, 'w')\"")
+        said = []
+        results = spry.falsify_run(spry.Project(self.root), self.plan(self.both_guards()), say=said.append, jobs=3)
+        self.assertEqual([(r, note) for _, r, note in results], [("caught", ""), ("survived", "")])
+        left = [s for s in said if "left out" in s]
+        self.assertEqual(left, ["slot 2 left out — baseline broken · 2 test files · `python3 run.py {files}` — "
+                                "no database for this slot — its controls run in the other slots"])
+        self.assertEqual([s for s in said if s.startswith("baseline")], ["baseline green · 2 test files"])
+
+    def test_every_slot_green_says_what_it_always_said(self):
+        said = []
+        spry.falsify_run(spry.Project(self.root), self.plan(self.both_guards()), say=said.append, jobs=2)
+        self.assertEqual([s for s in said if "baseline" in s or "left out" in s], ["baseline green · 2 test files"])
+
+    def test_a_baseline_red_in_every_slot_is_the_tests_own(self):
+        self.slot_config("")
+        for jobs in (1, 2):
+            said = []
+            results = spry.falsify_run(spry.Project(self.root), self.plan(self.both_guards()), say=said.append, jobs=jobs)
+            self.assertEqual([(r, note) for _, r, note in results],
+                             [("unreliable", "baseline broken: no database for this slot")] * 2)
+            self.assertEqual([s for s in said if "baseline" in s],
+                             ["baseline broken · 2 test files · `python3 run.py {files}` — no database for this slot"])
+
     def test_a_failed_setup_stops_the_run(self):
         self.slot_config("python3 -c \"import sys; sys.exit('no database server')\"")
         for jobs in (1, 2):

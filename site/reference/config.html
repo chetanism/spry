@@ -226,7 +226,7 @@ which stops and asks.</p>
 <table>
   <thead><tr><th>Key</th><th>Means</th><th>Default</th></tr></thead>
   <tbody>
-    <tr><td><code>falsify.parallel</code></td><td><code>false</code>, <code>true</code>, or a number of git worktrees to run controls in at once. Never touches your working tree.</td><td><code>false</code></td></tr>
+    <tr><td><code>falsify.parallel</code></td><td><code>false</code>, <code>true</code>, or a number of git worktrees to run controls in at once. Never touches your working tree. The baseline runs in each; one that is red while another is green is named once and left out.</td><td><code>false</code></td></tr>
     <tr><td><code>falsify.timeout</code></td><td>Seconds before a test run is stopped, with its whole process group. A timeout makes the control <code>unreliable</code>.</td><td><code>600</code></td></tr>
     <tr><td><code>falsify.share</code></td><td>Extra folders to link into each worktree beside the installed dependencies (<code>node_modules</code>, <code>.venv</code>, <code>venv</code> are linked already) — generated code tests import, for example.</td><td><code>[]</code></td></tr>
     <tr><td><code>falsify.keep_worktrees</code></td><td>Keep the worktrees between runs, reset to <code>HEAD</code> with every untracked and ignored file removed at the start of each. A fresh worktree is cold — a virus scanner reads every file on its first run.</td><td><code>true</code></td></tr>

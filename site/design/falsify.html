@@ -152,8 +152,15 @@ So:</p>
   (<code>node_modules</code>, <code>.venv</code>, <code>venv</code>, plus <code>falsify.share</code>) are linked in,
   not reinstalled — except a pnpm package's own <code>node_modules</code>, whose links are copied, so a
   workspace sibling resolves to the worktree's mutated copy rather than the untouched one.</li>
-  <li><strong>The baseline runs in a worktree too</strong>, so anything a worktree is missing shows up as
-  <code>unreliable</code> — never as every control looking <code>caught</code>.</li>
+  <li><strong>The baseline runs in every worktree</strong>, all at once, before any control. Anything the
+  worktrees are missing shows up as <code>unreliable</code> — never as every control looking
+  <code>caught</code> — and the baseline line names the runner's command and the last line it printed.</li>
+  <li><strong>A slot whose baseline is red while another's is green is left out.</strong> That slot is
+  broken itself — a set-up that did half its work, a database it shares, a dependency it lacks. The
+  run says so once (<code>slot 2 left out — baseline broken · 12 test files · …</code>) and the other
+  slots run its controls. <em>Why:</em> before, each control given to that slot read
+  <code>unreliable</code> with no word on why — 129 of 171 in one slice, and a 61-minute serial rerun.
+  A runner marked <code>"parallel": false</code> has its baseline run once, in one slot.</li>
   <li><strong>It falls back to serial</strong> when tracked files have uncommitted changes or a cited test
   file isn't committed. A runner marked <code>"parallel": false</code> (integration tests on a shared
   database, fixed ports) runs its controls one at a time.</li>
