@@ -276,6 +276,62 @@ class Check(Base):
         self.assertProblem(t.problems(), "budget 40")
         self.assertProblem(t.problems(), "/spry:compact")
 
+    def slice_with_falsify(self, prose, rows, after=0):
+        table = "| Control | Mutation | Expect | Result |\n|---|---|---|---|\n" + "".join(
+            f"| `src/a.ts:{i}` | delete the line | S-1/AC-1 | caught |\n" for i in range(rows))
+        text = (slice_("SL-1") + "\n".join(f"- line {i}" for i in range(prose)) + "\n\n### Falsify\n\n" + table
+                + "\n### Demo\n\n" + "".join(f"- after {i}\n" for i in range(after)))
+        config = dict(CONFIG, budgets={"spry/plan/**/SL-*.md": 60})
+        return self.tree(**{"spry__spry.config.json": json.dumps(config), f"{S}/SL-1-a.md".replace("/", "__"): text})
+
+    def test_budget_leaves_a_slices_falsify_table_out(self):
+        self.assertEqual([p for p in self.slice_with_falsify(prose=10, rows=200).problems() if "budget" in p], [])
+
+    def test_budget_counts_a_slices_prose_and_says_what_it_left_out(self):
+        problems = self.slice_with_falsify(prose=70, rows=200).problems()
+        self.assertProblem(problems, "(202 of the Falsify table not counted), budget 60")
+        # lines after the table are counted again: only the table is left out, not the rest of the file
+        self.assertProblem(self.slice_with_falsify(prose=10, rows=200, after=70).problems(), "budget 60")
+
+    def test_budget_counts_prose_under_falsify(self):
+        text = slice_("SL-1") + "\n### Falsify\n\n" + "".join(f"prose {i}\n" for i in range(70))
+        config = dict(CONFIG, budgets={"spry/plan/**/SL-*.md": 60})
+        t = self.tree(**{"spry__spry.config.json": json.dumps(config), f"{S}/SL-1-a.md".replace("/", "__"): text})
+        self.assertProblem(t.problems(), "budget 60")
+
+    def test_budget_counts_a_table_named_falsify_outside_a_slice(self):
+        long = GLOSSARY + "\n### Falsify\n\n" + "".join(f"| row {i} |\n" for i in range(40))
+        t = self.tree(**{"spry/knowledge/glossary.md".replace("/", "__"): long})
+        self.assertProblem(t.problems(), "budget 40")
+
+    def test_citations_are_in_path_and_line_order_whatever_the_walk(self):
+        t = self.tree(**{"src__a.test.ts": 'test("x", () => {})\ntest("S-1/AC-1 two", () => {})\ntest("S-1/AC-1 three", () => {})\n',
+                         "src__b.test.ts": 'test("S-1/AC-1 b", () => {})\n', "lib__z.test.ts": 'test("S-1/AC-1 z", () => {})\n'})
+        walk = spry.walk_dir
+
+        def backwards(top):
+            for dirpath, dirnames, filenames in walk(top):
+                dirnames.sort(reverse=True)
+                yield dirpath, dirnames, sorted(filenames, reverse=True)
+        spry.walk_dir = backwards
+        self.addCleanup(setattr, spry, "walk_dir", walk)
+        self.assertEqual([(p, n) for p, n, _ in t.project().tests["S-1/AC-1"]],
+                         [("lib/z.test.ts", 1), ("src/a.test.ts", 2), ("src/a.test.ts", 3), ("src/b.test.ts", 1)])
+
+    def test_speaks_utf8_on_a_console_that_cannot(self):
+        t = self.tree()
+        raw = io.BytesIO()
+        narrow = io.TextIOWrapper(raw, encoding="cp1252")
+        out, err = sys.stdout, sys.stderr
+        sys.stdout = sys.stderr = narrow
+        try:
+            spry.main(["--root", t.root, "status"])
+            print("✓")
+            narrow.flush()
+        finally:
+            sys.stdout, sys.stderr = out, err
+        self.assertIn("✓".encode("utf-8"), raw.getvalue())
+
     def test_bug_breaks_must_exist(self):
         bug = item("B-1", extra="breaks: [S-1/AC-4]\n", check=False)
         t = self.tree(**{f"{F}/bugs/B-1-x/README.md".replace("/", "__"): bug})

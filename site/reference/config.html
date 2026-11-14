@@ -154,7 +154,7 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
 <table>
   <thead><tr><th>Key</th><th>Means</th><th>Default</th></tr></thead>
   <tbody>
-    <tr><td><code>budgets</code></td><td>The most lines a file matching each glob may have. <code>spry check</code> fails a file over budget; <code>/spry:compact</code> brings it back.</td><td><code>AGENTS.md</code> 150 · knowledge 120 · plan READMEs 150 · slice files 200</td></tr>
+    <tr><td><code>budgets</code></td><td>The most lines a file matching each glob may have. <code>spry check</code> fails a file over budget; <code>/spry:compact</code> brings it back. The rows of a slice's <code>### Falsify</code> table are not counted: the tool writes them.</td><td><code>AGENTS.md</code> 150 · knowledge 120 · plan READMEs 150 · slice files 200</td></tr>
     <tr><td><code>glossary</code></td><td>Where the glossary is. <code>check</code> fails on its banned words anywhere in <code>spry/</code> outside code, the glossary and conflict-check sections.</td><td><code>spry/knowledge/glossary.md</code></td></tr>
     <tr><td><code>always_check</code></td><td>Knowledge files every conflict check reads, whatever the document.</td><td>security, performance, decisions index</td></tr>
   </tbody>

@@ -1026,3 +1026,8 @@ in `spry/history/writ.md`, then retires `canon/`.
   `spry issues --sync` labels and comments each open one with its stage, never closing it; issue
   forms for people outside the team; `--legacy --close` for the per-slice issues left open. From
   pulse-v2 and connect, where 32 per-slice issues outlived their slices and requests went unanswered.
+- 2026-11-14 — the tool on Windows, and a budget that leaves the Falsify table out (CH-53, 0.42.0):
+  the tool writes UTF-8 whatever the console's code page; test citations are sorted by path and
+  line, so `index` writes the same READMEs on every file system; a slice's line budget does not
+  count the rows of its tool-written `### Falsify` table. From pulse-v2's Windows users (issue #12)
+  and a slice whose 357 recorded controls alone passed its budget (issue #15).
