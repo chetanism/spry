@@ -339,9 +339,13 @@ and <code>Covers:</code> trailers.</p>
 <p>Proves a slice's tests notice its safeguards. Background: <a href="../design/falsify.html">Falsify</a>.</p>
 
 <h3 id="falsify-suggest">falsify suggest</h3>
-<p>Drafts a plan from the source lines the branch added: one candidate per guard, comparison or error
-line, each with a mutation that removes it, and <code>expect</code> taken from the slice's
-<code>covers</code> (or the bug or the task, for a bug's or a task's slice). With no guard added, it offers up to five lines that
+<p>Drafts a plan from the source lines the branch added: one candidate per line that refuses, stops or
+decides — a guard, an error line, a clause of a condition, a <code>WHERE</code> — each with a mutation that
+removes it, <code>expect</code> taken from the slice's
+<code>covers</code> (or the bug or the task, for a bug's or a task's slice), and <code>files</code>: the tests
+citing <code>expect</code> that name the control's source file. A line that only builds a value, or that the
+branch only moved, is left out. A deletion that would not parse is drafted <code>mutation: write one</code>,
+for a person to fill before the run. With no guard added, it offers up to five lines that
 compute or store something. With no source line added, there is nothing to falsify.</p>
 <pre><code>spry falsify suggest [--base BASE] [--out OUT] slice</code></pre>
 <ul>

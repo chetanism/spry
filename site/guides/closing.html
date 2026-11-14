@@ -90,8 +90,8 @@ replay the branch's commits on top of the latest main branch.
 <h2>Falsify</h2>
 
 <p>A test that passes proves little: it would also pass if it tested nothing. Falsify proves the tests
-<em>notice</em>. The tool drafts a plan from the source lines the branch added — one control per guard,
-comparison or error — each with a mutation that removes it:</p>
+<em>notice</em>. The tool drafts a plan from the source lines the branch added — one control per line that
+refuses, stops or decides — each with a mutation that removes it:</p>
 
 <ul>
   <li>a guard made <em>never true</em>;</li>
@@ -101,6 +101,10 @@ comparison or error — each with a mutation that removes it:</p>
 
 <p>Never negation: negating a guard also breaks the normal path, so any test "catches" it. That is a
 false catch.</p>
+
+<p>Each control runs only the tests that cite its criterion and name its source file. Two things in a
+draft need a person: <code>mutation: write one</code>, where deleting the line would not parse, and
+<code>files: []</code>, where no test names the file — that one is reported <em>survived</em> without running.</p>
 
 <pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py falsify suggest SL-1
 <span class="p">$ </span>python3 spry/tool/spry.py falsify run .spry/falsify/SL-1.json --dry-run

@@ -50,14 +50,21 @@ for the lines that matter — the safeguards the slice added — so it takes min
   <li><strong>The plan is drafted from the diff</strong>, not by hand.
     <p><code>falsify suggest</code> reads the source lines the branch added and lists each
     <em>control</em> — a guard, a validation, an authorisation check, an error branch — with a mutation
-    that removes it. Each plan entry names the line with <code>find</code> and its replacement with
+    that removes it. A control is a line that <em>refuses, stops or decides</em>: an <code>if</code>, a
+    <code>throw</code> or <code>raise</code>, an error return, an <code>assert</code>, a clause of a condition
+    written over several lines, a comparison in a <code>WHERE</code>. A line that only builds a value — a
+    default (<code>a || b</code>), a pass-through, a JSX condition — is not one, and neither is a guard the
+    branch only moved from another file: its tests belong to another slice. Each plan entry names the line with <code>find</code> and its replacement with
     <code>with</code> — writ's form. A person can edit the plan before it runs.</p></li>
   <li><strong>Each control names what should catch it.</strong>
     <p><code>expect</code> names acceptance criteria (<code>S-1/AC-2</code>) — or, for a bug's or a task's
     slice, the bug or the task (<code>B-4</code>, <code>T-7</code>), since neither has criteria. Tests are
     found by those IDs in their names. Or it names a test file by its path, for a guard a test already
     covers — a task's set-up or refactor is often guarded by tests older than the task.</p></li>
-  <li><strong>Only those tests run</strong>, with the runner's fail-fast flag — one failure is enough.</li>
+  <li><strong>Only the tests that can notice run</strong>, with the runner's fail-fast flag — one failure is enough.
+    <p>The draft gives each control its <code>files</code>: the tests that cite its <code>expect</code>
+    <em>and</em> name its source file. When none does, <code>files</code> is empty and the control is reported
+    <code>survived — no test names &lt;file&gt;</code> without running anything.</p></li>
   <li><strong>The result is recorded</strong> in the slice file's Falsify table, with <code>--record</code>.</li>
 </ol>
 
@@ -66,7 +73,12 @@ for the lines that matter — the safeguards the slice added — so it takes min
   <li><strong>A guard made <em>never true</em></strong> — <code>if (loans &gt;= 3)</code> becomes a condition that never fires.</li>
   <li><strong>A comparison's boundary flipped</strong> — <code>&gt;=</code> ↔ <code>&gt;</code>. Never <code>==</code> ↔ <code>!=</code>,
   and never inside a generic's <code>&lt;…&gt;</code>, which isn't a comparison at all.</li>
-  <li><strong>A <code>throw</code>, <code>raise</code> or error return deleted.</strong></li>
+  <li><strong>A <code>throw</code>, <code>raise</code> or error return deleted</strong> — only when the line is a
+  statement by itself. The only statement under a Python <code>if x:</code> becomes <code>pass</code>.</li>
+  <li><strong>Never a mutation that cannot parse.</strong> Deleting one line of a longer expression — a
+  clause of a condition, a <code>throw new Error(</code> that closes three lines down — leaves a file no test
+  can load, and the row would read <code>unreliable</code>. Such a control is drafted
+  <code>mutation: write one</code>, and the run refuses the plan until a person fills it in.</li>
 </ul>
 <h3>Why not negate the guard?</h3>
 <p>Negating <code>if (overLimit)</code> to <code>if (!overLimit)</code> also breaks the normal path — now every
@@ -88,7 +100,8 @@ removes <em>only</em> the safeguard.</p>
 So:</p>
 <ul>
   <li><strong><code>merge-check</code> runs <code>suggest</code> again</strong> at merge time and blocks when a
-  control it lists has no row in the table.</li>
+  control it lists has no row in the table. It follows the same draft, so a line that only builds a
+  value, or that the branch only moved, needs no row.</li>
   <li><strong>The agent can add controls, never drop one.</strong> A control that cannot run — it needs a
   real clock, a network — is recorded <code>skipped — &lt;reason&gt;</code>, for a person to accept.</li>
   <li><strong>Rows are matched by a key</strong>, a hash of the file and the line found
@@ -128,9 +141,10 @@ So:</p>
 <ul>
   <li><strong>Only the citing test files run</strong>, through a per-runner command with a
   <code>{files}</code> placeholder.</li>
-  <li><strong>Files that name the control's source file run first</strong>; the rest run only if those
-  miss it. A control cited by more than 20 files is flagged <code>wide:</code> at the run — list the files
-  that matter to cap it.</li>
+  <li><strong>A control with <code>files</code> runs only those</strong> — the citing tests that name its source
+  file. A survivor used to run every file citing the slice's criteria, integration tests included.</li>
+  <li><strong>A control without <code>files</code></strong> runs the tests naming its source file first; the
+  rest run only if those miss it. More than 20 files is flagged <code>wide:</code> at the run.</li>
   <li><strong>The baseline runs once</strong> for all the files together, not once per control.</li>
   <li><strong>Parallel in git worktrees</strong> (<code>falsify.parallel</code>: <code>false</code>, <code>true</code>
   or a number; or <code>--jobs N</code>). Each worker gets its own detached copy of the code outside your

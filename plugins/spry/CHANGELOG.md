@@ -1076,3 +1076,44 @@ Entry format:
   - a project that patched `spry/tool/spry.py` for the console or the citation order drops the patch;
   - a project that raised `budgets` for `SL-*.md` because of Falsify tables sets it back;
   - the first `index` after updating may reorder *Proven by* and *Cited at* lists once.
+
+## CH-54 · Falsify: fewer controls, valid mutations, only the tests that can notice
+
+- **Date:** 2026-11-14 · **Version:** 0.43.0
+- **Touches:** `tool/spry.py` (`falsify suggest`, `falsify run`, `merge-check`), `process/slicing.md`
+  (*Close* step 6), `process/templates/spry.config.json` (`falsify.controls`)
+- **Why:** falsify was the longest stage of a close and its cost grew with the test suite, not the
+  change. In one project over ten days it took 16.1 hours across 101 slices; of 5,106 controls
+  1,100 ended `unreliable` and 1,219 `survived`. One 171-control slice needed three hours. Five
+  causes, each in the tool:
+  - **Any line with an operator was a control** — `||`, `&&`, `===`, `!=` — so defaults,
+    pass-through code (`...(x === undefined ? {} : { x })`) and JSX conditions were drafted: about a
+    third of one slice's controls guarded nothing. A control is now a line that refuses, stops or
+    decides: `if` / `else if` / `unless` / `guard`, `throw`, `raise`, an error return, `assert`,
+    `require`, a clause of an `if` or `while` condition written over several lines, and a comparison
+    in a `WHERE`.
+  - **A moved line counted as added.** A function extracted into a new file brought every old guard
+    with it; their tests cite another slice's criteria, so the rows read `survived`. An added guard
+    whose text the same diff removed elsewhere is now left out, and `suggest` says how many.
+  - **"Delete the line" broke the parse** inside a longer expression, and the row read `unreliable —
+    failed, but no test did`. A line is now deleted only when it is a statement by itself; the only
+    statement under a Python `if x:` becomes `pass`; an `if (…)` with its statement on the same line
+    is made never true. Anything else is drafted `mutation: write one`, and `run` refuses the plan
+    until it is filled.
+  - **Every control ran every test citing the slice's criteria** once it survived, integration
+    files included. `suggest` now drafts each control's `files` — the citing tests that name its
+    source file — and a control runs only those. When none does (`files: []`) it is reported
+    `survived — no test names <file>` with nothing run, and `merge-check` blocks on that row.
+  - **`merge-check` required every over-drafted control.** It follows the new draft.
+- **Adapt:**
+  - `falsify.controls`: `guards` (default) or `operators`, the old reach — for a project whose
+    safeguards live in expressions the new rule does not see, such as predicates
+    (`return a.org === b.org`);
+  - a project with a local rule to rewrite mutations or narrow each control's tests by hand before
+    the run can drop it.
+- **Migrate:**
+  - nothing for closed slices: rows for controls no longer drafted are extra, not missing;
+  - a plan file written by hand with `"files": []` now means "run nothing" — remove the key to run
+    every citing test;
+  - the project's copy of `slicing.md` *Close* step 6 takes the three new bullets (`write one`,
+    `files`, what is not drafted).
