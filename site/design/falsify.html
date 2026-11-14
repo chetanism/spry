@@ -167,6 +167,10 @@ So:</p>
   (1, 2, …) and <code>SPRY_FALSIFY_SLOTS</code>; <code>falsify.setup</code>, if set, runs once in each slot
   before the baseline — create and migrate that slot's database — so integration tests can run in
   parallel without a runner of your own. A setup that fails stops the run.</li>
+  <li><strong>One heavy run at a time, if you ask.</strong> With <code>checks.lock: true</code> a falsify run
+  waits for any gate or falsify run in another worktree of the clone to finish, and holds the same
+  <a href="gate.html">lock</a> while it runs. The wait ends before the first test starts, so it never
+  counts against <code>falsify.timeout</code>.</li>
 </ul>
 
 <h2>Safety</h2>

@@ -62,7 +62,9 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
       {"name": "lint", "run": "&lt;linter, with its cache&gt;"},
       {"name": "types", "run": "&lt;type checker, if the language has one&gt;"}
     ],
-    "docs": ["spry/**", "**/*.md"]
+    "docs": ["spry/**", "**/*.md"],
+    "generated": [],
+    "lock": false
   },
   "tests": {
     "match": ["&lt;glob of test files, e.g. **/*.test.ts&gt;"],
@@ -171,6 +173,9 @@ the fast checks run before any test.</p>
   <tbody>
     <tr><td><code>checks.fast</code></td><td>Format, lint and type checks, as <code>{"name", "run"}</code>, cheapest first.</td></tr>
     <tr><td><code>checks.docs</code></td><td>Globs for files whose change never needs a test run. A branch that changed only these runs <code>check</code> alone. Default <code>["spry/**", "**/*.md"]</code>.</td></tr>
+    <tr><td><code>checks.generated</code></td><td>Globs for files a command writes: a generated client, a schema dump, a package manager's lock file. Their lines are left out of a slice's size — the <code>slices.steps.max_lines</code> warning and <code>pace</code>'s "lines changed" — and printed beside it as "n generated". Default: none.</td></tr>
+    <tr><td><code>checks.lock</code></td><td><code>true</code>: only one <code>gate</code> or <code>falsify run</code> runs its commands at a time, across every worktree of this clone. A run that has to wait says who holds the lock and for how long, then goes on. For a machine where several sessions build side by side. Default <code>false</code>.</td></tr>
+    <tr><td><code>checks.lock_path</code></td><td>The lock file. Default: a file in the system's temporary folder named after the clone's git directory. Give two clones the same path to order their runs too.</td></tr>
     <tr><td><code>tests.match</code></td><td>Globs that find test files — where <code>check</code> looks for criterion citations like <code>S-1/AC-2</code> in test names.</td></tr>
     <tr><td><code>tests.affected</code></td><td>A command that runs only the tests affected by the working tree. Used by <code>gate</code> — once at close, or whenever a test's answer is needed (<code>gate --fast</code>, run while building, runs no tests).</td></tr>
     <tr><td><code>tests.retry</code></td><td>The affected tests again with no parallelism, run once when the first run failed on a timeout. Empty: never retry.</td></tr>
@@ -288,7 +293,7 @@ off, so a project set up before 0.34.0 has none until it takes them. New project
     <tr><td><code>slices.pick</code></td><td>What <code>/spry:slice-open</code> with no ID does. <code>offer</code>: recommends the first ready slice, with two alternatives. <code>ask</code>: lists the first four and recommends none.</td><td><code>offer</code></td></tr>
     <tr><td><code>slices.mode</code></td><td>How <code>/spry:slice</code> divides a story. <code>split</code>: one slice per reviewable change. <code>steps</code>: the same changes become <em>steps</em>, packed into as few slices as the cap allows, so the review set-up, falsify, the full gate, CI and the merge happen once per slice rather than once per change. Each step is still its own commit and its own reviewer. See <a href="../guides/slicing.html#built-in-steps">Built in steps</a>.</td><td><code>split</code></td></tr>
     <tr><td><code>slices.steps.max</code></td><td>The most steps one slice may hold; <code>check</code> refuses more.</td><td><code>5</code></td></tr>
-    <tr><td><code>slices.steps.max_lines</code></td><td>Lines of code (documents not counted) one steps slice should change. Over it, <code>merge-check</code> lists the size for you to accept at the merge.</td><td><code>800</code></td></tr>
+    <tr><td><code>slices.steps.max_lines</code></td><td>Lines of code (documents and <code>checks.generated</code> files not counted) one steps slice should change. Over it, <code>merge-check</code> lists the size for you to accept at the merge.</td><td><code>800</code></td></tr>
     <tr><td><code>main_branch</code></td><td>The repository's default branch — read from the repository at setup, never assumed.</td><td><code>main</code></td></tr>
     <tr><td><code>mint</code></td><td>Where IDs are taken and slices claimed. <code>local</code>: the next number in this tree; two branches can collide, and <code>check --base</code> names it before the merge. <code>main</code>: taken on the main branch on the remote, pushed at once — two sessions never take one number or one slice. Needs a main branch that accepts a direct commit of documents.</td><td><code>local</code></td></tr>
   </tbody>
