@@ -59,7 +59,11 @@ from the argument (`SL-n` or a PR number), or from the current branch's `open` /
    keeps nothing else. `gh pr merge <n> --squash --subject "…" --body "…" --delete-branch`.
 8. **After the merge:**
    - `git checkout <main> && git pull --ff-only && git fetch --prune`; delete the local branch with
-     `git branch -D` (a squash merge makes `-d` refuse).
+     `git branch -D` (a squash merge makes `-d` refuse). In a worktree spry made, the main checkout
+     holds `<main>`: `python3 spry/tool/spry.py worktree home` instead of the checkout — the worktree
+     back on its home branch at the main branch's head — then `git fetch --prune` and the branch
+     deleted as above. The steps below run there; a push to `<main>` is
+     `git push origin HEAD:<main>`, and a `git pull --ff-only` is `worktree home` again.
    - **Did the main branch move under it?** `python3 spry/tool/spry.py changed --base "$head"`
      compares the PR's head with the main branch as it is now.
      - `code=false`: the main branch's code is exactly what the PR's checks passed — the only

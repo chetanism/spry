@@ -41,6 +41,9 @@
     python3 spry/tool/spry.py agent-hook <name> < payload.json   # one Claude Code hook call (hooks/hooks.json); `hooks` in the config turns each on
     python3 spry/tool/spry.py review-check <payload.json> --diff <file|-> [--own]   # would GitHub take this review?
     python3 <plugin>/tool/spry.py install --agent <generic|claude|cursor|gemini> [--root <project>]
+    python3 spry/tool/spry.py worktree list | new [name] | claim <name|index> | release [name] | home [name] | prune [--kept]
+    python3 spry/tool/spry.py say "<text>" [--slice SL-n]   # a milestone line for `watch`, by hand
+    python3 spry/tool/spry.py watch [-n seconds] [--once]   # a panel per worktree: claim, slice, step, last milestones
 
 Run from anywhere inside the project, or pass --root. The project root is the nearest directory
 above the current one holding `spry/spry.config.json`.
@@ -82,7 +85,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.51.0"
+VERSION = "0.52.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -3519,10 +3522,20 @@ def slot_env(slot: int, slots: int) -> dict:
     return {"SPRY_FALSIFY_SLOT": str(slot), "SPRY_FALSIFY_SLOTS": str(slots)}
 
 
+def slot_setup(project: Project) -> tuple:
+    """(key, command) that readies a slot: `worktrees.setup`, which isolates a worktree and a slot the
+    same way, else `falsify.setup`, its older name."""
+    for key, block in (("worktrees.setup", project.config.get("worktrees")), ("falsify.setup", project.config.get("falsify"))):
+        command = str((block or {}).get("setup") or "") if isinstance(block, dict) else ""
+        if command:
+            return key, command
+    return "", ""
+
+
 def prepare_slot(project: Project, cwd: str, env: dict, timeout: int, say):
-    """Run `falsify.setup` once in a slot, before its first test. A failure stops the run: a slot
+    """Run the slot set-up once in a slot, before its first test. A failure stops the run: a slot
     that is not ready would turn every control after it into a result."""
-    command = str(project.config.get("falsify", {}).get("setup") or "")
+    key, command = slot_setup(project)
     if not command:
         return
     code, output = run_command(command, cwd, timeout, env)
@@ -3530,13 +3543,13 @@ def prepare_slot(project: Project, cwd: str, env: dict, timeout: int, say):
     if code != 0:
         last = ANSI.sub("", output).strip().split("\n")[-1]
         why = "timed out" if code is None else f"exit {code}" + (f": {last}" if last else "")
-        raise PlanError(f"falsify.setup failed in slot {slot} ({why}) — no control was run")
+        raise PlanError(f"{key} failed in slot {slot} ({why}) — no control was run")
     say(f"setup · slot {slot}")
 
 
 def falsify_serial(project: Project, plan: list, table: list, timeout: int, groups: dict, say) -> list:
     """One control at a time, in this tree; every file restored, whatever happens."""
-    env = slot_env(1, 1)
+    env = {**slot_env(1, 1), **worktree_env(project)}
     prepare_slot(project, project.root, env, timeout, say)
     red = baseline(project, groups, table, timeout, project.root, say, env)
     writer, results, touched = Writer(), [], {}
@@ -3652,8 +3665,11 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
         home = None
     if home:  # forget kept worktrees a temporary-folder cleaner deleted, or `worktree add` refuses them
         git(project.root, "worktree", "prune")
-    parent = home or tempfile.mkdtemp(prefix="spry-falsify-")
+    parent = home or tempfile.mkdtemp(prefix=SLOT_PREFIX + "run-")
+    if not home:  # held for the run, so `worktree prune` leaves these trees alone while it lasts
+        held = take_home(parent)
     trees, made, writer, lock, envs = [], [], Writer(), threading.Lock(), {}
+    where = worktree_env(project)
     share = shared_paths(project)
     prefix = git_prefix(project.root)
     pnpm = os.path.isdir(native(os.path.join(project.root, "node_modules", ".pnpm")))
@@ -3676,7 +3692,7 @@ def falsify_parallel(project: Project, plan: list, table: list, timeout: int, gr
             made.append(tree)
             tree = os.path.join(tree, prefix)
             trees.append(tree)
-            envs[tree] = {**slot_env(n + 1, jobs), **WORKTREE_ENV}
+            envs[tree] = {**slot_env(n + 1, jobs), **WORKTREE_ENV, **where}
             for rel in share:
                 link = os.path.join(tree, rel)
                 if not os.path.exists(native(link)):
@@ -5838,6 +5854,8 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
             say(f"step {k} not committed: its tests are red — {', '.join(named)}")
         else:
             say(f"step {k} not committed: the fast checks are red")
+        red = [line[2:].split(" · ")[0] for line in said if line.startswith("✗ ")]
+        progress_event(project, "step", f"step {k} of {total} not committed: red {', '.join(red) or 'checks'}", item.id)
         return code
     added = git(project.root, "add", "-A", "--", ".")
     made = git(project.root, "commit", "-q", "-m", f"{item.id} step {k}: {step['title']}", "-m", f"Step: {item.id}/{k}") \
@@ -5848,6 +5866,7 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
     sha = git(project.root, "rev-parse", "--short", "HEAD").stdout.strip()
     after = f"step {k + 1}: `spry.py step {item.id}`" if k < total else "/spry:slice-close"
     say(f"committed step {k} of {total} as {sha} — next, {after}")
+    progress_event(project, "step", f"step {k} of {total} committed ({sha})", item.id)
     return 0
 
 
@@ -6049,11 +6068,14 @@ def gate(project: Project, force: bool = False, say=print, fast: bool = False, f
         code = rerun_failed(project, say, seen)
         pace_log(project, "gate", time.time() - started - seen.get("waited", 0), ok=code == 0, fast=True,
                  failed=True, **seen)
+        progress_event(project, "gate", gate_said(code, seen, True, True))
         return code
     code = run_gate(project, force, say, fast, full, seen, step_tests)
     # A wait for the lock is another run's time: `waited` records it, `seconds` leaves it out.
     pace_log(project, "gate", time.time() - started - seen.get("waited", 0), ok=code == 0, fast=fast, full=full,
              force=force, **seen)
+    if step_tests is None:  # a step's commit says its own line
+        progress_event(project, "gate", gate_said(code, seen, fast, False))
     return code
 
 
@@ -8192,13 +8214,888 @@ def memory_text(report: dict) -> str:
     return "\n".join(out)
 
 
+# ---------------------------------------------------------------- worktrees and progress (§24)
+
+# A person running several agent sessions gives each its own git worktree. `worktrees` in the config
+# says where they live and how one is set up; spry knows nothing of what the project isolates in it
+# (a database, ports, an `.env`) — the project's `worktrees.setup` does that. Claims and the progress
+# log live in the main checkout's `.spry/`, so every worktree of one clone reads and writes the same.
+
+WORKTREE_DEFAULTS = {"dir": ".claude/worktrees", "home_branch": "alt{index}", "max": 4, "setup": "", "share": [],
+                     "stale_after": 12}
+PROGRESS_DEFAULTS = {"transcripts": False, "quiet": 15, "keep": 400}
+PROGRESS_LIMIT = 256 * 1024  # over this many bytes, the log keeps its newest `progress.keep` lines
+SESSION_ENV = ("SPRY_SESSION", "CLAUDE_CODE_SESSION_ID")
+AGENT_PID_ENV = ("SPRY_SESSION_PID", "CLAUDE_PID")
+AGENT_PROCESS = re.compile(r"(?:^|[/\\\s])(?:claude(?:\.exe)?|claude-code)(?:\s|$)|@anthropic-ai[/\\]claude-code", re.I)
+SLOT_PREFIX = "spry-falsify-"
+
+
+def worktrees_config(project: Project) -> dict | None:
+    """`worktrees` with its defaults, or None when the project has no such block."""
+    given = project.config.get("worktrees")
+    if given is None:
+        return None
+    if not isinstance(given, dict):
+        raise SystemExit("spry.config.json: worktrees is an object — {\"dir\": …, \"max\": …, \"setup\": …}")
+    conf = {**WORKTREE_DEFAULTS, **given}
+    try:
+        conf["max"], conf["stale_after"] = int(conf["max"]), float(conf["stale_after"])
+    except (TypeError, ValueError):
+        raise SystemExit("spry.config.json: worktrees.max is a number of worktrees, worktrees.stale_after a number of hours")
+    if conf["max"] < 1 or conf["stale_after"] <= 0:
+        raise SystemExit("spry.config.json: worktrees.max is at least 1 and worktrees.stale_after above 0")
+    if not isinstance(conf["share"], list) or not all(isinstance(s, str) for s in conf["share"]):
+        raise SystemExit("spry.config.json: worktrees.share is a list of paths")
+    if not isinstance(conf["home_branch"], str) or not re.search(r"\{(?:index|name)\}", conf["home_branch"]):
+        raise SystemExit("spry.config.json: worktrees.home_branch names each worktree's branch: `alt{index}` or `{name}`")
+    return conf
+
+
+def progress_config(project: Project) -> dict:
+    conf = {**PROGRESS_DEFAULTS, **(project.config.get("progress") or {})}
+    if conf["transcripts"] not in (False, None, "", "claude-code"):
+        raise SystemExit("spry.config.json: progress.transcripts is false or \"claude-code\"")
+    try:
+        conf["quiet"], conf["keep"] = float(conf["quiet"]), max(10, int(conf["keep"]))
+    except (TypeError, ValueError):
+        raise SystemExit("spry.config.json: progress.quiet is minutes, progress.keep a number of lines")
+    return conf
+
+
+def spry_home(project: Project, *parts: str) -> str:
+    """A path under the main checkout's `.spry/` — one for every worktree of this clone."""
+    return os.path.join(pace_root(project), ".spry", *parts)
+
+
+def tree_top(root: str) -> str:
+    done = git(root, "rev-parse", "--show-toplevel")
+    return os.path.realpath(done.stdout.strip() if done.returncode == 0 and done.stdout.strip() else root)
+
+
+def pid_alive(pid) -> bool:
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    if WINDOWS:
+        import ctypes
+        kernel = ctypes.windll.kernel32  # type: ignore[attr-defined]
+        handle = kernel.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+        if not handle:
+            return False
+        code = ctypes.c_ulong()
+        try:
+            return bool(kernel.GetExitCodeProcess(handle, ctypes.byref(code))) and code.value == 259  # STILL_ACTIVE
+        finally:
+            kernel.CloseHandle(handle)
+    try:
+        os.kill(pid, 0)
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        return True
+    except OSError:
+        return False
+    return True
+
+
+def agent_pid() -> int:
+    """The process a claim lives as long as: `SPRY_SESSION_PID`, else the agent's (`CLAUDE_PID`, or its process
+    found among this one's ancestors), else the parent — the shell a person typed the command in."""
+    for name in AGENT_PID_ENV:
+        given = os.environ.get(name, "")
+        if given.isdigit():
+            return int(given)
+    if not WINDOWS:
+        pid = os.getppid()
+        for _ in range(12):
+            if pid <= 1:
+                break
+            try:
+                done = subprocess.run(["ps", "-o", "ppid=,args=", "-p", str(pid)], capture_output=True, text=True, timeout=5)
+            except (OSError, subprocess.SubprocessError):
+                break
+            parent, _, args = done.stdout.strip().partition(" ")
+            if done.returncode != 0 or not parent.strip().isdigit():
+                break
+            if AGENT_PROCESS.search(args.strip()):
+                return pid
+            pid = int(parent.strip())
+    return os.getppid()
+
+
+def session_id(project: Project, pid: int) -> str:
+    """The agent session's id: from the environment, else the one the session-start hook noted for its process."""
+    for name in SESSION_ENV:
+        if os.environ.get(name):
+            return os.environ[name]
+    try:
+        return str(json.loads(read(spry_home(project, "worktrees", "sessions", f"{pid}.json"))).get("session") or "")
+    except (OSError, ValueError, AttributeError):
+        return ""
+
+
+@contextlib.contextmanager
+def file_lock(path: str, wait: float = 30.0):
+    """Hold `path` locked for the body; two sessions writing one claim cannot both win."""
+    os.makedirs(native(os.path.dirname(path)), exist_ok=True)
+    handle = open(native(path), "a+")
+    started = time.time()
+    try:
+        while not lock_try(handle):
+            if time.time() - started > wait:
+                raise SystemExit(f"{path} stayed locked for {int(wait)}s — another spry command is stuck; try again")
+            time.sleep(0.05)
+        yield
+    finally:
+        handle.close()
+
+
+def write_json(path: str, data: dict) -> None:
+    os.makedirs(native(os.path.dirname(path)), exist_ok=True)
+    temporary = path + f".{os.getpid()}.tmp"
+    write(temporary, json.dumps(data, indent=2, ensure_ascii=False) + "\n")
+    os.replace(native(temporary), native(path))
+
+
+def worktree_records(project: Project) -> dict:
+    """{name: record} from `.spry/worktrees/<name>.json`: index, path, home branch, and the claim if any."""
+    folder, out = spry_home(project, "worktrees"), {}
+    if not os.path.isdir(native(folder)):
+        return out
+    for name in sorted(os.listdir(native(folder)), key=natural_key):
+        if name.endswith(".json"):
+            try:
+                record = json.loads(read(os.path.join(folder, name)))
+            except (OSError, ValueError):
+                continue
+            if isinstance(record, dict) and record.get("name") == name[:-5]:
+                out[record["name"]] = record
+    return out
+
+
+def record_path(project: Project, name: str) -> str:
+    return spry_home(project, "worktrees", f"{name}.json")
+
+
+def slot_parent(path: str) -> bool:
+    """A falsify slot: a worktree under a `spry-falsify-…` folder, kept or made for one run."""
+    return os.path.basename(os.path.dirname(os.path.realpath(path))).startswith(SLOT_PREFIX)
+
+
+def git_worktrees(project: Project) -> list:
+    """[{path, branch, head, main, slot}] from `git worktree list`, the main checkout first."""
+    done = git(project.root, "worktree", "list", "--porcelain")
+    out = []
+    for block in done.stdout.strip().split("\n\n") if done.returncode == 0 else []:
+        fields = {}
+        for line in block.split("\n"):
+            key, _, value = line.partition(" ")
+            fields[key] = value
+        if "worktree" not in fields:
+            continue
+        branch = fields.get("branch", "")
+        out.append({"path": os.path.realpath(fields["worktree"]), "head": fields.get("HEAD", ""),
+                    "branch": branch[len("refs/heads/"):] if branch.startswith("refs/heads/") else "",
+                    "main": not out, "slot": bool(out) and slot_parent(fields["worktree"]),
+                    "prunable": "prunable" in fields})
+    return out
+
+
+def claim_state(record: dict | None, conf: dict) -> str:
+    """free | live | stale for a worktree's claim."""
+    held = (record or {}).get("claim")
+    if not held:
+        return "free"
+    if not pid_alive(held.get("pid")) or time.time() - float(held.get("at") or 0) > conf["stale_after"] * 3600:
+        return "stale"
+    return "live"
+
+
+def worktree_rows(project: Project, conf: dict) -> list:
+    """Every worktree a person works in: the main checkout, each git worktree that is not a falsify slot,
+    and each record whose worktree is gone — with its record."""
+    records, rows, seen = worktree_records(project), [], set()
+    home = os.path.realpath(os.path.join(pace_root(project), conf["dir"]))
+    by_path = {os.path.realpath(r.get("path") or ""): r for r in records.values()}
+    for tree in git_worktrees(project):
+        if tree["slot"]:
+            continue
+        record = by_path.get(tree["path"])
+        name = "main" if tree["main"] else (record or {}).get("name") or os.path.basename(tree["path"])
+        if record:
+            seen.add(record["name"])
+        rows.append({**tree, "name": name, "record": record, "under_dir": os.path.dirname(tree["path"]) == home})
+    for name, record in records.items():
+        if name not in seen:
+            rows.append({"path": os.path.realpath(record.get("path") or ""), "branch": "", "head": "", "main": False,
+                         "slot": False, "prunable": True, "name": name, "record": record, "gone": True,
+                         "under_dir": True})
+    return rows
+
+
+def free_index(rows: list, conf: dict, wanted: int | None = None) -> int | None:
+    taken = {r["record"].get("index") for r in rows if r.get("record")}
+    if wanted and wanted not in taken:
+        return wanted
+    return next((i for i in range(1, conf["max"] + 1) if i not in taken), None)
+
+
+def find_worktree(rows: list, given: str) -> dict | None:
+    for row in rows:
+        if row["name"] == given or (given.isdigit() and (row.get("record") or {}).get("index") == int(given)):
+            return row
+    return None
+
+
+def here_row(project: Project, rows: list) -> dict | None:
+    top = tree_top(project.root)
+    return next((r for r in rows if r["path"] == top), None)
+
+
+def home_branch(conf: dict, name: str, index: int) -> str:
+    return conf["home_branch"].replace("{index}", str(index)).replace("{name}", name)
+
+
+def main_ref(project: Project, fetch: bool = True) -> str:
+    """The main branch's head: `origin/<main>` after a fetch when there is a remote, else the local branch."""
+    main = main_branch(project)
+    if fetch and git(project.root, "remote", "get-url", REMOTE).returncode == 0:
+        git(project.root, "fetch", "-q", REMOTE, main)
+    remote = f"{REMOTE}/{main}"
+    if git(project.root, "rev-parse", "--verify", "--quiet", f"{remote}^{{commit}}").returncode == 0:
+        return remote
+    return main
+
+
+def worktree_env(project: Project) -> dict:
+    """`SPRY_WORKTREE` and `SPRY_WORKTREE_NAME` of the tree a command runs in: 0 and `main` in the main
+    checkout, so a slot's set-up can tell its tree apart from every other."""
+    conf = worktrees_config(project)
+    if conf is None:
+        return {}
+    row = here_row(project, worktree_rows(project, conf)) or {}
+    record = row.get("record") or {}
+    return {"SPRY_WORKTREE": str(record.get("index", 0)), "SPRY_WORKTREE_NAME": row.get("name") or "main"}
+
+
+def run_setup(project: Project, conf: dict, cwd: str, env: dict) -> tuple:
+    """(ok, why) of `worktrees.setup` run once in a new worktree."""
+    command = str(conf.get("setup") or "")
+    if not command:
+        return True, ""
+    code, output = run_command(command, cwd, 1800, env)
+    if code == 0:
+        return True, ""
+    last = ANSI.sub("", output).strip().split("\n")[-1] if output.strip() else ""
+    return False, "timed out" if code is None else f"exit {code}" + (f": {last}" if last else "")
+
+
+def worktree_new(project: Project, conf: dict, name: str | None, say=print) -> int:
+    if name is not None and (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name) or name == "main"):
+        say(f"`{name}` cannot name a worktree: letters, digits, `.`, `_` and `-`, and not `main`")
+        return 2
+    rows = worktree_rows(project, conf)
+    mine = [r for r in rows if r.get("record") and not r.get("gone")]
+    if len(mine) >= conf["max"]:
+        say(f"already {len(mine)} worktrees, `worktrees.max` — claim a free one (`worktree list`), or raise the limit")
+        return 1
+    index = free_index(rows, conf)
+    if index is None:
+        say("no free index under `worktrees.max` — `worktree prune` drops the records of worktrees that are gone")
+        return 1
+    name = name or re.sub(r"[^A-Za-z0-9._-]", "-", os.path.basename(tree_top(pace_root(project)))).lstrip("._-") + str(index)
+    if find_worktree(rows, name):
+        say(f"{name} exists — `worktree claim {name}`")
+        return 1
+    path = os.path.join(pace_root(project), conf["dir"], name)
+    if os.path.lexists(native(path)):
+        say(f"{path} exists and is no worktree of this clone — move it away, or pick another name")
+        return 1
+    home, base = home_branch(conf, name, index), main_ref(project)
+    done = git(project.root, "worktree", "add", "-q", "-B", home, path, base)
+    if done.returncode != 0:
+        say(f"git worktree add failed — {last_line(done)}")
+        return 1
+    record = {"name": name, "index": index, "path": os.path.realpath(path), "home": home, "made": round(time.time(), 1)}
+    write_json(record_path(project, name), record)
+    root = os.path.join(path, git_prefix(project.root))
+    for rel in conf["share"]:
+        source = os.path.join(pace_root(project), rel)
+        if os.path.isfile(native(source)) and not os.path.exists(native(os.path.join(root, rel))):
+            os.makedirs(native(os.path.dirname(os.path.join(root, rel))), exist_ok=True)
+            shutil.copy2(native(source), native(os.path.join(root, rel)))
+    ok, why = run_setup(project, conf, root, {"SPRY_WORKTREE": str(index), "SPRY_WORKTREE_NAME": name})
+    if not ok:
+        say(f"{name} made at {path}, on `{home}`, but worktrees.setup failed ({why}) — fix it, then run it there "
+            f"with SPRY_WORKTREE={index} SPRY_WORKTREE_NAME={name}")
+        return 1
+    say(f"{name} · index {index} · `{home}` at {base}" + (" · set up" if conf.get("setup") else ""))
+    say(path)
+    return 0
+
+
+def worktree_claim(project: Project, conf: dict, given: str, say=print) -> int:
+    rows = worktree_rows(project, conf)
+    row = find_worktree(rows, given)
+    if row is None:
+        say(f"no worktree `{given}` — `worktree new{' ' + given if not given.isdigit() else ''}` makes it")
+        return 1
+    if row["main"]:
+        say("the main checkout is never claimed: plan-only sessions share it")
+        return 2
+    if row.get("gone"):
+        say(f"{row['name']} is gone from git — `worktree prune` drops its record")
+        return 1
+    pid = agent_pid()
+    with file_lock(spry_home(project, "worktrees", ".lock")):
+        record = (worktree_records(project).get(row["name"]) or row.get("record") or {}).copy()
+        if not record:
+            index = free_index(rows, conf, int(m.group(1)) if (m := re.search(r"(\d+)$", row["name"])) else None)
+            record = {"name": row["name"], "index": index, "path": row["path"],
+                      "home": home_branch(conf, row["name"], index) if index else row["branch"], "made": round(time.time(), 1)}
+        state, held = claim_state(record, conf), record.get("claim") or {}
+        if state == "live" and int(held.get("pid") or 0) != pid:
+            say(f"{row['name']} is claimed by another session (pid {held.get('pid')}"
+                + (f", {held['session'][:8]}" if held.get("session") else "")
+                + f") since {time.strftime('%H:%M', time.localtime(float(held.get('since') or 0)))} — pick another")
+            return 1
+        if state == "stale":
+            say(f"{row['name']}: the claim of pid {held.get('pid')} was stale — taken")
+        now = round(time.time(), 1)
+        record["claim"] = {"session": session_id(project, pid), "pid": pid, "at": now,
+                           "since": held.get("since", now) if state == "live" else now}
+        write_json(record_path(project, row["name"]), record)
+    index = f" · index {record['index']}" if record.get("index") else ""
+    say(f"{row['name']} claimed{index} · `{row['branch'] or 'detached'}`")
+    say(row["path"])
+    return 0
+
+
+def worktree_release(project: Project, conf: dict, given: str | None, say=print, force: bool = False,
+                     pid: int | None = None, session: str = "") -> int:
+    rows = worktree_rows(project, conf)
+    row = find_worktree(rows, given) if given else here_row(project, rows)
+    if row is None or row["main"]:
+        say("not in a worktree spry knows — name one: `worktree release <name>`")
+        return 1
+    pid = pid or agent_pid()
+    with file_lock(spry_home(project, "worktrees", ".lock")):
+        record = worktree_records(project).get(row["name"])
+        held = (record or {}).get("claim")
+        if not held:
+            say(f"{row['name']} is not claimed")
+            return 0
+        ours = int(held.get("pid") or 0) == pid or (session and held.get("session") == session)
+        if not ours and claim_state(record, conf) == "live" and not force:
+            say(f"{row['name']} is claimed by another live session (pid {held.get('pid')}) — `--force` drops it anyway")
+            return 1
+        record.pop("claim", None)
+        write_json(record_path(project, row["name"]), record)
+    say(f"{row['name']} released")
+    return 0
+
+
+def worktree_home(project: Project, conf: dict, given: str | None, say=print) -> int:
+    rows = worktree_rows(project, conf)
+    row = find_worktree(rows, given) if given else here_row(project, rows)
+    if row is None or row.get("gone"):
+        say("not in a worktree spry knows — name one: `worktree home <name>`")
+        return 1
+    if row["main"]:
+        say(f"the main checkout rests on `{main_branch(project)}`: `git checkout {main_branch(project)} && git pull --ff-only`")
+        return 1
+    record = row.get("record") or {}
+    home = record.get("home") or (home_branch(conf, row["name"], record["index"]) if record.get("index") else "")
+    if not home:
+        say(f"{row['name']} has no home branch yet — `worktree claim {row['name']}` gives it one")
+        return 1
+    if git(row["path"], "status", "--porcelain", "--untracked-files=no").stdout.strip():
+        say(f"{row['name']} has uncommitted changes — commit or stash them first")
+        return 1
+    base = main_ref(project)
+    done = git(row["path"], "checkout", "-q", "-B", home, base)
+    if done.returncode != 0:
+        say(f"git checkout failed — {last_line(done)}")
+        return 1
+    sha = git(row["path"], "rev-parse", "--short", "HEAD").stdout.strip()
+    say(f"{row['name']} on `{home}` at {base} ({sha})")
+    progress_event(project, "home", f"on {home} at {base} ({sha})", root=row["path"])
+    return 0
+
+
+def worktree_prune(project: Project, conf: dict | None, kept: bool = False, say=print) -> int:
+    """Remove falsify slot trees no run owns, and the records of worktrees that are gone. Kept slot trees
+    — warm for the next run — go only with `kept`."""
+    git(project.root, "worktree", "prune")
+    trees = git_worktrees(project)
+    homes = {os.path.realpath(falsify_home(Project(os.path.join(t["path"], git_prefix(project.root)), load=False,
+                                                   config=project.config)))
+             for t in trees if not t["slot"]}
+    removed = 0
+    by_parent: dict = {}
+    for t in trees:
+        if t["slot"]:
+            by_parent.setdefault(os.path.dirname(t["path"]), []).append(t["path"])
+    for parent, paths in sorted(by_parent.items()):
+        if os.path.realpath(parent) in homes and not kept:
+            continue
+        held = take_home(parent) if os.path.isdir(native(parent)) else None
+        if os.path.isdir(native(parent)) and held is None:
+            say(f"in use by a falsify run: {parent}")
+            continue
+        try:
+            for path in paths:
+                drop_links(path)
+                git(project.root, "worktree", "remove", "--force", path)
+                shutil.rmtree(native(path), ignore_errors=True)
+                say(f"removed: {path}")
+                removed += 1
+        finally:
+            if held:
+                held.close()
+        if os.path.realpath(parent) not in homes:
+            shutil.rmtree(native(parent), ignore_errors=True)
+    git(project.root, "worktree", "prune")
+    if conf is not None:
+        for row in worktree_rows(project, conf):
+            if row.get("gone"):
+                os.remove(native(record_path(project, row["name"])))
+                say(f"forgot: {row['name']} — its worktree is gone")
+                removed += 1
+    if not removed:
+        say("nothing to prune")
+    return 0
+
+
+def row_slice(row: dict) -> tuple:
+    """(ID, slice file text) of the slice a worktree's branch builds, or (None, None)."""
+    if not row.get("branch") or not os.path.isdir(native(row["path"])):
+        return None, None
+    root = find_root(row["path"])
+    if not root:
+        return None, None
+    try:
+        project = Project(root, load=False)
+        names = Names(project)
+        named = branch_slices(names, row["branch"])
+    except (SystemExit, OSError, ValueError):
+        return None, None
+    if not named:
+        return None, None
+    ident, doc = named[0]
+    return ident, names.read(doc) or ""
+
+
+def worktree_list(project: Project, conf: dict, say=print) -> int:
+    rows = worktree_rows(project, conf)
+    for row in rows:
+        record = row.get("record") or {}
+        index = f"#{record['index']}" if record.get("index") else ("—" if not row["main"] else "main")
+        state = claim_state(record, conf)
+        held = record.get("claim") or {}
+        claim = ("" if row["main"] else "free" if state == "free" else
+                 f"claimed by pid {held.get('pid')}" + (f" ({held['session'][:8]})" if held.get("session") else "")
+                 + f" since {time.strftime('%m-%d %H:%M', time.localtime(float(held.get('since') or 0)))}"
+                 + (" · stale" if state == "stale" else ""))
+        if row.get("gone"):
+            say(f"{row['name']} · {index} · gone — `worktree prune` forgets it")
+            continue
+        ident, text = row_slice(row)
+        slice_said = ""
+        if ident:
+            fm = parse_front_matter(text)[0] or {}
+            slice_said = f" · {ident} {fm.get('state', '?')}"
+        parts = [row["name"], index, f"`{row['branch'] or 'detached'}`"] + ([claim] if claim else [])
+        say(" · ".join(parts) + slice_said)
+        say(f"    {row['path']}")
+    left = conf["max"] - sum(1 for r in rows if r.get("record") and not r.get("gone"))
+    if left > 0:
+        say(f"{left} more under `worktrees.max` — `worktree new` makes one")
+    return 0
+
+
+# -- progress: one line per milestone, written by the tool
+
+def progress_path(project: Project) -> str:
+    return spry_home(project, "progress", "events.jsonl")
+
+
+def progress_event(project: Project, stage: str, said: str, slice_id: str | None = None, root: str | None = None) -> None:
+    """One line in the main checkout's `.spry/progress/events.jsonl`. Never fails the command it reports."""
+    try:
+        top = tree_top(root or project.root)
+        branch = git(top, "rev-parse", "--abbrev-ref", "HEAD").stdout.strip()
+        conf = worktrees_config(project)
+        name = "main"
+        if conf is not None:
+            rows = worktree_rows(project, conf)
+            row = next((r for r in rows if r["path"] == top), None)
+            name = row["name"] if row else os.path.basename(top)
+            record = (row or {}).get("record") or {}
+            if record.get("claim"):  # a claim lives while its worktree reports
+                with file_lock(spry_home(project, "worktrees", ".lock"), wait=5):
+                    fresh = worktree_records(project).get(record["name"])
+                    if fresh and fresh.get("claim"):
+                        fresh["claim"]["at"] = round(time.time(), 1)
+                        write_json(record_path(project, record["name"]), fresh)
+        elif top != tree_top(pace_root(project)):
+            name = os.path.basename(top)
+        line = json.dumps({"at": round(time.time(), 1), "worktree": name, "root": top, "branch": branch,
+                           **({"slice": slice_id} if slice_id else {}), "stage": stage, "said": said[:300]},
+                          ensure_ascii=False)
+        path, keep = progress_path(project), progress_config(project)["keep"]
+        os.makedirs(native(os.path.dirname(path)), exist_ok=True)
+        with file_lock(path + ".lock", wait=5):
+            with open(native(path), "a+", encoding="utf-8", newline="\n") as handle:
+                handle.write(line + "\n")
+                if handle.tell() > PROGRESS_LIMIT:
+                    handle.seek(0)
+                    kept = handle.readlines()[-keep:]
+                    handle.seek(0)
+                    handle.truncate()
+                    handle.writelines(kept)
+    except (OSError, ValueError, SystemExit, subprocess.SubprocessError):
+        pass
+
+
+def progress_events(project: Project) -> list:
+    try:
+        text = read(progress_path(project))
+    except OSError:
+        return []
+    out = []
+    for line in text.split("\n"):
+        try:
+            event = json.loads(line) if line.strip() else None
+        except ValueError:
+            continue
+        if isinstance(event, dict) and "at" in event:
+            out.append(event)
+    return out
+
+
+def gate_said(code: int, seen: dict, fast: bool, failed: bool) -> str:
+    kind = "gate --failed" if failed else "gate --fast" if fast else "gate"
+    if seen.get("skipped") == "failed":
+        return f"{kind} red, not run again: the code is unchanged"
+    if seen.get("skipped"):
+        return f"{kind} skipped: " + ("no code changed since green" if seen["skipped"] == "stamp" else "only documents changed")
+    if code == 0:
+        return f"{kind} green"
+    red = [name for name, _seconds, ok in seen.get("steps") or [] if not ok]
+    return f"{kind} red: {', '.join(red) or 'see .spry/gate/last.log'}"
+
+
+# -- watch
+
+def watch_ago(seconds: float) -> str:
+    s = max(0, int(seconds))
+    return f"{s}s" if s < 60 else f"{s // 60}m" if s < 3600 else f"{s // 3600}h{s % 3600 // 60:02d}"
+
+
+def watch_stage(row: dict, project: Project) -> str | None:
+    """`SL-4 · step 2 of 4 · <title>` from the slice file and the branch's `Step:` trailers."""
+    ident, text = row_slice(row)
+    if not ident:
+        return None
+    fm = parse_front_matter(text)[0] or {}
+    state, title = fm.get("state", "?"), fm.get("title", "")
+    steps = [s for s in slice_steps(text) if s["n"]]
+    head = f"{ident} {title}".strip()
+    if not steps:
+        return f"{head} · {state}"
+    base = f"{REMOTE}/{main_branch(project)}"
+    if git(row["path"], "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode != 0:
+        base = main_branch(project)
+    log = git(row["path"], "log", f"{base}..HEAD", "--format=%(trailers:key=Step,valueonly=true)").stdout
+    done = {int(n) for n in re.findall(re.escape(ident) + r"/(\d+)", log)}
+    total = len(steps)
+    if state == "closed":
+        return f"{head} · all {total} steps · closed — merging"
+    if len(done) >= total:
+        return f"{head} · all {total} steps committed · closing"
+    k = min(set(range(1, total + 1)) - done)
+    return f"{head} · step {k} of {total} · {steps[k - 1]['title']}" if state == "open" else f"{head} · {state}"
+
+
+class Transcript:
+    """One Claude Code session log, read a little further on every refresh (`progress.transcripts`)."""
+
+    OVER = {"completed", "failed", "killed", "stopped", "cancelled", "error"}
+
+    def __init__(self, path: str):
+        self.path, self.offset, self.rest = path, 0, b""
+        self.seen, self.spend, self.context = set(), 0.0, 0
+        self.stop, self.last = None, 0.0
+        self.pending, self.background = {}, {}
+
+    def read(self, weights: dict):
+        try:
+            with open(native(self.path), "rb") as handle:
+                handle.seek(self.offset)
+                data = self.rest + handle.read()
+                self.offset = handle.tell()
+        except OSError:
+            return
+        lines = data.split(b"\n")
+        self.rest = lines.pop()
+        for raw in lines:
+            try:
+                record = json.loads(raw)
+            except ValueError:
+                continue
+            if isinstance(record, dict):
+                self.row(record, weights)
+
+    def row(self, record: dict, weights: dict):
+        kind = record.get("type")
+        try:
+            at = pace_stamp(str(record.get("timestamp")))
+        except ValueError:
+            at = self.last
+        if kind == "queue-operation":
+            text = str(record.get("content") or "")
+            use, status = re.search(r"<tool-use-id>([^<]+)<", text), re.search(r"<status>([^<]+)<", text)
+            if use and status and status.group(1) in self.OVER:
+                self.background.pop(use.group(1), None)
+            return
+        message = record.get("message") if isinstance(record.get("message"), dict) else {}
+        record["message"], content = message, message.get("content")
+        if kind == "assistant":
+            self.last, self.stop = at, message.get("stop_reason") or self.stop
+            used = pace_usage(record, self.seen)
+            if used:
+                self.context = int(pace_context(used))
+                self.spend += pace_spend(used, weights)
+            for block in content if isinstance(content, list) else []:
+                if isinstance(block, dict) and block.get("type") == "tool_use":
+                    given = block.get("input") if isinstance(block.get("input"), dict) else {}
+                    self.pending[block.get("id")] = (block.get("name"), watch_doing(block), at,
+                                                     bool(given.get("run_in_background")))
+        elif kind == "user":
+            for block in content if isinstance(content, list) else []:
+                if isinstance(block, dict) and block.get("type") == "tool_result" and block.get("tool_use_id") in self.pending:
+                    name, text, started, background = self.pending.pop(block["tool_use_id"])
+                    result = record.get("toolUseResult") if isinstance(record.get("toolUseResult"), dict) else {}
+                    if background or result.get("isAsync") or result.get("status") == "async_launched":
+                        self.background[block["tool_use_id"]] = (name, text, started)
+            if isinstance(content, str) and content.lstrip().startswith(("<command-name>", "<local-command-")):
+                self.stop, self.last = "end_turn", at  # `/clear` and its kind: the session waits, nothing runs
+                self.pending.clear()
+            elif (record.get("origin") or {}).get("kind") == "human" or isinstance(content, str):
+                self.stop, self.last = None, at
+                self.pending.clear()  # a new prompt: whatever was unanswered was interrupted
+
+    def state(self, now: float) -> tuple:
+        """(text, waits_on_you) — what the session is doing now."""
+        asked = [p for p in self.pending.values() if p[0] == "AskUserQuestion"]
+        if asked:
+            return f"asked you a question · {watch_ago(now - asked[0][2])}", True
+        if self.pending:
+            name, text, started, _bg = max(self.pending.values(), key=lambda p: p[2])
+            return f"running: {text} · {watch_ago(now - started)}", False
+        waiting = [w for w in self.background.values() if now - w[2] < 3 * 3600]
+        if self.stop == "end_turn":
+            if waiting:
+                name, text, started = max(waiting, key=lambda p: p[2])
+                return f"waiting on: {text} · {watch_ago(now - started)}", False
+            return f"waiting on you · {watch_ago(now - self.last)}", True
+        return f"working · {watch_ago(now - self.last)} ago", False
+
+
+def watch_doing(block: dict) -> str:
+    given = block.get("input") if isinstance(block.get("input"), dict) else {}
+    name = block.get("name") or "?"
+    if name == "Bash":
+        return str(given.get("description") or re.sub(r"\s+", " ", str(given.get("command", ""))))[:80]
+    if name in ("Write", "Edit", "Read"):
+        return f"{name.lower()} {os.path.basename(str(given.get('file_path', '')))}"
+    if name == "Agent":
+        return str(given.get("description") or "an agent")
+    return f"{name} {given.get('description') or given.get('skill') or ''}".strip()
+
+
+TRANSCRIPTS: dict = {}
+
+
+def watch_session(row: dict, project: Project, now: float) -> Transcript | None:
+    """The session log of the worktree that spoke last, among the three written most recently in 48 hours:
+    `/clear` starts a new file and touches the old one."""
+    home = os.environ.get("CLAUDE_CONFIG_DIR") or os.path.join(os.path.expanduser("~"), ".claude")
+    folder = os.path.join(home, "projects", re.sub(r"[^A-Za-z0-9]", "-", row["path"].rstrip(os.sep)))
+    logs = [p for p in glob.glob(os.path.join(folder, "*.jsonl")) if now - os.path.getmtime(p) < 48 * 3600]
+    if not logs:
+        return None
+    weights, read_ = pace_config(project)["weights"], []
+    for path in sorted(logs, key=os.path.getmtime)[-3:]:
+        transcript = TRANSCRIPTS.setdefault(path, Transcript(path))
+        transcript.read(weights)
+        read_.append(transcript)
+    return max(read_, key=lambda t: t.last)
+
+
+def watch_render(project: Project, colour: bool = False, width: int | None = None, now: float | None = None) -> str:
+    now = now or time.time()
+    conf = worktrees_config(project) or {**WORKTREE_DEFAULTS}
+    progress = progress_config(project)
+    bold, dim, red, yellow, reset = ("\033[1m", "\033[2m", "\033[31m", "\033[33m", "\033[0m") if colour else ("",) * 5
+    width = width or shutil.get_terminal_size((120, 40)).columns
+    events = progress_events(project)
+    by_root: dict = {}
+    for event in events:
+        by_root.setdefault(os.path.realpath(str(event.get("root") or "")), []).append(event)
+    top = [f"{time.strftime('%H:%M:%S', time.localtime(now))} · spry watch"]
+    lock = None
+    try:
+        lock = lock_path(project)
+    except SystemExit:
+        pass
+    if lock and os.path.exists(native(lock)):
+        with open(native(lock), "a+") as handle:
+            free = lock_try(handle)
+        top.append("heavy-check lock free" if free else lock_holder(lock))
+    panels = []
+    for row in worktree_rows(project, conf):
+        if row.get("gone"):
+            continue
+        said = by_root.get(row["path"], [])
+        record = row.get("record") or {}
+        index = f" #{record['index']}" if record.get("index") else ""
+        lines = [(bold, f"{row['name']}{index} · {row['branch'] or 'detached'}")]
+        state, held = claim_state(record, conf), record.get("claim") or {}
+        if not row["main"]:
+            lines.append(("", "free" if state == "free" else
+                          f"claimed by pid {held.get('pid')} · {watch_ago(now - float(held.get('since') or now))}"
+                          + (" · stale" if state == "stale" else "")))
+        stage = watch_stage(row, project)
+        if stage:
+            lines.append(("", stage))
+        transcript = watch_session(row, project, now) if progress["transcripts"] == "claude-code" else None
+        last = max([e["at"] for e in said] + [transcript.last if transcript else 0])
+        if transcript:
+            text, asks = transcript.state(now)
+            lines.append((yellow if asks else "", text))
+            lines.append((dim, f"context {transcript.context // 1000}k · spend {transcript.spend / 1e6:.1f}M"))
+        if said:
+            for event in said[-5:]:
+                lines.append(("", f"{time.strftime('%H:%M', time.localtime(event['at']))} {event.get('said') or event.get('msg') or ''}"))
+        if last:
+            quiet = now - last > progress["quiet"] * 60
+            busy = state == "live" or (transcript and not transcript.state(now)[1])
+            mark = (red, f"quiet for {watch_ago(now - last)}") if quiet and busy else (dim, f"last {watch_ago(now - last)} ago")
+            lines.append(mark)
+        elif not row["main"] and state == "free":
+            lines.append((dim, "nothing yet"))
+        if row["main"] and not said and not stage and not transcript:
+            continue
+        panels.append(lines)
+    if not panels:
+        return "\n".join(top + ["", "no worktree has reported yet"])
+    per_row = max(1, min(len(panels), width // 50))
+    cell = max(20, (width - 3 * (per_row - 1)) // per_row)
+    out = [" · ".join(top), ""]
+    for i in range(0, len(panels), per_row):
+        group = panels[i:i + per_row]
+        for k in range(max(len(p) for p in group)):
+            cells = []
+            for panel in group:
+                style, text = panel[k] if k < len(panel) else ("", "")
+                text = text if len(text) <= cell else text[:cell - 1] + "…"
+                cells.append(f"{style}{text}{reset if style else ''}{' ' * (cell - len(text))}")
+            out.append(" │ ".join(cells).rstrip())
+        out.append("")
+    return "\n".join(out).rstrip() + "\n"
+
+
+def watch(project: Project, every: float, once: bool, say=print) -> int:
+    colour = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+    if once:
+        say(watch_render(project, colour).rstrip())
+        return 0
+    try:
+        while True:
+            sys.stdout.write("\033[H\033[J" + watch_render(project, colour))
+            sys.stdout.flush()
+            time.sleep(max(1.0, every))
+    except KeyboardInterrupt:
+        return 0
+
+
+def worktree_command(project: Project, args, say=print) -> int:
+    if args.action == "prune":
+        return worktree_prune(project, worktrees_config(project), args.kept, say)
+    conf = worktrees_config(project)
+    if conf is None:
+        say("no `worktrees` block in spry/spry.config.json — add one to let spry make and hand out worktrees "
+            "(DESIGN.md §24); `worktree prune` works without it")
+        return 2
+    if args.action == "list":
+        return worktree_list(project, conf, say)
+    if args.action == "new":
+        return worktree_new(project, conf, args.name, say)
+    if args.action == "claim":
+        return worktree_claim(project, conf, args.name, say)
+    if args.action == "release":
+        return worktree_release(project, conf, args.name, say, force=args.force)
+    return worktree_home(project, conf, args.name, say)
+
+
+def hook_worktree_lines(project: Project, payload: dict) -> list:
+    """The session-start hook's lines about the worktree the session is in; and the session noted for its process."""
+    conf = worktrees_config(project)
+    if conf is None:
+        return []
+    pid = agent_pid()
+    if payload.get("session_id"):
+        write_json(spry_home(project, "worktrees", "sessions", f"{pid}.json"),
+                   {"session": str(payload["session_id"]), "pid": pid, "at": round(time.time(), 1)})
+    rows = worktree_rows(project, conf)
+    row = here_row(project, rows)
+    if row is None or row["main"]:
+        made = [r for r in rows if r.get("record") and not r.get("gone")]
+        return [f"The main checkout, with {len(made)} worktree{'s' if len(made) != 1 else ''} beside it: "
+                "`/spry:worktree` claims one to build in."] if made else []
+    record = row.get("record") or {}
+    index = f" (index {record['index']})" if record.get("index") else ""
+    held, state = record.get("claim") or {}, claim_state(record, conf)
+    if state == "live" and int(held.get("pid") or 0) == pid:
+        return [f"This session is in worktree {row['name']}{index}, claimed by this session."]
+    if state == "live":
+        return [f"This session is in worktree {row['name']}{index}, which another live session claimed (pid "
+                f"{held.get('pid')}). Leave it: `/spry:worktree` picks a free one (spry/process/slicing.md *Worktrees*)."]
+    return [f"This session is in worktree {row['name']}{index}, not claimed — `python3 spry/tool/spry.py worktree "
+            f"claim {row['name']}` before building here."]
+
+
+def hook_session_end(project: Project, payload: dict) -> dict | None:
+    """When a session ends, its worktree claims go with it."""
+    conf = worktrees_config(project)
+    if conf is None:
+        return None
+    pid, session = agent_pid(), str(payload.get("session_id") or "")
+    with file_lock(spry_home(project, "worktrees", ".lock"), wait=5):
+        for name, record in worktree_records(project).items():
+            held = record.get("claim") or {}
+            if held and (int(held.get("pid") or 0) == pid or (session and held.get("session") == session)):
+                record.pop("claim", None)
+                write_json(record_path(project, name), record)
+    with contextlib.suppress(OSError):
+        os.remove(native(spry_home(project, "worktrees", "sessions", f"{pid}.json")))
+    return None
+
+
 # ---------------------------------------------------------------- agent hooks
 
 # Claude Code runs these from the plugin's hooks/hooks.json, each filtered so that no process starts
 # for a tool call it cannot be about. Each acts only when its key under `hooks` in the config is true;
 # `SPRY_HOOKS=off` turns all of them off. A hook's own failure lets the call through: `check`, CI and
 # `merge-check` stay the authority, and a hook only says it sooner.
-AGENT_HOOKS = ("session", "link_fields", "cited_criteria", "check_edit", "merge", "check_stop", "step_commit")
+AGENT_HOOKS = ("session", "link_fields", "cited_criteria", "check_edit", "merge", "check_stop", "step_commit",
+               "session_end")
 HOOKS_SINCE = (0, 34, 0)
 LINK_FIELDS = ("branch", "pr", "owner")
 IN_PLACE = re.compile(r"\b(?:g?sed|perl)\b[^|;&\n]*\s-[a-zA-Z]*i")
@@ -8275,6 +9172,10 @@ def hook_session(project: Project, payload: dict) -> dict | None:
             lines.append(f"This branch, `{branch}`, is no slice's branch.")
     elif branch and branch != "HEAD":
         lines.append(f"On `{main}`, the main branch.")
+    try:
+        lines += hook_worktree_lines(project, payload)
+    except (OSError, ValueError, SystemExit, subprocess.SubprocessError):
+        pass
     tone = os.path.join(project.root, ".spry", "tone")
     if os.path.isfile(native(tone)) and read(tone).strip():
         lines.append(f"The person set their tone to {read(tone).strip()} (spry/process/chat.md *Audience*).")
@@ -8514,7 +9415,7 @@ def hook_check_stop(project: Project, payload: dict) -> dict | None:
 
 AGENT_HOOK_RUN = {"session": hook_session, "link_fields": hook_link_fields, "cited_criteria": hook_cited_criteria,
                   "check_edit": hook_check_edit, "merge": hook_merge, "check_stop": hook_check_stop,
-                  "step_commit": hook_step_commit}
+                  "step_commit": hook_step_commit, "session_end": hook_session_end}
 
 
 def agent_hook(name: str, stdin: str, root: str | None = None) -> tuple:
@@ -8712,6 +9613,26 @@ def main(argv=None) -> int:
     q.add_argument("--jobs", type=int, help="worktrees to run in parallel (default: falsify.parallel; 1 = serial)")
     p = sub.add_parser("agent-hook", help="for Claude Code's hooks: one hook call, its payload on stdin (hooks/hooks.json)")
     p.add_argument("name", choices=AGENT_HOOKS)
+    p = sub.add_parser("worktree", help="the worktrees sessions build in: list, make, claim, release, home, prune (§24)")
+    wsub = p.add_subparsers(dest="action", required=True)
+    wsub.add_parser("list", help="every worktree: index, branch, claim, slice")
+    q = wsub.add_parser("new", help="make one under worktrees.dir on its home branch at the main branch's head, then set it up")
+    q.add_argument("name", nargs="?")
+    q = wsub.add_parser("claim", help="take a worktree for this session; refuses one a live session holds")
+    q.add_argument("name", metavar="name|index")
+    q = wsub.add_parser("release", help="give back this worktree's claim (or the one named)")
+    q.add_argument("name", nargs="?")
+    q.add_argument("--force", action="store_true", help="drop a claim another live session holds")
+    q = wsub.add_parser("home", help="put the worktree back on its home branch at the main branch's head")
+    q.add_argument("name", nargs="?")
+    q = wsub.add_parser("prune", help="remove falsify slot trees no run owns, and records of worktrees that are gone")
+    q.add_argument("--kept", action="store_true", help="also the slot trees kept warm between runs")
+    p = sub.add_parser("say", help="add a milestone line to the progress log, for `watch`")
+    p.add_argument("text", nargs="+")
+    p.add_argument("--slice", help="the slice it is about (default: none)")
+    p = sub.add_parser("watch", help="a panel per worktree: claim, slice and step, last milestones, quiet ones marked")
+    p.add_argument("-n", type=float, default=5.0, metavar="SECONDS", help="redraw every N seconds (default 5)")
+    p.add_argument("--once", action="store_true", help="draw once and stop")
     p = sub.add_parser("review-check", help="would GitHub take this review as it stands? exit 1 if not")
     p.add_argument("payload", help="the review's JSON: commit_id, event, body, comments")
     p.add_argument("--diff", required=True, help="the pull request's diff (`gh pr diff <n>`), or - for stdin")
@@ -8729,8 +9650,13 @@ def main(argv=None) -> int:
             print("✗ " + p)
         comments = payload.get("comments") if isinstance(payload, dict) else None
         count = len(comments) if isinstance(comments, list) else 0
-        print(f"ready to post: {count} comment{'s' if count != 1 else ''}" if not problems
-              else f"{len(problems)} problem{'s' if len(problems) != 1 else ''} — fix them before posting")
+        said = (f"ready to post: {count} comment{'s' if count != 1 else ''}" if not problems
+                else f"{len(problems)} problem{'s' if len(problems) != 1 else ''} — fix them before posting")
+        print(said)
+        here = args.root or find_root(os.getcwd())
+        if here:
+            with contextlib.suppress(SystemExit, OSError):
+                progress_event(Project(here, load=False), "review", "review-check: " + said)
         return 1 if problems else 0
 
     if args.command == "agent-hook":
@@ -8773,7 +9699,7 @@ def main(argv=None) -> int:
         return 2
     # `new`, `claim` and `release` open only the files they write (`Names`), `memory-check` only the
     # items a memory names; a document needs the plan.
-    light = args.command in ("claim", "release", "memory-check") or (args.command == "new" and args.type not in DOCUMENT_KINDS)
+    light = args.command in ("claim", "release", "memory-check", "worktree", "say", "watch") or (args.command == "new" and args.type not in DOCUMENT_KINDS)
     project = Project(root, load=not light)
 
     if args.command == "check":
@@ -8793,6 +9719,13 @@ def main(argv=None) -> int:
     if args.command == "status":
         print(status(project, args.level, args.id, args.all))
         return 0
+    if args.command == "worktree":
+        return worktree_command(project, args)
+    if args.command == "say":
+        progress_event(project, "say", " ".join(args.text), args.slice)
+        return 0
+    if args.command == "watch":
+        return watch(project, args.n, args.once)
     if args.command == "coverage":
         print(coverage_block(project, os.path.join(project.spry, "COVERAGE.md")))
         return 0
@@ -8954,6 +9887,8 @@ def main(argv=None) -> int:
             print(f"{mark[level]} {text}")
         blocks = sum(1 for s, _ in lines if s == "block")
         pace_log(project, "merge-check", time.time() - started, slice=args.slice, blocks=blocks)
+        progress_event(project, "merge-check", "merge-check: " + ("ready to merge" if not blocks else
+                                                                   f"{blocks} block{'s' if blocks != 1 else ''}"), args.slice)
         if not blocks:
             pace_on_merge_check(project, args.slice)
         print("ready to merge" if not blocks else f"{blocks} thing{'s block' if blocks != 1 else ' blocks'} the merge")
@@ -8992,9 +9927,11 @@ def main(argv=None) -> int:
             results = falsify_run(project, args.plan, dry=args.dry_run, jobs=args.jobs)
             if not args.dry_run:
                 waited = round(LOCK_WAITED[0], 1)
+                counts = {r: sum(1 for _, x, _ in results if x == r) for r in ("caught", "survived", "unreliable")}
                 pace_log(project, "falsify", time.time() - started - waited, controls=len(results),
-                         **({"waited": waited} if waited >= 0.1 else {}),
-                         **{r: sum(1 for _, x, _ in results if x == r) for r in ("caught", "survived", "unreliable")})
+                         **({"waited": waited} if waited >= 0.1 else {}), **counts)
+                progress_event(project, "falsify", "falsify " + (", ".join(f"{n} {r}" for r, n in counts.items() if n) or "ran nothing"),
+                               args.record)
         except PlanError as e:
             print("plan refused: " + str(e), file=sys.stderr)
             return 1

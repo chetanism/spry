@@ -20,7 +20,7 @@
 <h1>Skills</h1>
 <p class="lead">A skill is a command you type into your agent — <code>/spry:story</code>,
 <code>/spry:slice-close</code>. Each one runs one step of the work by following a process file in
-your project. This page lists all 29, grouped by when you reach for them.</p>
+your project. This page lists all 30, grouped by when you reach for them.</p>
 
 <div class="callout note">
   <span class="callout-title">How to read each entry</span>
@@ -39,7 +39,7 @@ your project. This page lists all 29, grouped by when you reach for them.</p>
   <tbody>
     <tr><td>Set up</td><td><a href="#spryinit"><code>init</code></a>, <a href="#spryadopt"><code>adopt</code></a></td></tr>
     <tr><td>Plan</td><td><a href="#sprymilestone"><code>milestone</code></a>, <a href="#spryepic"><code>epic</code></a>, <a href="#spryfeature"><code>feature</code></a>, <a href="#sprystory"><code>story</code></a>, <a href="#sprybug"><code>bug</code></a>, <a href="#sprytask"><code>task</code></a></td></tr>
-    <tr><td>Build</td><td><a href="#spryslice"><code>slice</code></a>, <a href="#spryslice-open"><code>slice-open</code></a>, <a href="#spryslice-close"><code>slice-close</code></a></td></tr>
+    <tr><td>Build</td><td><a href="#spryslice"><code>slice</code></a>, <a href="#spryslice-open"><code>slice-open</code></a>, <a href="#spryslice-close"><code>slice-close</code></a>, <a href="#spryworktree"><code>worktree</code></a></td></tr>
     <tr><td>Review and merge</td><td><a href="#spryreview"><code>review</code></a>, <a href="#sprymerge"><code>merge</code></a></td></tr>
     <tr><td>QA and testing</td><td><a href="#sprytest-scenarios"><code>test-scenarios</code></a>, <a href="#sprytest-all"><code>test-all</code></a>, <a href="#spryexplore"><code>explore</code></a>, <a href="#sprysecurity-audit"><code>security-audit</code></a>, <a href="#spryprelaunch"><code>prelaunch</code></a></td></tr>
     <tr><td>Knowledge</td><td><a href="#spryrecord"><code>record</code></a>, <a href="#sprycompact"><code>compact</code></a>, <a href="#sprymemory-check"><code>memory-check</code></a>, <a href="#sprypace"><code>pace</code></a>, <a href="#spryretro"><code>retro</code></a></td></tr>
@@ -196,6 +196,19 @@ the review.</p>
   <li><strong>Audience:</strong> 8.</li>
   <li><strong>Writes:</strong> the slice file's <em>Close summary</em> (what changed, the review's counts, falsify table, follow-ups), <code>state: closed</code> and <code>closed: &lt;date&gt;</code>, and the PR body.</li>
   <li><strong>Guide:</strong> <a href="../guides/closing.html">Close and merge a slice</a>.</li>
+</ul>
+
+<h3 id="spryworktree">/spry:worktree</h3>
+<p>Moves this session into a worktree of its own, so several sessions build side by side without
+sharing a branch, a database or a port. It claims one by name or index, or makes a new one on its home
+branch, set up by your own script, then enters it. Without an argument it lists them and asks which;
+one another session holds is never offered.</p>
+<ul>
+  <li><strong>Arguments:</strong> an index, a name, or <code>new</code>.</li>
+  <li><strong>Audience:</strong> 8.</li>
+  <li><strong>Writes:</strong> the claim in the main checkout's <code>.spry/worktrees/</code>; a new worktree under <code>worktrees.dir</code>. Nothing in the repository.</li>
+  <li><strong>Needs:</strong> a <code>worktrees</code> block in the config — see <a href="config.html#worktrees-and-progress">Worktrees and progress</a>.</li>
+  <li><strong>Guide:</strong> <a href="../guides/team.html#worktrees">Worktrees</a>.</li>
 </ul>
 
 <!-- ============================================================ -->

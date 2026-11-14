@@ -270,6 +270,42 @@ call is not about it, or there is nothing to say. It always exits 0. You don't r
 except to try a hook out. See <a href="../design/hooks.html">Agent hooks</a>.</p>
 <pre><code>spry agent-hook &lt;session|link_fields|cited_criteria|check_edit|merge|check_stop&gt; &lt; payload.json</code></pre>
 
+<h2>Worktrees and progress</h2>
+
+<h3 id="worktree">worktree</h3>
+<p>The worktrees agent sessions build in, side by side. Needs a <code>worktrees</code> block in the config,
+except <code>prune</code>. Claims live in the main checkout's <code>.spry/worktrees/</code>, so every
+worktree sees the same. Used by <a href="skills.html#spryworktree"><code>/spry:worktree</code></a>; see
+<a href="../guides/team.html#worktrees">Worktrees</a>.</p>
+<pre><code>spry worktree list
+spry worktree new [name]
+spry worktree claim &lt;name|index&gt;
+spry worktree release [name] [--force]
+spry worktree home [name]
+spry worktree prune [--kept]</code></pre>
+<ul>
+  <li><code>list</code> — every worktree: its index, branch, claim (and whether it is stale), and the slice its branch builds.</li>
+  <li><code>new</code> — makes one under <code>worktrees.dir</code> on its home branch at the main branch's head, with the next free index, copies <code>worktrees.share</code> in and runs <code>worktrees.setup</code> there.</li>
+  <li><code>claim</code> — takes it for this session. Refused while another live session holds it; a claim whose session is gone, or that wrote nothing for <code>worktrees.stale_after</code> hours, is taken and said. The main checkout is never claimed.</li>
+  <li><code>release</code> — gives back the claim of the worktree it runs in, or the one named; <code>--force</code> drops another session's.</li>
+  <li><code>home</code> — puts the worktree back on its home branch at the main branch's head; <code>/spry:merge</code> runs it after the squash.</li>
+  <li><code>prune</code> — removes the scratch trees interrupted falsify runs left, and forgets worktrees deleted by hand; <code>--kept</code> also the trees falsify keeps warm between runs.</li>
+</ul>
+
+<h3 id="say">say</h3>
+<p>Adds a line to the progress log by hand, for a milestone inside a long step. The commands that end a
+stage — <code>step --commit</code>, <code>gate</code>, <code>falsify run</code>, <code>review-check</code>,
+<code>merge-check</code>, <code>worktree home</code> — write their own.</p>
+<pre><code>spry say [--slice SLICE] text [text ...]</code></pre>
+
+<h3 id="watch">watch</h3>
+<p>A panel per worktree, redrawn every few seconds: its claim, the slice its branch builds and the step it
+is on, its last progress lines, and how long since the last — marked <em>quiet</em> past
+<code>progress.quiet</code>. The top line names who holds the heavy-check lock. With
+<code>progress.transcripts: "claude-code"</code>, each panel also says what the session is doing now,
+its context and its spend. Reads only; spends no tokens.</p>
+<pre><code>spry watch [-n SECONDS] [--once]</code></pre>
+
 <h2>Creating and linking items</h2>
 
 <h3 id="new">new</h3>

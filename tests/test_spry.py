@@ -2274,6 +2274,25 @@ class Falsify(unittest.TestCase):
         results = self.run_plan(self.both_guards())
         self.assertEqual([r for _, r, _ in results], ["unreliable", "unreliable"], "no slot set up: a red baseline")
 
+    def test_worktrees_setup_readies_a_slot_with_its_worktree_and_slot(self):
+        log = self.slot_config("")
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["falsify"]["setup"] = "python3 -c \"raise SystemExit('the old name is not used')\""
+        config["worktrees"] = {"setup": "python3 -c \"import os; e = os.environ; open('.slot-' + e['SPRY_FALSIFY_SLOT'], 'w'); "
+                               "open('LOG', 'a').write(e['SPRY_WORKTREE'] + '/' + e['SPRY_WORKTREE_NAME'] + '/' "
+                               "+ e['SPRY_FALSIFY_SLOT'] + '\\n')\"".replace("LOG", log)}
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        self.commit("worktrees.setup")
+        for jobs, seen in ((1, ["0/main/1"]), (2, ["0/main/1", "0/main/2"])):
+            open(log, "w").close()
+            results = self.run_plan(self.both_guards(), jobs=jobs)
+            self.assertEqual([r for _, r, _ in results], ["caught", "survived"], jobs)
+            with open(log) as handle:
+                self.assertEqual(sorted(handle.read().split("\n")[:-1]), seen)
+
     def test_a_slot_with_a_red_baseline_says_why_once_and_hands_its_controls_on(self):
         # The set-up readies every slot but the second: its baseline breaks, the others' do not.
         self.slot_config("python3 -c \"import os; n = os.environ['SPRY_FALSIFY_SLOT']; "
@@ -4541,6 +4560,272 @@ class ReviewCheck(unittest.TestCase):
                 code = spry.main(["review-check", os.path.join(tmp, "p.json"), "--diff", os.path.join(tmp, "d.diff")])
             self.assertEqual(code, 1)
             self.assertIn("fix them before posting", out.getvalue())
+
+
+SETUP_SEEN = ("python3 -c \"import os; e = os.environ; open('.setup-seen', 'w').write("
+              "e['SPRY_WORKTREE'] + ' ' + e['SPRY_WORKTREE_NAME'] + ' ' + e.get('SPRY_FALSIFY_SLOT', '-'))\"")
+
+
+class Worktrees(Base):
+    """Worktrees made, claimed, sent home and pruned by the tool; the progress log `watch` reads (§24)."""
+
+    def setUp(self):
+        config = {**CONFIG, "main_branch": "main", "hooks": {"session": True, "session_end": True},
+                  "worktrees": {"max": 2, "setup": SETUP_SEEN, "share": [".env.example"]}}
+        self.t = self.tree(**{"spry__spry.config.json": json.dumps(config), ".gitignore": ".claude/\n.spry/\n.setup-seen\n",
+                              ".env.example": "PORT=1\n"})
+        self.run_git = git_repo(self.t.root)
+        self.root = os.path.realpath(self.t.root)
+        patch = unittest.mock.patch.dict(os.environ, {"SPRY_SESSION_PID": str(os.getpid())})
+        patch.start()
+        self.addCleanup(patch.stop)
+        for name in ("CLAUDE_CODE_SESSION_ID", "CLAUDE_PID", "SPRY_SESSION"):  # as if not run by an agent
+            os.environ.pop(name, None)
+
+    def other_session(self):
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"])
+        self.addCleanup(proc.wait)
+        self.addCleanup(proc.kill)
+        return proc.pid
+
+    def run_tool(self, *args, root=None):
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            code = spry.main(["--root", root or self.root, *args])
+        return code, out.getvalue()
+
+    def path(self, name):
+        return os.path.join(self.root, ".claude", "worktrees", name)
+
+    def git_in(self, root, *args):
+        return subprocess.run(["git", "-C", root, "-c", "user.name=t", "-c", "user.email=t@t", *args],
+                              capture_output=True, text=True, check=True).stdout
+
+    def test_new_makes_a_set_up_worktree_on_its_home_branch(self):
+        code, out = self.run_tool("worktree", "new")
+        name = os.path.basename(self.root) + "1"
+        self.assertEqual(code, 0, out)
+        tree = self.path(name)
+        self.assertIn(f"{name} · index 1 · `alt1` at main · set up", out)
+        self.assertEqual(self.git_in(tree, "branch", "--show-current").strip(), "alt1")
+        self.assertEqual(self.git_in(tree, "rev-parse", "HEAD"), self.git_in(self.root, "rev-parse", "main"))
+        with open(os.path.join(tree, ".setup-seen")) as handle:
+            self.assertEqual(handle.read(), f"1 {name} -", "the set-up sees its index and name, and no slot")
+        with open(os.path.join(tree, ".env.example")) as handle:
+            self.assertEqual(handle.read(), "PORT=1\n", "worktrees.share is copied in")
+        self.assertEqual(self.run_tool("worktree", "new", "second")[0], 0)
+        code, out = self.run_tool("worktree", "new", "third")
+        self.assertEqual(code, 1)
+        self.assertIn("already 2 worktrees, `worktrees.max`", out)
+        self.assertEqual(self.run_tool("worktree", "new", "main")[0], 2, "main is the main checkout's name")
+
+    def test_a_failed_setup_says_so_and_keeps_the_worktree(self):
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["worktrees"]["setup"] = "python3 -c \"import sys; sys.exit('no database server')\""
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        code, out = self.run_tool("worktree", "new", "one")
+        self.assertEqual(code, 1)
+        self.assertIn("worktrees.setup failed (exit 1: no database server)", out)
+        self.assertIn("one · #1 · `alt1` · free", self.run_tool("worktree", "list")[1])
+
+    def test_two_sessions_cannot_hold_one_worktree_and_a_dead_ones_claim_is_taken(self):
+        self.run_tool("worktree", "new", "one")
+        code, out = self.run_tool("worktree", "claim", "1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("one claimed · index 1", out)
+        other = self.other_session()
+        with unittest.mock.patch.dict(os.environ, {"SPRY_SESSION_PID": str(other)}):
+            code, out = self.run_tool("worktree", "claim", "one")
+            self.assertEqual(code, 1)
+            self.assertIn("one is claimed by another session", out)
+            self.assertEqual(self.run_tool("worktree", "release", "one")[0], 1, "nor can it drop the claim")
+        self.assertEqual(self.run_tool("worktree", "claim", "one")[0], 0, "the holder claims again")
+        dead = subprocess.Popen([sys.executable, "-c", "pass"])
+        dead.wait()
+        self.run_tool("worktree", "release", "one")
+        with unittest.mock.patch.dict(os.environ, {"SPRY_SESSION_PID": str(dead.pid)}):
+            self.assertEqual(self.run_tool("worktree", "claim", "one")[0], 0)
+        code, out = self.run_tool("worktree", "claim", "one")
+        self.assertEqual(code, 0)
+        self.assertIn(f"the claim of pid {dead.pid} was stale — taken", out)
+        self.assertIn("claimed by pid", self.run_tool("worktree", "list")[1])
+        code, out = self.run_tool("worktree", "release", root=self.path("one"))
+        self.assertEqual((code, out.strip()), (0, "one released"), "release takes the worktree it runs in")
+        self.assertEqual(self.run_tool("worktree", "claim", "main")[0], 2, "the main checkout is never claimed")
+
+    def test_a_claim_goes_stale_when_nothing_is_written(self):
+        self.run_tool("worktree", "new", "one")
+        other = self.other_session()
+        with unittest.mock.patch.dict(os.environ, {"SPRY_SESSION_PID": str(other)}):
+            self.run_tool("worktree", "claim", "one")
+        record = os.path.join(self.root, ".spry", "worktrees", "one.json")
+        with open(record) as handle:
+            data = json.load(handle)
+        data["claim"]["at"] -= 13 * 3600
+        with open(record, "w") as handle:
+            json.dump(data, handle)
+        self.assertIn("· stale", self.run_tool("worktree", "list")[1])
+        self.assertIn("was stale — taken", self.run_tool("worktree", "claim", "one")[1])
+
+    def test_a_worktree_made_by_hand_is_claimed_with_the_index_its_name_ends_in(self):
+        self.run_git("worktree", "add", "-q", "-b", "alt2", self.path("app2"), "main")
+        code, out = self.run_tool("worktree", "claim", "app2")
+        self.assertEqual(code, 0, out)
+        self.assertIn("app2 claimed · index 2", out)
+
+    def test_home_puts_the_worktree_back_at_the_main_branchs_head(self):
+        self.run_tool("worktree", "new", "one")
+        tree = self.path("one")
+        self.git_in(tree, "switch", "-qc", "sl-1-a")
+        with open(os.path.join(tree, "src", "b.ts"), "w") as handle:
+            handle.write("x\n")
+        self.git_in(tree, "add", "-A")
+        self.git_in(tree, "commit", "-qm", "work")
+        with open(os.path.join(tree, "src", "b.ts"), "w") as handle:
+            handle.write("y\n")
+        code, out = self.run_tool("worktree", "home", root=tree)
+        self.assertEqual(code, 1)
+        self.assertIn("uncommitted changes", out)
+        self.git_in(tree, "checkout", "-q", "--", "src/b.ts")
+        code, out = self.run_tool("worktree", "home", root=tree)
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git_in(tree, "branch", "--show-current").strip(), "alt1")
+        self.assertEqual(self.git_in(tree, "rev-parse", "HEAD"), self.git_in(self.root, "rev-parse", "main"))
+        events = spry.progress_events(spry.Project(self.root, load=False))
+        self.assertEqual([(e["worktree"], e["stage"]) for e in events], [("one", "home")])
+        self.assertEqual(self.run_tool("worktree", "home")[0], 1, "the main checkout rests on main")
+
+    def test_prune_removes_slot_trees_no_run_owns(self):
+        self.run_tool("worktree", "new", "one")
+        temp = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, temp, True)
+        left, busy = os.path.join(temp, "spry-falsify-run-abc"), os.path.join(temp, "spry-falsify-run-def")
+        kept = spry.falsify_home(spry.Project(self.root, load=False))
+        self.addCleanup(shutil.rmtree, kept, True)
+        for parent in (left, busy, kept):
+            os.makedirs(parent, exist_ok=True)
+            self.run_git("worktree", "add", "-q", "--detach", os.path.join(parent, "w1"), "main")
+        held = spry.take_home(busy)
+        self.addCleanup(held.close)
+        shutil.rmtree(self.path("one"))
+        code, out = self.run_tool("worktree", "prune")
+        self.assertEqual(code, 0)
+        self.assertIn(f"removed: {os.path.realpath(os.path.join(left, 'w1'))}", out)
+        self.assertIn("in use by a falsify run", out)
+        self.assertIn("forgot: one — its worktree is gone", out)
+        self.assertFalse(os.path.exists(left))
+        listed = self.run_git and self.git_in(self.root, "worktree", "list")
+        self.assertIn("spry-falsify-run-def", listed)
+        self.assertIn(os.path.basename(kept), listed, "kept trees stay warm for the next run")
+        held.close()
+        self.run_tool("worktree", "prune", "--kept")
+        listed = self.git_in(self.root, "worktree", "list")
+        self.assertNotIn("spry-falsify", listed)
+
+    def test_each_command_writes_the_log_in_the_main_checkout(self):
+        self.run_tool("worktree", "new", "one")
+        tree = self.path("one")
+        self.run_tool("worktree", "claim", "one")
+        record = os.path.join(self.root, ".spry", "worktrees", "one.json")
+        with open(record) as handle:
+            before = json.load(handle)["claim"]["at"]
+        time.sleep(0.15)
+        self.assertEqual(self.run_tool("say", "routes", "written", "--slice", "SL-1", root=tree)[0], 0)
+        self.run_tool("gate", "--fast", root=tree)
+        events = spry.progress_events(spry.Project(self.root, load=False))
+        self.assertEqual([(e["worktree"], e["stage"], e["said"]) for e in events],
+                         [("one", "say", "routes written"), ("one", "gate", "gate --fast green")])
+        self.assertEqual(events[0]["slice"], "SL-1")
+        with open(record) as handle:
+            self.assertGreater(json.load(handle)["claim"]["at"], before, "a worktree that reports keeps its claim")
+        with unittest.mock.patch.object(spry, "PROGRESS_LIMIT", 200):
+            for n in range(30):
+                spry.progress_event(spry.Project(self.root, load=False), "say", f"line {n}")
+        self.assertLessEqual(len(spry.progress_events(spry.Project(self.root, load=False))), 40)
+
+    def test_gate_said(self):
+        steps = [["spry check", 0.1, True], ["lint", 2.0, False], ["types", 1.0, False]]
+        self.assertEqual(spry.gate_said(1, {"steps": steps}, False, False), "gate red: lint, types")
+        self.assertEqual(spry.gate_said(0, {"steps": [], "skipped": "stamp"}, False, False),
+                         "gate skipped: no code changed since green")
+        self.assertEqual(spry.gate_said(0, {"steps": []}, True, False), "gate --fast green")
+
+    def test_watch_shows_each_worktree_its_slice_and_step(self):
+        self.run_tool("worktree", "new", "one")
+        tree = self.path("one")
+        self.run_tool("worktree", "claim", "one")
+        doc = os.path.join(tree, S, "SL-1-a.md")
+        steps = "### Steps\n\n#### Step 1 · Routes\n\nCovers: AC-1\n\n#### Step 2 · Page\n\nCovers: AC-1\n"
+        with open(doc) as handle:
+            text = handle.read().replace("state: closed", "state: open").replace("### Plan\n", "### Plan\n\n" + steps)
+        self.git_in(tree, "switch", "-qc", "sl-1-a")
+        with open(doc, "w") as handle:
+            handle.write(text)
+        self.git_in(tree, "commit", "-qam", "SL-1 step 1: Routes", "-m", "Step: SL-1/1")
+        self.run_tool("say", "routes done", root=tree)
+        page = spry.watch_render(spry.Project(self.root, load=False), width=200)
+        self.assertIn("one #1 · sl-1-a", page)
+        self.assertIn("claimed by pid", page)
+        self.assertIn("SL-1 Slice SL-1 · step 2 of 2 · Page", page)
+        self.assertIn("routes done", page)
+        self.assertNotIn("quiet for", page)
+        later = spry.watch_render(spry.Project(self.root, load=False), width=200, now=time.time() + 2 * 3600)
+        self.assertRegex(later, r"quiet for (1h5\d|2h0\d)")
+
+    def test_transcripts_say_what_a_session_waits_on(self):
+        log = os.path.join(self.root, "log.jsonl")
+        stamp = "2026-11-15T10:00:00Z"
+        rows = [{"type": "assistant", "timestamp": stamp, "requestId": "r1",
+                 "message": {"stop_reason": "tool_use", "usage": {"input_tokens": 1000, "output_tokens": 10},
+                             "content": [{"type": "tool_use", "id": "t1", "name": "AskUserQuestion", "input": {}}]}}]
+        with open(log, "w") as handle:
+            handle.write("\n".join(json.dumps(r) for r in rows) + "\n")
+        transcript = spry.Transcript(log)
+        transcript.read(spry.PACE_WEIGHTS)
+        now = spry.pace_stamp(stamp) + 90
+        self.assertEqual(transcript.state(now), ("asked you a question · 1m", True))
+        self.assertEqual(transcript.context, 1000)
+        with open(log, "a") as handle:
+            handle.write(json.dumps({"type": "user", "timestamp": stamp, "message": {"content": [
+                {"type": "tool_result", "tool_use_id": "t1"}]}}) + "\n")
+            handle.write(json.dumps({"type": "assistant", "timestamp": stamp, "requestId": "r2",
+                                     "message": {"stop_reason": "end_turn", "content": []}}) + "\n")
+        transcript.read(spry.PACE_WEIGHTS)
+        self.assertEqual(transcript.state(now), ("waiting on you · 1m", True))
+
+    def test_the_session_hooks_name_the_worktree_and_release_its_claim(self):
+        self.run_tool("worktree", "new", "one")
+        tree = self.path("one")
+
+        def context(cwd):
+            reply = spry.agent_hook("session", json.dumps({"cwd": cwd, "session_id": "abc12345"}))[1]
+            return reply["hookSpecificOutput"]["additionalContext"]
+        self.assertIn("worktree one (index 1), not claimed — `python3 spry/tool/spry.py worktree claim one`", context(tree))
+        self.assertIn("The main checkout, with 1 worktree beside it", context(self.root))
+        code, out = self.run_tool("worktree", "claim", "one")
+        self.assertIn("claimed by this session", context(tree))
+        with open(os.path.join(self.root, ".spry", "worktrees", "one.json")) as handle:
+            self.assertEqual(json.load(handle)["claim"]["session"], "abc12345", "the session the hook noted")
+        other = self.other_session()
+        with unittest.mock.patch.dict(os.environ, {"SPRY_SESSION_PID": str(other)}):
+            self.assertIn("another live session claimed", context(tree))
+            spry.agent_hook("session_end", json.dumps({"cwd": tree, "session_id": "zzz"}))
+        self.assertIn("claimed by pid", self.run_tool("worktree", "list")[1], "another session's end leaves it")
+        spry.agent_hook("session_end", json.dumps({"cwd": tree, "session_id": "abc12345"}))
+        self.assertIn("one · #1 · `alt1` · free", self.run_tool("worktree", "list")[1])
+
+    def test_no_worktrees_block_no_change(self):
+        t = self.tree(**{"spry__spry.config.json": json.dumps({**CONFIG, "hooks": {"session": True}})})
+        git_repo(t.root)
+        code, out = self.run_tool("worktree", "list", root=t.root)
+        self.assertEqual(code, 2)
+        self.assertIn("no `worktrees` block", out)
+        text = spry.agent_hook("session", json.dumps({"cwd": t.root}))[1]["hookSpecificOutput"]["additionalContext"]
+        self.assertNotIn("worktree", text)
+        self.assertEqual(spry.worktree_env(spry.Project(t.root, load=False)), {})
 
 
 class Example(unittest.TestCase):

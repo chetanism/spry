@@ -574,9 +574,11 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   Mac). A second run of the same checkout at once gets fresh ones.
 - **Slots** — each worktree, or this tree when serial — see `SPRY_FALSIFY_SLOT` (1, 2, …) and
   `SPRY_FALSIFY_SLOTS` in every command, so a test can pick the slot's own database or port.
-  `falsify.setup`, if set, runs once in each slot before the baseline (create the database,
-  migrate); a setup that fails stops the run — a slot that is not ready would turn every control
-  after it into a result.
+  `worktrees.setup` — or `falsify.setup`, its older name — runs once in each slot before the
+  baseline (create the database, migrate), with `SPRY_WORKTREE` the index of the tree the run is
+  in (§24); a setup that fails stops the run — a slot that is not ready would turn every control
+  after it into a result. A run made for one go, not kept, holds a lock in its folder, so
+  `worktree prune` leaves it alone while it lasts.
 - **Refuses** no-op mutations, files with uncommitted changes, and `expect`s with no test.
 - **Always restores**, including on error, Ctrl-C and SIGTERM; checks the files are as committed after.
 - **Every write gets a fresh, increasing mtime.** Two same-size mutations written in one second
@@ -806,7 +808,8 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 
 | Key under `hooks` | When | Does |
 |---|---|---|
-| `session` | session start, resume, clear, compaction | tells the agent where the config and tool are, the slice this branch builds, the person's tone, which hooks are on |
+| `session` | session start, resume, clear, compaction | tells the agent where the config and tool are, the slice this branch builds, the person's tone, which hooks are on; with `worktrees`, the worktree the session is in and whether it holds its claim (§24) |
+| `session_end` | the session ends | releases the worktree claims the session holds (§24) |
 | `link_fields` | an Edit or Write of a slice file; a `sed -i` or `perl -i` naming one | refuses a change to `branch`, `pr` or `owner`, naming the `link` command that sets it |
 | `cited_criteria` | an Edit or Write of a story | asks the person when a criterion that a test cites (`git grep`) changes or is dropped |
 | `check_edit` | after an Edit or Write of a document `check` reads | `check` of that one file by its text — front-matter, budget, placeholders, links, glossary — errors sent back to the agent |
@@ -873,6 +876,8 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `draw` | seeded, replayable choices for `/spry:explore` |
 | `pace [<slice>] [--since] [--last] [--compare]` | where slices' time went (§17): the page in `.spry/view/pace.md`, or one slice in detail |
 | `agent-hook <name>` | one Claude Code hook call, its payload on stdin (§18); run by `hooks/hooks.json`, not by hand |
+| `worktree list \| new [name] \| claim <name\|index> \| release [name] [--force] \| home [name] \| prune [--kept]` | the worktrees sessions build in (§24) |
+| `say "<text>" [--slice]` · `watch [-n s] [--once]` | a milestone line in the progress log; a panel per worktree drawn from it (§24) |
 | `memory-check [--dir] [--offline] [--json]` | Claude Code's memory for this checkout: the index against its files and its budget, front-matter, dates passed on what is still to do, and the items, pull requests and issues (`gh`), commits and paths each memory names; text the repository holds, overlaps |
 
 ## 20. Skills (`spry` plugin)
@@ -902,6 +907,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `compact` | 7 | A file back under budget by moving sections to their owners; a pointer left, no fact lost |
 | `retro` | 7 | `pace` and `memory-check` read together: a rule the agent keeps relearning, and slices that still lose time to it, is one finding. One proposal per finding with its evidence; a memory alone is never a finding. Report only |
 | `memory-check` | 7 | Claude Code's memory checked against the repository, the plan and GitHub: keep, update or delete per memory with its evidence; obvious changes offered together, each tricky one asked alone; changes nothing until approved, commits nothing |
+| `worktree` | 8 | Move the session into a worktree of its own: claim one by name or index, or make one set up by the project's script; never one another session claimed (§24) |
 | `process-change` | 7 | Change the process in every file it touches |
 | `update` | 7 | Offer a project what spry gained since it was set up; port only what is chosen |
 | `contribute` | 7 | Offer spry what a project built; files an issue, never a PR |
@@ -1060,6 +1066,14 @@ in `spry/history/writ.md`, then retires `canon/`.
   deleted after a month and says what an agent reported, not what stood once verified. No
   warning when the line is missing — the review itself is the rule, and a team whose people
   review by hand has no counts to write.
+- 2026-11-15 — **`watch` lives in `spry.py`**, though it is the only command that redraws a screen
+  (CH-63): the tool is one file, and a second would need its own copy, version and update. And
+  **a claim never guards the main checkout**: plan-only sessions share it, and a session there
+  writes plans, not code, so nothing collides that `mint: main` does not already guard.
+- 2026-11-15 — **progress is written by the tool, not by the agent** (CH-63). A prototype had the
+  agent call a script at each milestone; sessions forgot, and every call cost a turn. The commands
+  that end a stage — a step's commit, the gate, falsify, the reviews' checks, `worktree home` —
+  write their own line, and `say` is only for a milestone inside a long step.
 - 2026-11-15 — the slice that introduced a bug is **a field a person fills, not one the tool
   derives** (CH-62). `git blame` on the fix names the last slice to touch a line, which is often
   not the one that made it wrong; a wrong slice spoils the count more than an empty field does.
@@ -1273,3 +1287,59 @@ in `spry/history/writ.md`, then retires `canon/`.
   `introduced_by: SL-n` in a bug's front matter, asked by `/spry:bug` and never guessed; `pace`
   shows the bugs on the slice's row, and `--compare` gives bugs per slice before and after a
   point, in all and per size bucket. Issue #28.
+- 2026-11-15 — worktrees made and handed out by spry, and a progress view over them (CH-63,
+  0.52.0): `spry.py worktree`, `/spry:worktree`, claims released by the session-end hook, falsify
+  slots set up by `worktrees.setup`; a progress log the tool writes and `spry.py watch` draws.
+  Issue #21.
+
+## 24. Worktrees and progress
+
+> **Status:** built in CH-63 (0.52.0). Prototype: a viewer and a milestone writer kept in one
+> project's main checkout, run against four live sessions.
+
+Purpose: several agent sessions side by side, each in a worktree of its own — isolated as the
+project needs, never two in one, back on a known branch between slices — and one screen that says
+what each is doing, without a token spent on telling it.
+
+- **Config — `worktrees`:** `dir` (`.claude/worktrees`, under the main checkout), `home_branch`
+  (`alt{index}`; `{name}` works too), `max` (4), `setup` (a project script; empty runs nothing),
+  `share` (files copied in from the main checkout, as `.env.example`), `stale_after` (12 hours).
+  Without the block, `worktree` says so and stops; nothing else changes.
+- **A worktree** has a name, an index from 1 to `max` and a home branch. `worktree new [name]`
+  runs `git worktree add -B <home> <dir>/<name> origin/<main>` (the local branch without a
+  remote), copies `share`, and runs `setup` there with `SPRY_WORKTREE` and `SPRY_WORKTREE_NAME`.
+  spry knows nothing of what the script isolates — a database, ports, an `.env`. A failed set-up
+  is said; the worktree stays for the person to fix. A worktree made by hand is taken as it is: the
+  first claim records it, with the index its name ends in when that one is free.
+- **Claims** — `.spry/worktrees/<name>.json` in the main checkout, found from every worktree
+  through `git rev-parse --git-common-dir` — hold the session id, the process and the time, written
+  under a file lock so two sessions cannot both win. The process is `CLAUDE_PID` when Claude Code
+  runs the command, else the agent found among the command's ancestors, else its shell;
+  `SPRY_SESSION_PID` overrides. The session is `CLAUDE_CODE_SESSION_ID`, else the one the
+  session-start hook noted for that process. **Stale** when the process is gone or the worktree
+  wrote no progress line for `stale_after` hours; a stale claim is taken and said. The
+  `session_end` hook drops the session's claims. The main checkout is never claimed.
+- **Home:** `worktree home` checks the worktree's home branch out at the main branch's head, after
+  a fetch, refusing uncommitted changes. `/spry:merge` runs it after the squash, because the main
+  checkout holds the main branch and a worktree cannot check it out.
+- **Falsify slots** run `worktrees.setup` with `SPRY_FALSIFY_SLOT` set as well, in place of
+  `falsify.setup` (§16): one script isolates a worktree and a slot the same way. `worktree prune`
+  removes slot trees no run holds — those of interrupted runs, and kept ones whose checkout is
+  gone; `--kept` also the warm ones — and the records of worktrees deleted by hand.
+- **Progress log** — `.spry/progress/events.jsonl` in the main checkout. `step --commit`, `gate`,
+  `falsify run`, `review-check`, `merge-check` and `worktree home` each append one line: time,
+  worktree, branch, slice, stage, a short result (`gate red: lint`, `falsify 113 caught, 87
+  survived`, `step 2 of 4 committed (abc1234)`). Over 256 KB it keeps its newest `progress.keep`
+  lines (400). A line written in a claimed worktree keeps its claim fresh. `say "<text>"` adds one by
+  hand. The log never fails the command that writes it.
+- **`watch [-n s] [--once]`:** a panel per worktree — name, index, branch; claim; slice, state and
+  step (`step 2 of 4 · <title>`, from the work order and the branch's `Step:` trailers); the last
+  five lines; the time since the last, marked *quiet* past `progress.quiet` minutes (15) while the
+  worktree is claimed. The main checkout shows only when it has something to show. A top line
+  names the heavy-check lock's holder (`checks.lock`).
+- **Transcripts, optional:** `progress.transcripts: "claude-code"` adds what each session is doing
+  — working, running a command, waiting on a subagent, waiting on you, asked you a question — its
+  context and its spend (`pace.token_weights`), read a little further on each redraw from the
+  newest session logs of the worktree. Off by default; other agents get the tool's lines only. A
+  permission prompt reads as a long-running command; the log does not say otherwise.
+
