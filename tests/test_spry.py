@@ -3220,6 +3220,41 @@ class Merge(Base):
     def test_no_falsify_results_blocks(self):
         self.assertIn("no falsify results", " ".join(self.blocks(self.check(""))))
 
+    def design(self, section, on=True):
+        """merge-check's design-review lines for a slice whose work order ends with `section`."""
+        text = self.closed_slice("| g | m | S-1/AC-1 | caught |\n").replace("\n## Close summary", section + "\n## Close summary")
+        config = {**CONFIG, "slices": {"design_review": True}} if on else CONFIG
+        t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): text, "spry__spry.config.json": json.dumps(config)})
+        lines = spry.merge_check(t.project(), "SL-1")
+        self.assertEqual(self.blocks(lines), [], "a design review never blocks")
+        return [(status, said) for status, said in lines if said.startswith("design review")]
+
+    def test_without_the_switch_a_design_review_is_not_looked_for(self):
+        self.assertEqual(self.design("", on=False), [])
+        self.assertEqual(self.design("\n### Design review\n\n- 1 Blocker, 0 Should — 0 asked\n", on=False), [])
+
+    def test_with_the_switch_a_work_order_nobody_reviewed_warns(self):
+        (status, said), = self.design("")
+        self.assertEqual(status, "warn")
+        self.assertIn("none recorded", said)
+        (status, said), = self.design("\n### Design review\n\n- It looked fine.\n")
+        self.assertEqual(status, "warn", "a section without the counts is not a review")
+
+    def test_a_recorded_design_review_is_shown(self):
+        self.assertEqual(self.design("\n### Design review\n\n- 2 Blocker, 5 Should — 2 asked\n- Blocker: tenant on the table — asked\n"),
+                         [("ok", "design review: 2 Blocker, 5 Should — 2 asked")])
+        self.assertEqual(self.design("\n### Design review\n\n0 Blockers, 1 Should - 0 asked\n"),
+                         [("ok", "design review: 0 Blocker, 1 Should — 0 asked")])
+
+    def test_a_blocker_that_was_not_asked_warns(self):
+        (status, said), = self.design("\n### Design review\n\n- 3 Blocker, 1 Should — 1 asked\n")
+        self.assertEqual(status, "warn")
+        self.assertIn("2 went unasked", said)
+
+    def test_design_review_is_true_or_false(self):
+        t = self.tree(**{"spry__spry.config.json": json.dumps({**CONFIG, "slices": {"design_review": "yes"}})})
+        self.assertProblem(t.problems(), "`slices.design_review` is `yes`")
+
     def test_open_slice_blocks(self):
         t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): slice_("SL-1", state="open")})
         self.assertIn("state is `open`", " ".join(self.blocks(spry.merge_check(t.project(), "SL-1"))))
@@ -3673,6 +3708,19 @@ class Pace(Base):
         self.assertIn("- tokens: 24k spend, in input-token equivalents — the main session 19k over 3 requests, "
                       "1 subagent 5k (21%); peak context 61k, 52k entering close; 6k per 100 lines", lines)
         self.assertIn("- size: 300–699 lines; ", lines)
+
+    def test_a_slice_shows_its_design_review(self):
+        text = slice_("SL-1") + "\n### Design review\n\n- 1 Blocker, 4 Should — 1 asked\n"
+        t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): text})
+        self.log(t, "a", self.session())
+        p = t.project()
+        s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
+        self.assertIn("- design review: 1 Blocker, 4 Should — 1 asked", spry.pace_slice_lines(s, [], spry.pace_config(p)))
+        t = self.tree()
+        self.log(t, "a", self.session())
+        p = t.project()
+        s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
+        self.assertFalse(any("design review" in line for line in spry.pace_slice_lines(s, [], spry.pace_config(p))))
 
     def test_token_weights_and_size_buckets_come_from_the_config(self):
         t = self.tree(**{"spry__spry.config.json": json.dumps({**CONFIG, "pace": {"token_weights": {"output": 4}, "buckets": [100, 50]}})})
