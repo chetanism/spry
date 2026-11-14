@@ -84,6 +84,10 @@ Run by `bug` and `task`. Same interview rules; neither counts toward its parent'
 
 - **A bug that breaks an acceptance criterion** names it in `breaks: [S-1/AC-2]`. If QA saw it on a
   build, add a `fail` row to the story's `checks.md` — that is what un-proves the criterion.
+- **The slice that introduced it** goes in `introduced_by: SL-n`, when a person says which. Ask
+  once; offer a candidate only with its evidence — the `Slice:` trailer of the commit that last
+  changed the faulty lines. Never fill it on a guess: empty is allowed, and a wrong slice
+  spoils the count `spry pace` keeps of what got past review.
 - **Severity:** `blocker` (stops a release), `major` (a criterion or rule fails), `minor` (anything else).
 - **Finish** as `interview.md` → *Finishing*, then offer `/spry:slice <ID>`.
 

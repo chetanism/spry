@@ -82,7 +82,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.50.0"
+VERSION = "0.51.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -968,6 +968,10 @@ def check(project: Project):
                 story = project.items.get(story_id)
                 if story is None or story.type != "story" or ac not in story.acs:
                     project.problem(item.doc, 1, f"`breaks` names {ref}, which does not exist")
+            for ref in introduced_by(item):
+                if getattr(project.items.get(ref), "type", None) != "slice":
+                    project.problem(item.doc, 1, f"`introduced_by` names {ref}, which is not a slice — name the slice "
+                                                 f"whose change brought the bug in, or leave it empty")
         if not gone(item):
             for ref in item.fm.get("blocked_by") if isinstance(item.fm.get("blocked_by"), list) else []:
                 if ref in project.items and gone(project.items[ref]):
@@ -1162,6 +1166,12 @@ def slice_branches(project: Project) -> dict:
         if found:
             out[s.id] = found
     return out
+
+
+def introduced_by(item: Item) -> list:
+    """The slices a bug says brought it in (`introduced_by: SL-n`, or a list); empty when it does not say."""
+    named = item.fm.get("introduced_by") or []
+    return [named] if isinstance(named, str) else [n for n in named if n]
 
 
 def gone(item: Item) -> bool:
@@ -1874,7 +1884,7 @@ def fill_template(template: str, kind: str, ident: str, title: str, owner: str |
                 break
             key = lines[i].split(":", 1)[0]
             value = {"id": ident, "title": title, "state": "planned" if kind == "slice" else "draft",
-                     "covers": "[]", "breaks": "[]", "branch": "", "pr": "", "closed": "", "date": today}.get(key)
+                     "covers": "[]", "breaks": "[]", "introduced_by": "", "branch": "", "pr": "", "closed": "", "date": today}.get(key)
             if key == "owner" and owner:
                 value = owner
             if value is not None:
@@ -4941,8 +4951,10 @@ def serve_meta(project: Project, item: Item, repo: str | None) -> str:
     if branch:
         badges.append(f'<span class="badge"><code>{html.escape(branch)}</code></span>')
     rows = []
-    for key, label in (("covers", "Covers"), ("blocked_by", "Blocked by"), ("breaks", "Breaks"), ("related", "Related")):
+    for key, label in (("covers", "Covers"), ("blocked_by", "Blocked by"), ("breaks", "Breaks"),
+                       ("introduced_by", "Introduced by"), ("related", "Related")):
         values = fm.get(key) or []
+        values = [values] if isinstance(values, str) else values
         if isinstance(values, list) and values:
             if key == "covers" and item.parent:
                 values = [f"{item.parent.id}/{v}" if "/" not in v else v for v in values]
@@ -6943,6 +6955,23 @@ def pace_lines(project: Project) -> dict:
     return out
 
 
+def pace_bugs(project: Project) -> dict | None:
+    """{slice ID: [[bug ID, severity]]} — the bugs that name the slice in `introduced_by`, dropped ones
+    left out. None while no bug in the plan names a slice: the count is then unknown, not zero."""
+    out, named = {}, False
+    for bug in sorted(project.of_type("bug"), key=lambda b: natural_key(b.id)):
+        if gone(bug):
+            continue
+        for slice_id in introduced_by(bug):
+            named = True
+            out.setdefault(slice_id, []).append([bug.id, str(bug.fm.get("severity") or "")])
+    return out if named else None
+
+
+def pace_bugs_said(bugs: list) -> str:
+    return ", ".join(f"{ident} ({severity})" if severity else ident for ident, severity in bugs)
+
+
 def pace_add(into: dict, more: dict) -> None:
     for key, value in more.items():
         into[key] = into.get(key, 0) + value
@@ -7037,9 +7066,11 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
             if slice_id in lines:
                 stored["lines"], stored["generated"] = lines[slice_id]
             slices[slice_id] = stored
+    bugs = pace_bugs(project)
     for slice_id, s in slices.items():
         item = project.items.get(slice_id)
-        if item is not None:   # what the slice file records: read on every run, so a kept summary follows the file
+        if item is not None:   # what the plan records: read on every run, so a kept summary follows the files
+            s["bugs"] = None if bugs is None else bugs.get(slice_id, [])
             for key, read_it in (("design", design_review), ("review", close_review), ("choices", choices_taken)):
                 found = read_it(item.text)
                 if found is not None:
@@ -7294,7 +7325,7 @@ def pace_merged(slices: list, changes: list) -> list:
 PACE_COUNTED = ("full gates failed", "quiet retries", "time lost to quiet retries", "full gates repeated on unchanged code",
                 "falsify controls", "falsify controls survived", "fast checks failed", "questions asked",
                 "design-review Blockers", "review Blockers", "review Shoulds",
-                "choices taken without asking")   # a mean per slice that has the number; every other measure is a median
+                "choices taken without asking", "bugs filed later")   # a mean per slice that has the number; every other measure is a median
 # What a slice is set against slices of its own size by, each as p25 / median / p75.
 PACE_SIZED = ("spend per 100 lines", "active time per 100 lines", "context entering close")
 
@@ -7324,6 +7355,7 @@ def pace_measures(s: dict, weights: dict | None = None) -> dict:
     out["review Blockers"] = s["review"]["blockers"] if s.get("review") else None
     out["review Shoulds"] = s["review"]["shoulds"] if s.get("review") else None
     out["choices taken without asking"] = s.get("choices")
+    out["bugs filed later"] = None if s.get("bugs") is None else len(s["bugs"])
     return out
 
 
@@ -7345,8 +7377,9 @@ def pace_spread(key: str, quartiles: tuple) -> str:
 
 def pace_compare_sizes(slices: list, at: float, weights: dict | None, buckets) -> list:
     """Markdown: within each size bucket, the slices ended after `at` against the 20 before it, as
-    p25 / median / p75. A bucket needs 10 slices before; one slice after is already a reading."""
-    rows = []
+    p25 / median / p75 — then the bugs later filed against them, per slice. A bucket needs 10 slices
+    before; one slice after is already a reading."""
+    rows, bugs = [], []
     for label in [pace_bucket(n, buckets) for n in [1] + list(buckets)]:
         group = sorted((s for s in slices if pace_bucket(s.get("lines"), buckets) == label), key=lambda s: s["last"])
         before = [pace_measures(s, weights) for s in group if s["last"] <= at][-20:]
@@ -7356,11 +7389,20 @@ def pace_compare_sizes(slices: list, at: float, weights: dict | None, buckets) -
             if len(was) >= 10 and now:
                 rows.append(f"| {label} | {key} | {len(was)} | {pace_spread(key, pace_quartiles(was))} | "
                             f"{len(now)} | {pace_spread(key, pace_quartiles(now))} |")
-    if not rows:
-        return []
-    return ["Slices of one size, as p25 / median / p75 (`pace.buckets`). With fewer than 10 after the change, the "
-            "row shows where they fall against the earlier slices; it is not yet a difference.", "",
-            "| lines changed | | before | p25 / median / p75 | after | p25 / median / p75 |", "|---|---|---:|---:|---:|---:|"] + rows + [""]
+        was, now = ([m["bugs filed later"] for m in side if m["bugs filed later"] is not None] for side in (before, after))
+        if len(was) >= 10 and now:
+            bugs.append(f"| {label} | {len(was)} | {sum(was)} | {sum(was) / len(was):.2f} | "
+                        f"{len(now)} | {sum(now)} | {sum(now) / len(now):.2f} |")
+    out = []
+    if rows:
+        out += ["Slices of one size, as p25 / median / p75 (`pace.buckets`). With fewer than 10 after the change, the "
+                "row shows where they fall against the earlier slices; it is not yet a difference.", "",
+                "| lines changed | | before | p25 / median / p75 | after | p25 / median / p75 |", "|---|---|---:|---:|---:|---:|"] + rows + [""]
+    if bugs:
+        out += ["Bugs filed later against slices of one size (`introduced_by`). A slice merged lately has had less "
+                "time for its bugs to be found, so the later side reads low until it has aged as long.", "",
+                "| lines changed | before | bugs | per slice | after | bugs | per slice |", "|---|---:|---:|---:|---:|---:|---:|"] + bugs + [""]
+    return out
 
 
 def pace_compare(slices: list, at: float, label: str, weights: dict | None = None, buckets=None) -> list:
@@ -7436,6 +7478,8 @@ def pace_check_lines(s: dict, conf: dict) -> list:
         rows.append(f"- review: {close_review_said(s['review'])}")
     if s.get("choices") is not None:
         rows.append(f"- choices taken without asking: {s['choices']}")
+    if s.get("bugs"):
+        rows.append(f"- bugs filed later: {len(s['bugs'])} — {pace_bugs_said(s['bugs'])}")
     red = pace_red_checks(s)
     if red:
         def named(cell):
@@ -7568,17 +7612,19 @@ def pace_page(project: Project, slices: dict, since: str | None = None, last: in
             return pace_spread(key, pace_quartiles(values)) if len(values) >= 4 else pace_shown(key, pace_median(values))
         rows += ["", "## By size", "", "Medians; each *per 100 lines* is p25 / median / p75 once a size has four slices. "
                  "A slice is set against slices of its own size (`pace.buckets`, in changed lines).", "",
-                 "| lines changed | slices | active | active per 100 lines | spend | spend per 100 lines | peak context |",
-                 "|---|---:|---:|---:|---:|---:|---:|"]
+                 "| lines changed | slices | active | active per 100 lines | spend | spend per 100 lines | peak context | bugs filed later |",
+                 "|---|---:|---:|---:|---:|---:|---:|---:|"]
         for label in [pace_bucket(n, conf["buckets"]) for n in [1] + conf["buckets"]]:
             group = sized.get(label)
             if group:
                 tokens = [numbers[s["id"]] or {} for s in group]
+                later = [len(s["bugs"]) for s in group if s.get("bugs") is not None]
                 rows.append(f"| {label} | {len(group)} | {pace_time(pace_median([pace_active(s) for s in group]))} | "
                             f"{spread('active time per 100 lines', [pace_active(s) / s['lines'] * 100 for s in group])} | "
                             f"{pace_tokens(pace_median([t.get('spend') for t in tokens]))} | "
                             f"{spread('spend per 100 lines', [t.get('per100') for t in tokens])} | "
-                            f"{pace_tokens(pace_median([t.get('peak') for t in tokens]))} |")
+                            f"{pace_tokens(pace_median([t.get('peak') for t in tokens]))} | "
+                            + (f"{sum(later)} ({sum(later) / len(later):.2f} a slice)" if later else "–") + " |")
     if counted or any(s.get("falsify") or pace_reruns(s)["retries"] for s in chosen):
         rows += ["", "## Tokens, falsify and reruns, newest first", "",
                  "Spend is in input-token equivalents (`pace.token_weights`). *Same code*: full gates that ran tests "
@@ -7609,17 +7655,19 @@ def pace_page(project: Project, slices: dict, since: str | None = None, last: in
                 c = subs[kind]
                 rows.append(f"| {kind} | {c['n']} | {c['slices']} | {pace_time(c['seconds'])} | {pace_time(pace_median(c['each']))} | "
                             f"{pace_tokens(c['spend']) if c['spend'] else '–'} |")
-    found = [s for s, _ in flagged[:60] if s.get("design") or s.get("review") or s.get("choices") is not None]
+    found = [s for s, _ in flagged[:60] if s.get("design") or s.get("review") or s.get("choices") is not None or s.get("bugs")]
     if found:
         rows += ["", "## Findings, newest first", "", "What each slice file records: the design review before any code, the "
                  "review at close, and — where the project's process lists them — the choices taken without asking. "
-                 "*Questions* are the ones the agent put to you, from the session log.", "",
-                 "| slice | design review: Blocker | Should | asked | review: Blocker | Should | Nit | fixed | questions | choices taken |",
-                 "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|"]
+                 "*Questions* are the ones the agent put to you, from the session log. *Bugs filed later* are the bugs whose "
+                 "`introduced_by` names the slice — what got past both reviews.", "",
+                 "| slice | design review: Blocker | Should | asked | review: Blocker | Should | Nit | fixed | questions | choices taken | bugs filed later |",
+                 "|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---|"]
         for s in found:
             d, r = s.get("design") or {}, s.get("review") or {}
             cells = [d.get(k, "–") for k in ("blockers", "shoulds", "asked")] + [r.get(k, "–") for k in ("blockers", "shoulds", "nits", "fixed")]
-            rows.append(f"| {s['id']} | " + " | ".join(str(c) for c in cells + [s.get("questions", 0), "–" if s.get("choices") is None else s["choices"]]) + " |")
+            later = "–" if s.get("bugs") is None else pace_bugs_said(s["bugs"]) or "0"
+            rows.append(f"| {s['id']} | " + " | ".join(str(c) for c in cells + [s.get("questions", 0), "–" if s.get("choices") is None else s["choices"], later]) + " |")
     red = {}
     for s in chosen:
         for name, cell in pace_red_checks(s).items():
