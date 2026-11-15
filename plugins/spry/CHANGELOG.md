@@ -1496,3 +1496,20 @@ Entry format:
   - *Done* is unchanged: tasks and bugs still never count toward their parent's done.
 - **Adapt:** nothing.
 - **Migrate:** nothing — `index` rewrites the progress tables.
+
+## CH-68 · A cap on each step, not only the slice
+
+- **Date:** 2026-11-15 · **Version:** 0.57.0
+- **Touches:** `tool/spry.py` (`step --commit`, `merge-check`), `process/slicing.md`,
+  `process/templates/spry.config.json`
+- **Why:** `slices.steps.max_lines` caps the whole slice, but a reviewer reads one step at a time.
+  A slice of five small steps went over the cap and was flagged, while one step of 900 lines in a
+  small slice was not.
+  - `slices.steps.step_lines` (default `0`, off) caps each step's commit, counted as the slice is:
+    documents and `checks.generated` files left out.
+  - `step --commit` prints `! step k: N lines … over slices.steps.step_lines` after the commit,
+    while the step can still be split; it never refuses the commit.
+  - `merge-check` warns once for each step over it, for the person to accept at the merge.
+  - `max_lines: 0` turns the slice cap off.
+- **Adapt:** set `slices.steps.step_lines`, and optionally `max_lines: 0` to drop the slice cap.
+- **Migrate:** nothing.

@@ -136,7 +136,7 @@ when a slice built in steps has a step with no commit, one made twice or out of 
 without a <code>Step:</code> trailer, or a fixup not folded in, or when <code>check</code> is not clean. It warns (<code>!</code>) about things a person must accept
 at the merge — a survivor or skipped control with a reason, a covered criterion no test cites (QA
 checks it by hand after the merge), one whose latest manual check failed, a steps slice over
-<code>slices.steps.max_lines</code>, or, with <code>slices.design_review</code> on, a work order with no
+<code>slices.steps.max_lines</code> or a step over <code>slices.steps.step_lines</code>, or, with <code>slices.design_review</code> on, a work order with no
 <em>Design review</em> or with a Blocker that was not asked. Lines in <code>checks.generated</code> files are not part of that size;
 they are printed beside it.</p>
 
