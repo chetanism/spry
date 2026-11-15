@@ -809,7 +809,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | Key under `hooks` | When | Does |
 |---|---|---|
 | `session` | session start, resume, clear, compaction | tells the agent where the config and tool are, the slice this branch builds, the person's tone, which hooks are on; with `worktrees`, the worktree the session is in and whether it holds its claim (§24) |
-| `session_end` | the session ends | releases the worktree claims the session holds (§24) |
+| `session_end` | the session ends | releases the worktree claims the session holds — not on `/clear` (§24) |
 | `link_fields` | an Edit or Write of a slice file; a `sed -i` or `perl -i` naming one | refuses a change to `branch`, `pr` or `owner`, naming the `link` command that sets it |
 | `cited_criteria` | an Edit or Write of a story | asks the person when a criterion that a test cites (`git grep`) changes or is dropped |
 | `check_edit` | after an Edit or Write of a document `check` reads | `check` of that one file by its text — front-matter, budget, placeholders, links, glossary — errors sent back to the agent |

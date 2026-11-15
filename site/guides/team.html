@@ -145,7 +145,7 @@ database and ports each one uses, and which branch each rests on between slices.
   database with the tree it runs from.</li>
   <li><strong>One session per worktree.</strong> In a new session, <code>/spry:worktree</code> claims one: by index,
   by name, or the lowest free one. A worktree another live session holds is never offered. A claim
-  ends with its session, and a claim whose session is gone, or has been silent for 12 hours, can be
+  ends with its session (a <code>/clear</code> keeps it), and a claim whose session is gone, or has been silent for 12 hours, can be
   taken. The main checkout is never claimed: sessions that only plan share it.</li>
   <li><strong>Home between slices.</strong> After a merge, <code>/spry:merge</code> puts the worktree back on its
   home branch at the main branch's head. It can't check out the main branch itself, because the main
