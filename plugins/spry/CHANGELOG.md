@@ -1463,3 +1463,18 @@ Entry format:
   - The session-start hook moves a claim this process holds to the new session id.
 - **Adapt:** nothing.
 - **Migrate:** nothing.
+
+## CH-66 · An index's generated lines do not count toward its budget
+
+- **Date:** 2026-11-15 · **Version:** 0.55.0
+- **Touches:** `tool/spry.py` (`check`), `process/writing.md`, `process/compacting.md`
+- **Why:** an `INDEX.md` is mostly the list the tool writes between `<!-- spry:index -->` and
+  `<!-- /spry:index -->`, one line per item. One project's decisions index reached 301 lines
+  against a budget of 300, 292 of them generated: `check` failed every `step --commit` in every
+  worktree, and `/spry:compact` had nothing to move out of a generated list.
+  - `check` leaves an index's generated lines out of every budget, as it does a slice's Falsify
+    table; the markers and every hand-written line still count.
+  - Over budget, the message gives both numbers: `N lines counted (M of the generated index not
+    counted)`.
+- **Adapt:** a budget raised to fit an index can be lowered again.
+- **Migrate:** nothing.

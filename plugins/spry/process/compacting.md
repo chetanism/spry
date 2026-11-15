@@ -28,7 +28,9 @@ If those alone are over budget, the finding is that the budget is too small — 
 (a `/spry:process-change`) rather than gutting them.
 
 **A knowledge file** over budget becomes `INDEX.md` + one file per item (`writing.md` → *Size*),
-each item with a `title` and `summary` the index is generated from.
+each item with a `title` and `summary` the index is generated from. An `INDEX.md` is never over
+budget on its generated lines alone — `check` leaves them out — so a compaction weighs only its
+hand-written lines.
 
 **A plan document** over budget is usually doing two jobs — a feature holding its stories' detail,
 a slice holding a design. Move the detail to where it belongs, or split the item; a split of a

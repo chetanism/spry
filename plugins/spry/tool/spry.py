@@ -85,7 +85,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.54.0"
+VERSION = "0.55.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -271,6 +271,12 @@ def falsify_record_lines(text: str) -> int:
     Only table lines: prose written under the heading still counts."""
     found = section_lines(text, "Falsify")
     return sum(1 for _i, line in found if line.lstrip().startswith("|")) if found else 0
+
+
+def index_entry_lines(text: str) -> int:
+    """How many lines the tool wrote between `<!-- spry:index -->` and `<!-- /spry:index -->` — the lines a
+    line budget leaves out. The markers themselves still count, as does everything outside them."""
+    return sum(m.group(1).count("\n") for m in re.finditer(r"<!-- spry:index -->\n(.*?)<!-- /spry:index -->", text, re.S))
 
 
 def table_rows(lines):
@@ -846,12 +852,14 @@ def check_text(project: Project, path: str, text: str, fm: dict, banned_res: lis
     rel = project.rel(path)
     lines = text.split("\n")
 
-    # a slice's Falsify table is a record the tool writes, one row per control: no prose to move out of it
+    # a slice's Falsify table and an index's entries are written by the tool: no prose to move out of them
     record = falsify_record_lines(text) if project.slice_file.match(os.path.basename(path)) else 0
-    counted = len(lines) - record
+    generated = index_entry_lines(text)
+    counted = len(lines) - record - generated
+    left_out = ([f"{record} of the Falsify table"] if record else []) + ([f"{generated} of the generated index"] if generated else [])
     for regex, limit, pattern in budgets:
         if regex.match(rel) and counted > limit:
-            size = f"{counted} lines counted ({record} of the Falsify table not counted)" if record else f"{len(lines)} lines"
+            size = f"{counted} lines counted ({', '.join(left_out)} not counted)" if left_out else f"{len(lines)} lines"
             project.problem(path, len(lines), f"{size}, budget {limit} ({pattern}) — /spry:compact moves sections to the files that own them")
 
     unfinished_ok = fm.get("state") in ("draft", "planned")
