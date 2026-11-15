@@ -291,7 +291,7 @@ else changes; the progress log and <code>spry.py watch</code> work either way. S
     <tr><td><code>worktrees.setup</code></td><td>Your script, run once in a new worktree with <code>SPRY_WORKTREE</code> (its index) and <code>SPRY_WORKTREE_NAME</code> set: create its database, pick its ports, write its <code>.env</code>. Falsify slots run it too, with <code>SPRY_FALSIFY_SLOT</code> set as well, so one script isolates both.</td><td><code>""</code></td></tr>
     <tr><td><code>worktrees.share</code></td><td>Files copied from the main checkout into a new worktree before the set-up — an <code>.env.example</code>, say.</td><td><code>[]</code></td></tr>
     <tr><td><code>worktrees.stale_after</code></td><td>Hours after which a claim whose worktree wrote nothing can be taken by another session.</td><td><code>12</code></td></tr>
-    <tr><td><code>progress.transcripts</code></td><td><code>"claude-code"</code>: <code>watch</code> also reads each session's log, for what it is doing now — working, running a command, waiting on you — its context and its spend.</td><td><code>false</code></td></tr>
+    <tr><td><code>progress.transcripts</code></td><td><code>"claude-code"</code>: <code>watch</code> also reads each session's log, for what it is doing now — working, running a command, waiting on you — its context, its spend and the time since its last <code>/clear</code>.</td><td><code>false</code></td></tr>
     <tr><td><code>progress.quiet</code></td><td>Minutes without a progress line before <code>watch</code> marks a claimed worktree <em>quiet</em>.</td><td><code>15</code></td></tr>
     <tr><td><code>progress.keep</code></td><td>Lines the progress log keeps once it passes 256 KB.</td><td><code>400</code></td></tr>
   </tbody>

@@ -160,17 +160,17 @@ database and ports each one uses, and which branch each rests on between slices.
 <code>spry.py watch</code> in a terminal of its own:</p>
 
 <pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py watch
-shelf1 #1 · sl-4-due-date            │ shelf2 #2 · sl-6-renewals
-claimed by pid 4121 · 42m            │ claimed by pid 4388 · 18m
-SL-4 Due date · step 2 of 3 · Page   │ SL-6 Renewals · open
-14:02 step 1 of 3 committed (3f9c1a) │ 14:20 gate red: lint
-14:31 gate --fast green              │ quiet for 22m</code></pre>
+shelf1 #1 · sl-4-due-date                 │ shelf2 #2 · sl-6-renewals
+claimed by pid 4121 · 42m                 │ claimed by pid 4388 · 18m
+S-2 › SL-4 Due date · step 2 of 3 · Page  │ B-3 › SL-6 Renewals · open
+14:02 step 1 of 3 committed (3f9c1a)      │ 14:20 gate red: lint
+14:31 gate --fast green                   │ quiet for 22m</code></pre>
 
 <p>The tool writes those lines itself: each step's commit, each gate, falsify run and merge check, and each
 return home. They cost no tokens, and no session has to remember to write them. A worktree that has
 gone quiet past <code>progress.quiet</code> minutes is marked. Set <code>progress.transcripts</code> to
 <code>"claude-code"</code> and each panel also says what its session is doing now: working, running a
-command, waiting on a subagent, or waiting on you.</p>
+command, waiting on a subagent, or waiting on you — and how long since it was last cleared.</p>
 
 <h2 id="requests">Requests in GitHub issues</h2>
 

@@ -1291,6 +1291,8 @@ in `spry/history/writ.md`, then retires `canon/`.
   0.52.0): `spry.py worktree`, `/spry:worktree`, claims released by the session-end hook, falsify
   slots set up by `worktrees.setup`; a progress log the tool writes and `spry.py watch` draws.
   Issue #21.
+- 2026-11-15 — watch names the story, task or bug of each slice, and when its session was cleared
+  (CH-64, 0.53.0).
 
 ## 24. Worktrees and progress
 
@@ -1332,14 +1334,15 @@ what each is doing, without a token spent on telling it.
   survived`, `step 2 of 4 committed (abc1234)`). Over 256 KB it keeps its newest `progress.keep`
   lines (400). A line written in a claimed worktree keeps its claim fresh. `say "<text>"` adds one by
   hand. The log never fails the command that writes it.
-- **`watch [-n s] [--once]`:** a panel per worktree — name, index, branch; claim; slice, state and
-  step (`step 2 of 4 · <title>`, from the work order and the branch's `Step:` trailers); the last
+- **`watch [-n s] [--once]`:** a panel per worktree — name, index, branch; claim; the story, task
+  or bug the slice sits under, the slice, its state and step (`step 2 of 4 · <title>`, from the work order and the branch's `Step:` trailers); the last
   five lines; the time since the last, marked *quiet* past `progress.quiet` minutes (15) while the
   worktree is claimed. The main checkout shows only when it has something to show. A top line
   names the heavy-check lock's holder (`checks.lock`).
 - **Transcripts, optional:** `progress.transcripts: "claude-code"` adds what each session is doing
   — working, running a command, waiting on a subagent, waiting on you, asked you a question — its
   context and its spend (`pace.token_weights`), read a little further on each redraw from the
-  newest session logs of the worktree. Off by default; other agents get the tool's lines only. A
+  newest session logs of the worktree — and the time since the session's last `/clear`, which
+  starts a new log, or since it started (CH-64). Off by default; other agents get the tool's lines only. A
   permission prompt reads as a long-running command; the log does not say otherwise.
 

@@ -85,7 +85,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.52.0"
+VERSION = "0.53.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -8672,22 +8672,24 @@ def worktree_prune(project: Project, conf: dict | None, kept: bool = False, say=
 
 
 def row_slice(row: dict) -> tuple:
-    """(ID, slice file text) of the slice a worktree's branch builds, or (None, None)."""
+    """(ID, slice file text, ID of the story, task or bug it belongs to) of the slice a worktree's branch
+    builds, or (None, None, None)."""
     if not row.get("branch") or not os.path.isdir(native(row["path"])):
-        return None, None
+        return None, None, None
     root = find_root(row["path"])
     if not root:
-        return None, None
+        return None, None, None
     try:
         project = Project(root, load=False)
         names = Names(project)
         named = branch_slices(names, row["branch"])
     except (SystemExit, OSError, ValueError):
-        return None, None
+        return None, None, None
     if not named:
-        return None, None
+        return None, None, None
     ident, doc = named[0]
-    return ident, names.read(doc) or ""
+    folder = project.item_dir.match(os.path.basename(os.path.dirname(doc)))
+    return ident, names.read(doc) or "", f"{folder.group(1)}-{folder.group(2)}" if folder else None
 
 
 def worktree_list(project: Project, conf: dict, say=print) -> int:
@@ -8704,7 +8706,7 @@ def worktree_list(project: Project, conf: dict, say=print) -> int:
         if row.get("gone"):
             say(f"{row['name']} · {index} · gone — `worktree prune` forgets it")
             continue
-        ident, text = row_slice(row)
+        ident, text, _parent = row_slice(row)
         slice_said = ""
         if ident:
             fm = parse_front_matter(text)[0] or {}
@@ -8798,14 +8800,15 @@ def watch_ago(seconds: float) -> str:
 
 
 def watch_stage(row: dict, project: Project) -> str | None:
-    """`SL-4 · step 2 of 4 · <title>` from the slice file and the branch's `Step:` trailers."""
-    ident, text = row_slice(row)
+    """`S-2 › SL-4 <title> · step 2 of 4 · <step>` from the slice file, the folder it sits in and the
+    branch's `Step:` trailers."""
+    ident, text, parent = row_slice(row)
     if not ident:
         return None
     fm = parse_front_matter(text)[0] or {}
     state, title = fm.get("state", "?"), fm.get("title", "")
     steps = [s for s in slice_steps(text) if s["n"]]
-    head = f"{ident} {title}".strip()
+    head = f"{parent + ' › ' if parent else ''}{ident} {title}".strip()
     if not steps:
         return f"{head} · {state}"
     base = f"{REMOTE}/{main_branch(project)}"
@@ -8831,6 +8834,7 @@ class Transcript:
         self.path, self.offset, self.rest = path, 0, b""
         self.seen, self.spend, self.context = set(), 0.0, 0
         self.stop, self.last = None, 0.0
+        self.begun, self.cleared = 0.0, False  # the session's first line, or its last `/clear`
         self.pending, self.background = {}, {}
 
     def read(self, weights: dict):
@@ -8855,6 +8859,7 @@ class Transcript:
         kind = record.get("type")
         try:
             at = pace_stamp(str(record.get("timestamp")))
+            self.begun = min(self.begun, at) if self.begun else at
         except ValueError:
             at = self.last
         if kind == "queue-operation":
@@ -8883,6 +8888,8 @@ class Transcript:
                     result = record.get("toolUseResult") if isinstance(record.get("toolUseResult"), dict) else {}
                     if background or result.get("isAsync") or result.get("status") == "async_launched":
                         self.background[block["tool_use_id"]] = (name, text, started)
+            if isinstance(content, str) and content.lstrip().startswith("<command-name>/clear<"):
+                self.begun, self.cleared = at, True
             if isinstance(content, str) and content.lstrip().startswith(("<command-name>", "<local-command-")):
                 self.stop, self.last = "end_turn", at  # `/clear` and its kind: the session waits, nothing runs
                 self.pending.clear()
@@ -8979,7 +8986,9 @@ def watch_render(project: Project, colour: bool = False, width: int | None = Non
         if transcript:
             text, asks = transcript.state(now)
             lines.append((yellow if asks else "", text))
-            lines.append((dim, f"context {transcript.context // 1000}k · spend {transcript.spend / 1e6:.1f}M"))
+            fresh = f" · {'cleared' if transcript.cleared else 'started'} {watch_ago(now - transcript.begun)} ago" \
+                if transcript.begun else ""
+            lines.append((dim, f"context {transcript.context // 1000}k · spend {transcript.spend / 1e6:.1f}M{fresh}"))
         if said:
             for event in said[-5:]:
                 lines.append(("", f"{time.strftime('%H:%M', time.localtime(event['at']))} {event.get('said') or event.get('msg') or ''}"))
