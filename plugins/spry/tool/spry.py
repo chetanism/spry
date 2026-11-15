@@ -85,7 +85,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.56.0"
+VERSION = "0.57.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -5497,18 +5497,20 @@ def merge_message(project: Project, slice_id: str, ci_local: str | None = None) 
 
 STEP_HEAD = re.compile(r"^Step\s+(\d+)\s*(?:·|—|–|-|:)\s*(\S.*)$")
 STEP_COVERS = re.compile(r"^\s*(?:-\s*)?Covers:\s*(.*)$", re.I)
-STEP_DEFAULTS = {"max": 5, "max_lines": 800}
+STEP_DEFAULTS = {"max": 5, "max_lines": 800, "step_lines": 0}
 # Only `fixup!`: a `squash!` fold keeps its own message after the step's, so `Step:` is no longer
 # the last paragraph and git stops reading it as a trailer.
 FIXUP_SUBJECT = ("fixup! ",)
 
 
 def steps_config(project: Project) -> dict:
-    """`slices.steps`, each value an integer, over the defaults."""
+    """`slices.steps`, each value an integer, over the defaults. `max` is at least 1; a line cap of 0
+    is off — `max_lines` for the whole slice, `step_lines` (off by default) for each step's commit."""
     given = (project.config.get("slices") or {}).get("steps")
     if not isinstance(given, dict):
         return dict(STEP_DEFAULTS)
-    return {**STEP_DEFAULTS, **{k: v for k, v in given.items() if k in STEP_DEFAULTS and isinstance(v, int) and v > 0}}
+    return {**STEP_DEFAULTS, **{k: v for k, v in given.items() if k in STEP_DEFAULTS and isinstance(v, int)
+                                and not isinstance(v, bool) and v >= (1 if k == "max" else 0)}}
 
 
 def step_tests_on(project: Project) -> bool:
@@ -5749,9 +5751,26 @@ def numstat_lines(text: str, generated: list, skip=None) -> tuple:
 def code_lines(project: Project, base: str) -> tuple:
     """(lines, generated lines) added and removed since the branch left `base`: `lines` outside
     `checks.docs` and `checks.generated`, `generated` in the files `checks.generated` names."""
-    done = git(project.root, "diff", "--numstat", "--no-renames", "--relative", f"{fork_point(project, base)}..HEAD")
+    return span_lines(project, f"{fork_point(project, base)}..HEAD")
+
+
+def span_lines(project: Project, span: str) -> tuple:
+    """`code_lines` for any diff span: a branch, or one step's commit (`<sha>^..<sha>`)."""
+    done = git(project.root, "diff", "--numstat", "--no-renames", "--relative", span)
     return numstat_lines(done.stdout if done.returncode == 0 else "", generated_globs(project),
                          lambda path: documents_only(project, [path]))
+
+
+def step_size_line(project: Project, k: int, sha: str) -> str | None:
+    """The warning for one step's commit over `slices.steps.step_lines`; None under it, or with it off."""
+    limit = steps_config(project)["step_lines"]
+    if not limit:
+        return None
+    lines, made = span_lines(project, f"{sha}^..{sha}")
+    if lines <= limit:
+        return None
+    aside = f" ({made} generated, not counted)" if made else ""
+    return f"step {k}: {lines} lines of code changed{aside}, over `slices.steps.step_lines` ({limit})"
 
 
 def step_merge_lines(project: Project, item: Item, base: str) -> list:
@@ -5771,9 +5790,13 @@ def step_merge_lines(project: Project, item: Item, base: str) -> list:
                              f"not folded in — `spry.py step {item.id} --squash`, then the gate"))
     if not out:
         out.append(("ok", f"steps: all {len(state['steps'])} committed, one commit each, in order"))
+    for c in state["done"]:
+        over = step_size_line(project, c["step"], c["sha"])
+        if over:
+            out.append(("warn", f"steps: {over} — a person accepts the size at the merge, or the step is split"))
     (lines, made), limit = code_lines(project, base), steps_config(project)["max_lines"]
     aside = f" ({made} generated, not counted)" if made else ""
-    if lines > limit:
+    if limit and lines > limit:
         out.append(("warn", f"steps: {lines} lines of code changed{aside}, over `slices.steps.max_lines` ({limit}) — a "
                             f"person accepts the size at the merge, or it is split"))
     elif made:
@@ -5941,6 +5964,9 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
     sha = git(project.root, "rev-parse", "--short", "HEAD").stdout.strip()
     after = f"step {k + 1}: `spry.py step {item.id}`" if k < total else "/spry:slice-close"
     say(f"committed step {k} of {total} as {sha} — next, {after}")
+    over = step_size_line(project, k, sha)
+    if over:
+        say(f"! {over} — split it before the next step (`git reset --soft HEAD^`), or a person accepts it at the merge")
     progress_event(project, "step", f"step {k} of {total} committed ({sha})", item.id)
     return 0
 

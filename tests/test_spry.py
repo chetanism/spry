@@ -4290,6 +4290,36 @@ class Steps(Base):
         lines = spry.step_merge_lines(self.t.project(), self.t.project().items["SL-1"], "main")
         self.assertTrue(any(s == "warn" and "3 lines of code changed, over" in x for s, x in lines), lines)
 
+    def test_a_step_over_its_own_cap_is_named_at_its_commit_and_at_the_merge(self):
+        self.on_branch()
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "slices": {"steps": {"max_lines": 0, "step_lines": 2}}}))
+        self.run_git("commit", "-qam", "docs: cap")
+        self.write("src/lend.ts", "a\nb\nc\n")
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 0, out)
+        self.assertIn("committed step 1 of 2", out)
+        self.assertIn("! step 1: 3 lines of code changed, over `slices.steps.step_lines` (2)", out)
+        self.write("src/due.ts", "d\n")
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("step_lines", out, "a step under the cap says nothing")
+        lines = spry.step_merge_lines(self.t.project(), self.t.project().items["SL-1"], "main")
+        warns = [x for s, x in lines if s == "warn"]
+        self.assertEqual(len(warns), 1, lines)
+        self.assertIn("step 1: 3 lines of code changed", warns[0])
+        self.assertFalse([x for x in warns if "max_lines" in x], "max_lines 0 turns the slice cap off")
+
+    def test_the_step_cap_is_off_by_default(self):
+        self.on_branch()
+        self.write("src/lend.ts", "x\n" * 900)
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 0, out)
+        self.assertNotIn("step_lines", out)
+        self.assertEqual(spry.steps_config(self.t.project())["step_lines"], 0)
+        lines = spry.step_merge_lines(self.t.project(), self.t.project().items["SL-1"], "main")
+        self.assertFalse([x for s, x in lines if s == "warn" and "step_lines" in x], lines)
+        self.assertTrue([x for s, x in lines if s == "warn" and "max_lines" in x], "the slice cap still holds")
+
     def test_generated_files_are_counted_beside_the_size_not_in_it(self):
         self.on_branch()
         self.write("spry/spry.config.json", json.dumps({**CONFIG, "checks": {"generated": ["src/client/**"]},

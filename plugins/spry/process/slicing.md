@@ -240,8 +240,10 @@ file, keeps that so (DESIGN.md §15 *Steps mode*).
   covers, one visible change each, in build order, `—` for a step that only prepares. Then pack
   consecutive steps into the **fewest slices** that keep to `slices.steps.max` (default 5 steps)
   and, by your estimate, `slices.steps.max_lines` (default 800 changed lines, documents and
-  `checks.generated` files not counted). Steps that two people could build at the same time go into different slices. A story
-  that fits is one slice.
+  `checks.generated` files not counted; `0` is no slice cap). With `slices.steps.step_lines` set
+  (default `0`, off), also estimate each step against it, and split a step you expect to be over.
+  Steps that two people could build at the same time go into different slices. A story that fits
+  is one slice.
 - **Work order.** `### Steps` replaces `### Plan`:
 
   ```markdown
@@ -260,7 +262,9 @@ file, keeps that so (DESIGN.md §15 *Steps mode*).
 - **Build.** `spry.py step SL-<n>` names the next step and its plan, from the commits already made
   — so a new session, or one after a compaction, starts there. Build that step only, then
   `spry.py step SL-<n> --commit`: `gate --fast`, then one commit, `SL-<n> step <k>: <title>`, with
-  the trailer `Step: SL-<n>/<k>`. Red fast checks → fix and run it again; when every red check has
+  the trailer `Step: SL-<n>/<k>`. A step over `slices.steps.step_lines` is a `!` after the commit:
+  split it now (`git reset --soft HEAD^`, then commit its parts as steps) or leave it for the person
+  to accept at the merge. Red fast checks → fix and run it again; when every red check has
   a `fix` in `checks.fast` (the formatter), the tool runs it on the step's files, says which
   changed, and commits. With `slices.steps.tests`
   on, it also runs the test files the step added or changed (not those in
@@ -281,8 +285,8 @@ file, keeps that so (DESIGN.md §15 *Steps mode*).
     With `mint: main` the main branch may have been merged in at step 4; when `--squash` stops on
     that merge, rebase onto `origin/<main>` and run it again.
 - **Merge.** `merge-check` blocks a step with no commit, one committed twice or out of order, code
-  committed without a trailer, and a fixup not folded in. A slice over `slices.steps.max_lines`
-  is a `!` the person accepts; generated lines (`checks.generated`) are printed beside the size,
+  committed without a trailer, and a fixup not folded in. A slice over `slices.steps.max_lines`,
+  and each step over `slices.steps.step_lines`, is a `!` the person accepts; generated lines (`checks.generated`) are printed beside the size,
   not counted in it. The squash keeps the step titles in its body.
 
 ## Slices side by side

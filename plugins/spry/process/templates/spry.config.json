@@ -1,6 +1,6 @@
 {
-  "spry": "0.56.0",
-  "spry_baseline": "CH-67",
+  "spry": "0.57.0",
+  "spry_baseline": "CH-68",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -89,7 +89,7 @@
     "pick": "offer",
     "mode": "split",
     "design_review": false,
-    "steps": {"max": 5, "max_lines": 800, "tests": false, "tests_skip": []}
+    "steps": {"max": 5, "max_lines": 800, "step_lines": 0, "tests": false, "tests_skip": []}
   },
   "worktrees": {
     "dir": ".claude/worktrees",

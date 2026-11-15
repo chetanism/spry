@@ -408,8 +408,10 @@ it grows with the guards a diff adds, not with the number of slices.
   - `steps`: the story is planned as steps, as slices are today (a title, the criteria each
     covers, one visible change each, in build order). Then consecutive steps are packed into the
     fewest slices that fit `slices.steps.max` (default 5) and `slices.steps.max_lines` (default
-    800 lines changed, documents and `checks.generated` files left out). A story over the cap gets several slices, and each of
-    those is a steps slice. Steps that could be built at the same time by different people go
+    800 lines changed, documents and `checks.generated` files left out; `0` turns it off). With
+    `slices.steps.step_lines` set (default `0`, off), each step is also kept under that many lines
+    — the size one reviewer reads. A story over the cap gets several slices, and each of those is a
+    steps slice. Steps that could be built at the same time by different people go
     into different slices, so the slices can run side by side.
 - **The work order.** In a steps slice, `### Plan` is replaced by `### Steps`. Each
   `#### Step <k> · <title>` has a `Covers:` line (the slice's criteria it covers, or `—` for a
@@ -430,7 +432,8 @@ it grows with the guards a diff adds, not with the number of slices.
   - `check` refuses a `slices.mode` other than `split` or `steps`, so a typo is not quietly `split`.
   - `merge-check` blocks unless every step has exactly one commit, in order, with no `fixup!` left.
   - A slice over `slices.steps.max_lines` at close is listed in the merge's ask, for the person to
-    accept, as survivors are. Files matching `checks.generated` (a client, a schema dump, a lock
+    accept, as survivors are. So is each step whose commit is over `slices.steps.step_lines`
+    (CH-68), and `step --commit` names it the moment it is made, while it can still be split. Files matching `checks.generated` (a client, a schema dump, a lock
     file) are not counted: their lines are printed beside the size, never silently dropped.
   - The `session` hook (§18) names the step the branch is on. A `step_commit` hook, filtered to
     `Bash(git commit *)` on a steps branch, refuses a commit without the trailer and names
@@ -1313,6 +1316,11 @@ in `spry/history/writ.md`, then retires `canon/`.
   not done, which would make finished milestones unfinish when a bug is filed, and move the done
   page, `blocked_by` and what `merge` reports unblocked with them. Rejected for `serve`: two
   overlapping bars, whose lengths are percentages of different totals.
+- 2026-11-15 — a cap on each step, not only the slice (CH-68, 0.57.0): `slices.steps.step_lines`
+  (default 0, off), warned at `step --commit` and in `merge-check`; `max_lines: 0` turns the slice
+  cap off. A reviewer reads one step at a time, so the step is the size that matters once a slice
+  holds several. Rejected: refusing the commit, since the size is for a person to accept, as the
+  slice cap is.
 
 ## 24. Worktrees and progress
 
