@@ -1436,3 +1436,18 @@ Entry format:
   - worktrees made by hand are claimed as they are: `worktree claim <name>` records one, with the
     index its name ends in;
   - scratch trees left by interrupted falsify runs go with one `worktree prune`.
+
+## CH-64 · Watch names the story, task or bug of each slice, and when its session was cleared
+
+- **Date:** 2026-11-15 · **Version:** 0.53.0
+- **Touches:** `tool/spry.py` (`watch`)
+- **Why:** with three or four sessions side by side, a panel's `SL-12 Due date` did not say which
+  story, task or bug the slice served, so its owner opened the plan to find out. Nor did a panel
+  say how long its session had run since the last `/clear` — the time a long context builds up in,
+  and the sign of a session that should be cleared before its next slice.
+  - The slice line starts with the ID of the item the slice sits under: `S-2 › SL-4 Due date ·
+    step 2 of 3 · Page`.
+  - With `progress.transcripts: "claude-code"`, the context line ends with `cleared 42m ago`, or
+    `started 42m ago` for a session never cleared.
+- **Adapt:** nothing.
+- **Migrate:** nothing.

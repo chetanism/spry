@@ -4769,7 +4769,7 @@ class Worktrees(Base):
         page = spry.watch_render(spry.Project(self.root, load=False), width=200)
         self.assertIn("one #1 · sl-1-a", page)
         self.assertIn("claimed by pid", page)
-        self.assertIn("SL-1 Slice SL-1 · step 2 of 2 · Page", page)
+        self.assertIn("S-1 › SL-1 Slice SL-1 · step 2 of 2 · Page", page, "the story the slice belongs to")
         self.assertIn("routes done", page)
         self.assertNotIn("quiet for", page)
         later = spry.watch_render(spry.Project(self.root, load=False), width=200, now=time.time() + 2 * 3600)
@@ -4795,6 +4795,19 @@ class Worktrees(Base):
                                      "message": {"stop_reason": "end_turn", "content": []}}) + "\n")
         transcript.read(spry.PACE_WEIGHTS)
         self.assertEqual(transcript.state(now), ("waiting on you · 1m", True))
+        self.assertEqual((transcript.begun, transcript.cleared), (spry.pace_stamp(stamp), False), "never cleared")
+
+    def test_transcripts_say_when_a_session_was_cleared(self):
+        log = os.path.join(self.root, "log.jsonl")
+        rows = [{"type": "user", "timestamp": "2026-11-15T09:00:00Z", "message": {"content": "<command-name>/clear</command-name>"}},
+                {"type": "user", "timestamp": "2026-11-15T09:01:00Z", "message": {"content": "build SL-1"}},
+                {"type": "assistant", "timestamp": "2026-11-15T09:02:00Z", "requestId": "r1",
+                 "message": {"stop_reason": "end_turn", "content": []}}]
+        with open(log, "w") as handle:
+            handle.write("\n".join(json.dumps(r) for r in rows) + "\n")
+        transcript = spry.Transcript(log)
+        transcript.read(spry.PACE_WEIGHTS)
+        self.assertEqual((transcript.begun, transcript.cleared), (spry.pace_stamp("2026-11-15T09:00:00Z"), True))
 
     def test_the_session_hooks_name_the_worktree_and_release_its_claim(self):
         self.run_tool("worktree", "new", "one")

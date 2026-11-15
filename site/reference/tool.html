@@ -299,11 +299,11 @@ stage — <code>step --commit</code>, <code>gate</code>, <code>falsify run</code
 <pre><code>spry say [--slice SLICE] text [text ...]</code></pre>
 
 <h3 id="watch">watch</h3>
-<p>A panel per worktree, redrawn every few seconds: its claim, the slice its branch builds and the step it
-is on, its last progress lines, and how long since the last — marked <em>quiet</em> past
+<p>A panel per worktree, redrawn every few seconds: its claim, the slice its branch builds — after the ID
+of the story, task or bug it belongs to — and the step it is on, its last progress lines, and how long since the last — marked <em>quiet</em> past
 <code>progress.quiet</code>. The top line names who holds the heavy-check lock. With
 <code>progress.transcripts: "claude-code"</code>, each panel also says what the session is doing now,
-its context and its spend. Reads only; spends no tokens.</p>
+its context, its spend and how long since it was last cleared. Reads only; spends no tokens.</p>
 <pre><code>spry watch [-n SECONDS] [--once]</code></pre>
 
 <h2>Creating and linking items</h2>
