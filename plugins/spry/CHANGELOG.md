@@ -1451,3 +1451,15 @@ Entry format:
     `started 42m ago` for a session never cleared.
 - **Adapt:** nothing.
 - **Migrate:** nothing.
+
+## CH-65 · A `/clear` keeps the session's worktree claim
+
+- **Date:** 2026-11-15 · **Version:** 0.54.0
+- **Touches:** `tool/spry.py` (`hook_session_end`, the session-start hook's worktree lines)
+- **Why:** Claude Code ends a session on `/clear` and starts a new one in the same process, so the
+  `session_end` hook dropped the claim and the next start said `not claimed` — every `/clear` cost
+  a `worktree claim`, and a second session could take the worktree in between.
+  - `session_end` with `reason: "clear"` leaves the claim.
+  - The session-start hook moves a claim this process holds to the new session id.
+- **Adapt:** nothing.
+- **Migrate:** nothing.

@@ -4827,7 +4827,12 @@ class Worktrees(Base):
             self.assertIn("another live session claimed", context(tree))
             spry.agent_hook("session_end", json.dumps({"cwd": tree, "session_id": "zzz"}))
         self.assertIn("claimed by pid", self.run_tool("worktree", "list")[1], "another session's end leaves it")
-        spry.agent_hook("session_end", json.dumps({"cwd": tree, "session_id": "abc12345"}))
+        spry.agent_hook("session_end", json.dumps({"cwd": tree, "session_id": "abc12345", "reason": "clear"}))
+        self.assertIn("claimed by pid", self.run_tool("worktree", "list")[1], "a /clear keeps it")
+        spry.agent_hook("session", json.dumps({"cwd": tree, "session_id": "def67890", "source": "clear"}))
+        with open(os.path.join(self.root, ".spry", "worktrees", "one.json")) as handle:
+            self.assertEqual(json.load(handle)["claim"]["session"], "def67890", "the cleared session's new id")
+        spry.agent_hook("session_end", json.dumps({"cwd": tree, "session_id": "def67890", "reason": "exit"}))
         self.assertIn("one · #1 · `alt1` · free", self.run_tool("worktree", "list")[1])
 
     def test_no_worktrees_block_no_change(self):
