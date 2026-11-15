@@ -1478,3 +1478,21 @@ Entry format:
     counted)`.
 - **Adapt:** a budget raised to fit an index can be lowered again.
 - **Migrate:** nothing.
+
+## CH-67 · Progress counts the work beside the scope
+
+- **Date:** 2026-11-15 · **Version:** 0.56.0
+- **Touches:** `tool/spry.py` (`status`, the children and coverage blocks, `serve`), `skills/status`
+- **Why:** progress counted stories only, while tasks and bugs are to-do items too: a milestone
+  could read 15 of 18 stories done with six bugs and two tasks still open, and nothing beside it
+  said how much work was left.
+  - Where tasks or bugs sit under an item, its progress adds `stories n of m` (left out where the
+    count is already stories) and `all work n of m` — stories, tasks and bugs done, out of all of
+    them — in `status`, the children tables and the home page.
+  - `COVERAGE.md` gets an *All work* row, overall and per milestone.
+  - `serve` draws one bar per milestone, epic and feature, and per top-level item on the home page:
+    done stories, tasks and bugs in a colour each, out of all the work, with a tick where the
+    stories alone stand.
+  - *Done* is unchanged: tasks and bugs still never count toward their parent's done.
+- **Adapt:** nothing.
+- **Migrate:** nothing — `index` rewrites the progress tables.

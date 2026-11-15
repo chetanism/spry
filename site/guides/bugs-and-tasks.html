@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Bugs and tasks · spry</title>
-<meta name="description" content="Record a bug against what it breaks with /spry:bug, and plan technical work no story asks for with /spry:task — attached to the plan, but not counted toward progress.">
+<meta name="description" content="Record a bug against what it breaks with /spry:bug, and plan technical work no story asks for with /spry:task — attached to the plan, never keeping a parent from done, and counted in its work.">
 <link rel="icon" href="../assets/favicon.svg" type="image/svg+xml">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -21,7 +21,7 @@
 <p class="lead">Not all work is a story. A <strong>bug</strong> is something not working as the plan
 says; a <strong>task</strong> is technical work no story asks for — set-up, upgrades, refactors,
 infrastructure. Both hang off the plan tree where they belong, get built in slices like everything
-else, and neither counts toward its parent's progress.</p>
+else. Neither counts toward its parent being done; both count in the work left under it.</p>
 
 <h2>At a glance</h2>
 
@@ -138,13 +138,17 @@ test that was there before the task and names nothing; then its falsify control 
 instead — <code>"expect": ["tests/ci/gate.test.ts"]</code>. See
 <a href="../design/falsify.html">Falsify</a>.</p>
 
-<h2>Why they don't count toward progress</h2>
+<h2>Why they don't count toward done</h2>
 
 <p>A milestone's progress is about outcomes for the people it serves — epics, features and stories
 done. Counting bugs and tasks would let a milestone look further along because there was more to
 fix. They still show everywhere you'd look: in their parent's page, on the backlog — where, within a
 milestone, bugs come first, then tasks, then stories — and as "1 open bug" next to their parent's
 progress.</p>
+<p>They are still work to do, so they are counted beside it: where any sit under an item, its
+progress reads <em>stories 15 of 18 · all work 21 of 30</em> — the scope promised, then every story,
+task and bug done out of all of them. A milestone with every story done and six bugs open shows
+both. See <a href="../design/status.html">Status and proof</a>.</p>
 
 <h2>What's next</h2>
 

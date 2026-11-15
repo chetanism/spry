@@ -44,6 +44,6 @@ related: []
 <!-- spry:children -->
 | Feature | State | Progress |
 |---|---|---|
-| [F-1 Lend at the desk](F-1-lend-at-the-desk/README.md) | ready | 0 of 2 stories done · 1 open bug |
+| [F-1 Lend at the desk](F-1-lend-at-the-desk/README.md) | ready | 0 of 2 stories done · all work 0 of 3 · 1 open bug |
 | [F-2 Return a book](F-2-return-a-book/README.md) | draft | no stories yet |
 <!-- /spry:children -->

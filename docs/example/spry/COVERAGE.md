@@ -24,6 +24,7 @@ In progress: not done, and some slice under it is open or closed. A criterion is
 | Slices closed | 2 | 1 | 5 | 40% |
 | Tasks | 1 | 0 | 1 | 100% |
 | Bugs fixed | 0 | 0 | 1 | 0% |
+| All work: stories, tasks and bugs | 1 | 2 | 4 | 25% |
 
 ### By milestone
 
@@ -38,6 +39,7 @@ In progress: not done, and some slice under it is open or closed. A criterion is
 | Slices closed | 2 | 1 | 5 | 40% |
 | Tasks | 1 | 0 | 1 | 100% |
 | Bugs fixed | 0 | 0 | 1 | 0% |
+| All work: stories, tasks and bugs | 1 | 2 | 4 | 25% |
 
 ### Built, not proven
 
