@@ -85,7 +85,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.55.0"
+VERSION = "0.56.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -755,6 +755,34 @@ class Project:
     def open_bugs(self, item: Item):
         return [b for b in self.descendants(item, "bug") if not self.done(b)]
 
+    def work(self, item: Item) -> dict:
+        """{kind: (done, total)} of the stories, tasks and bugs under an item, none under something
+        dropped: the two figures beside its own count — stories alone, and all the work (§6)."""
+        found = {"story": [], "task": [], "bug": []}
+
+        def walk(node: Item):
+            for c in node.children:
+                if c.state == "dropped":
+                    continue
+                if c.type in found:
+                    found[c.type].append(c)
+                walk(c)
+
+        walk(item)
+        return {kind: (sum(map(self.done, items)), len(items)) for kind, items in found.items()}
+
+    def work_note(self, item: Item) -> str:
+        """` · stories 1 of 3 · all work 2 of 6` — only where tasks or bugs sit under the item, so
+        all the work differs from the stories; the stories figure only where it is not the count."""
+        if item.type in ("story", "task", "bug", "slice"):
+            return ""
+        work = self.work(item)
+        if not (work["task"][1] or work["bug"][1]):
+            return ""
+        done, total = (sum(d for d, _ in work.values()), sum(t for _, t in work.values()))
+        stories = f" · stories {work['story'][0]} of {work['story'][1]}" if self.child_level(item.type) != "story" else ""
+        return f"{stories} · all work {done} of {total}"
+
     def slice_state(self, s: Item) -> str:
         pr = s.fm.get("pr", "")
         pr = f" · PR #{pr}" if isinstance(pr, str) and pr.isdigit() else ""
@@ -786,10 +814,10 @@ class Project:
         kind = self.child_level(item.type)
         kids = self.counted(item, kind) if kind else []
         if not kids:
-            return f"no {PLURAL[kind]} yet{bug_note}"
+            return f"no {PLURAL[kind]} yet{self.work_note(item)}{bug_note}"
         if item.type in ("task", "bug") and self.done(item):
             return "done"
-        return f"{sum(map(self.done, kids))} of {len(kids)} {PLURAL[kind]} done{bug_note}"
+        return f"{sum(map(self.done, kids))} of {len(kids)} {PLURAL[kind]} done{self.work_note(item)}{bug_note}"
 
 
 # ---------------------------------------------------------------- check
@@ -1068,8 +1096,9 @@ def top_block(project: Project, doc: str, deep: bool) -> str:
         out = f"| {first.capitalize()} | Progress |\n|---|---|"
         for m in rows:
             stories = project.descendants(m, "story")
-            progress, _, bugs = project.progress(m).partition(" · ") if project.open_bugs(m) and m.type != "story" else (project.progress(m), "", "")
-            extra = f" · {sum(map(project.done, stories))} of {len(stories)} stories done" if m.type != "story" else ""
+            plain = m.type == "story" or project.work_note(m)  # the stories are in it already
+            progress, _, bugs = project.progress(m).partition(" · ") if project.open_bugs(m) and not plain else (project.progress(m), "", "")
+            extra = f" · {sum(map(project.done, stories))} of {len(stories)} stories done" if not plain else ""
             out += f"\n| {link(doc, m)} | {progress}{extra}{' · ' + bugs if bugs else ''} |"
         return out
     out = f"| {first.capitalize()} | State | Progress |\n|---|---|---|"
@@ -1108,6 +1137,7 @@ def coverage_block(project: Project, doc: str) -> str:
         for kind in ("slice", "task", "bug"):
             label = {"slice": "Slices closed", "task": "Tasks", "bug": "Bugs fixed"}[kind]
             rows.append((label, *tally(of(kind))))
+        rows.append(("All work: stories, tasks and bugs", *tally(of("story") + of("task") + of("bug"))))
         return ["| | Done | In progress | Defined | |", "|---|--:|--:|--:|--:|"] + [
             f"| {name} | {done} | {'—' if busy is None else busy} | {total} | {pct(done, total)} |"
             for name, done, busy, total in rows]
@@ -4944,6 +4974,31 @@ def serve_tree(project: Project, current: Item | None) -> str:
     return f"<ul>{''.join(map(node, project.top))}</ul>" if project.top else "<p>No plan yet.</p>"
 
 
+def serve_bar(project: Project, item: Item, caption: bool = False) -> str:
+    """One bar for all the work under an item — done stories, tasks and bugs in their own colours,
+    the rest empty — and a tick where the stories alone stand: one total, both figures (§13)."""
+    import html
+    if item.type in ("story", "task", "bug", "slice") or item.state == "dropped":
+        return ""
+    work = project.work(item)
+    total = sum(t for _, t in work.values())
+    if not total:
+        return ""
+    pct = lambda d, t: round(100 * d / t) if t else 0  # noqa: E731
+    done = sum(d for d, _ in work.values())
+    segs = "".join(f'<i class="{kind}" style="width:{100 * work[kind][0] / total:.2f}%"></i>'
+                   for kind in ("story", "task", "bug") if work[kind][0])
+    sd, st = work["story"]
+    tick = f'<b style="left:{pct(sd, st)}%" title="stories {sd} of {st}"></b>' if st else ""
+    parts = [f'<span class="{k}">{PLURAL[k]} {d} of {t}</span>' for k, (d, t) in work.items() if t]
+    said = f"all work {done} of {total} ({pct(done, total)}%) · stories alone {sd} of {st} ({pct(sd, st)}%)"
+    name = f'<figcaption><a href="{serve_href(project, item.doc)}">{html.escape(item.label)}</a></figcaption>' if caption else ""
+    head = f"{item.label}: " if caption else ""
+    return (f'<figure class="bar" aria-label="{html.escape(head + said)}">{name}'
+            f'<div class="track">{segs}{tick}</div><p>{" · ".join(parts)} · <strong>all work {done} of {total} '
+            f'({pct(done, total)}%)</strong>{f" · stories alone {pct(sd, st)}%" if st else ""}</p></figure>')
+
+
 def serve_meta(project: Project, item: Item, repo: str | None) -> str:
     """Breadcrumbs and front-matter as badges; IDs link to their items."""
     import html
@@ -4984,7 +5039,8 @@ def serve_meta(project: Project, item: Item, repo: str | None) -> str:
                 values = [f"{item.parent.id}/{v}" if "/" not in v else v for v in values]
             rows.append(f"<dt>{label}</dt><dd>{', '.join(ref(v) for v in values)}</dd>")
     links = f"<dl>{''.join(rows)}</dl>" if rows else ""
-    return (f'<nav class="crumbs">{crumbs}</nav>' if crumbs else "") + f'<div class="badges">{"".join(badges)}</div>{links}'
+    return ((f'<nav class="crumbs">{crumbs}</nav>' if crumbs else "") + f'<div class="badges">{"".join(badges)}</div>'
+            + serve_bar(project, item) + links)
 
 
 SERVE_CSS = """
@@ -5028,6 +5084,14 @@ th,td{border:1px solid var(--line);padding:5px 10px;text-align:left;vertical-ali
 blockquote{margin:12px 0;padding:4px 14px;border-left:3px solid var(--note);background:var(--note-soft)}
 li.task{list-style:none}li.task input{margin-left:-20px}mark{background:var(--warn-soft);color:inherit}
 .hits li{margin:10px 0}.hits small{display:block;color:var(--dim)}
+.bar{margin:10px 0 14px;max-width:640px}.bar figcaption{font-size:13px;font-weight:600}
+.bar .track{position:relative;display:flex;height:10px;border-radius:999px;background:var(--muted);overflow:visible}
+.bar .track i:first-child{border-radius:999px 0 0 999px}.bar .track i{height:100%}
+.bar .track b{position:absolute;top:-4px;bottom:-4px;width:2px;margin-left:-1px;background:var(--text)}
+.bar p{margin:4px 0 0;font-size:12px;color:var(--dim)}.bar p span{padding-left:12px;position:relative}
+.bar p span::before{content:"";position:absolute;left:0;top:.35em;width:8px;height:8px;border-radius:2px}
+.bar .track .story,.bar p .story::before{background:var(--accent)}.bar .track .task,.bar p .task::before{background:var(--note)}
+.bar .track .bug,.bar p .bug::before{background:var(--warn)}
 @media (max-width:800px){.wrap{display:block}aside{position:static;height:auto;max-height:40vh;border-right:0;
 border-bottom:1px solid var(--line)}main{padding:16px}header input{width:100%}header form{margin-left:0;width:100%}}
 """
@@ -5153,6 +5217,9 @@ def serve_response(project: Project, path: str, repo: str | None = None, makers:
     fm, start, _ = parse_front_matter(text)
     body = "\n".join(text.split("\n")[start:]) if fm is not None else text
     meta = serve_meta(project, item, repo) if item else ""
+    if doc == os.path.join(project.spry, "README.md"):  # the home page: a bar for each top-level item
+        meta += "".join(serve_bar(project, m, True)
+                        for m in project.top)
     title = item.label if item else (fm or {}).get("title") or os.path.basename(target)
     return 200, "text/html; charset=utf-8", serve_page(project, title, head + meta + md_html(body), item), {}
 

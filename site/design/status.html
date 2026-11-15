@@ -77,9 +77,9 @@ what someone saw is a test that tests the wrong thing.</p>
 <h2>Seeing progress</h2>
 <p><code>spry status</code> prints, at every level, how much is done out of how much is defined, grouped
 by parent: milestones, epics by milestone, features by epic, stories by feature, slices by story.</p>
-<pre data-label="spry status — the worked example"><code>M-1 Members can borrow books                                  0 of 1 epics done · 1 open bug
-  E-1 Lending                                                 0 of 2 features done · 1 open bug
-    F-1 Lend at the desk                                      0 of 2 stories done · 1 open bug
+<pre data-label="spry status — the worked example"><code>M-1 Members can borrow books                                  0 of 1 epics done · stories 0 of 2 · all work 1 of 4 · 1 open bug
+  E-1 Lending                                                 0 of 2 features done · stories 0 of 2 · all work 0 of 3 · 1 open bug
+    F-1 Lend at the desk                                      0 of 2 stories done · all work 0 of 3 · 1 open bug
       S-1 Lend a book                                         not proven · 1 of 1 slices · 2 of 3 criteria proven
         slice SL-1 Record a loan                              done · PR #9
       S-2 Loan limit                                          in progress · 0 of 1 slices · 0 of 2 criteria proven
@@ -90,6 +90,12 @@ by parent: milestones, epics by milestone, features by epic, stories by feature,
     F-2 Return a book                                         no stories yet
   task T-1 Set up CI                                          done
     slice SL-3 CI pipeline                                    done · PR #7</code></pre>
+<p>Where tasks or bugs sit under an item, two figures follow its count. <em>Stories 0 of 2</em> is
+the scope that was promised. <em>All work 1 of 4</em> counts every story, task and bug under it, done
+out of all of them: what is left to do. The first never moves when a bug is filed; the second grows,
+which is the point. Neither changes what <em>done</em> means — a bug filed under a finished milestone
+adds to its work and leaves it done. The coverage page has the same as its <em>All work</em> row, and
+<a href="pages.html"><code>spry serve</code></a> draws it as a bar.</p>
 <p>A plan longer than 100 lines prints only the levels that fit and says how to go deeper:
 <code>status &lt;ID&gt;</code> for one branch of the tree, <code>--level</code> to choose the depth, or
 <code>--all</code> for everything. <code>/spry:status</code> explains the same thing at your tone and says what

@@ -25,7 +25,7 @@ audience: 2
 <!-- spry:children -->
 | Milestone | Progress |
 |---|---|
-| [M-1 Members can borrow books](plan/M-1-members-borrow-books/README.md) | 0 of 1 epics done · 0 of 2 stories done · 1 open bug |
+| [M-1 Members can borrow books](plan/M-1-members-borrow-books/README.md) | 0 of 1 epics done · stories 0 of 2 · all work 1 of 4 · 1 open bug |
 <!-- /spry:children -->
 
 ## For developers

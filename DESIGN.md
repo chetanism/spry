@@ -156,6 +156,12 @@ spry/
   milestones · epics by milestone · features by epic · stories by feature · slices by story.
   A plan over 100 lines prints only the levels that fit and says how to go deeper:
   `status <ID>` for one branch, `--level`, or `--all`.
+- **Two figures beside the count, where tasks or bugs sit under an item** — `stories 1 of 3` (the
+  scope promised; left out where the count is already stories) and `all work 2 of 6` (stories,
+  tasks and bugs done, out of all of them: what is left to do). Neither changes what *done* means:
+  tasks and bugs never count toward their parent, so a bug filed under a finished milestone does
+  not make it unfinished — it only adds to its work. `COVERAGE.md` has the same as its *All work*
+  row; `serve` draws it as one bar (§13).
 - **Editing a story after slicing has started is allowed** — git history is the record. `spry check`
   warns (`check --base <ref>`, which CI passes on pull requests) when a change edits the text of an
   AC that a test already cites, or that its story's `checks.md` scenarios or check-log rows
@@ -237,7 +243,8 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
 - Each item `README.md` has a marker block — `<!-- spry:children -->` … `<!-- /spry:children -->` —
   holding its children with links and done/total. Stories also get `<!-- spry:proof -->`.
 - `spry/COVERAGE.md` holds a `<!-- spry:coverage -->` block: done, in progress (not done, some slice
-  under it open or closed) and defined at each level, criteria proven, slices, tasks and bugs; the
+  under it open or closed) and defined at each level, criteria proven, slices, tasks and bugs, and all the work (stories, tasks
+  and bugs together, §6); the
   same table for each milestone not done, from one level down, and one line for each done; stories whose slices are all closed with
   criteria still unproven; and unproven criteria cited only in a comment or code. `spry coverage`
   prints it on any branch.
@@ -279,6 +286,10 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
   after it reads again in the background: a change to the tree or a generated block shows once that
   read ends — at once on a small plan, seconds later on a big one; the page's own document is always
   read fresh. Raw files are served only as images, sandboxed; anything else is shown as text.
+- **The work bar** — above a milestone, epic or feature with work under it, and for each top-level
+  item on the home page: one bar out of all its stories, tasks and bugs, the done ones filled in a
+  colour per type, and a tick where the stories alone stand. One total, so lengths compare fairly;
+  two bars over each other would set percentages of different totals side by side.
 
 ## 14. Team
 
@@ -1296,6 +1307,12 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-11-15 — an index's generated lines do not count toward its budget (CH-66, 0.55.0): `check`
   leaves out the lines between the `spry:index` markers, as it does a slice's Falsify table. From
   a decisions index whose 292 generated entries alone passed its budget of 300.
+- 2026-11-15 — progress counts the work beside the scope (CH-67, 0.56.0): `stories n of m · all
+  work n of m` where tasks or bugs sit under an item, an *All work* row on the coverage page, and a
+  stacked bar in `serve`. *Done* is unchanged — rejected: letting open tasks and bugs keep a parent
+  not done, which would make finished milestones unfinish when a bug is filed, and move the done
+  page, `blocked_by` and what `merge` reports unblocked with them. Rejected for `serve`: two
+  overlapping bars, whose lengths are percentages of different totals.
 
 ## 24. Worktrees and progress
 

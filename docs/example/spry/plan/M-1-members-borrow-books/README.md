@@ -49,7 +49,7 @@ related: []
 <!-- spry:children -->
 | Epic | State | Progress |
 |---|---|---|
-| [E-1 Lending](E-1-lending/README.md) | ready | 0 of 2 features done · 1 open bug |
+| [E-1 Lending](E-1-lending/README.md) | ready | 0 of 2 features done · stories 0 of 2 · all work 0 of 3 · 1 open bug |
 
 | Task | State | Progress |
 |---|---|---|

@@ -13,6 +13,8 @@ argument-hint: "[ID, or a level such as feature]"
 2. Reply per `spry/process/chat.md`, at the tone in `.spry/tone`, else 5 (`chat.md`).
    - **Tone 1–4:** a few `[Note]` bullets per milestone in plain words — what is done, what is being
      built, what is stuck and why. Titles, not IDs alone. No tree.
+   - **Any tone:** where a line has `stories … · all work …`, give both — the scope promised, and
+     all the work left with its tasks and bugs — never one for the other.
    - **Tone 5–10:** the tree as printed, then `[Note]` bullets for what stands out: stories not
      proven, open bugs, slices open longer than the rest.
 3. When the person asks how much is done overall, or what is built but not proven, run

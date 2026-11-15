@@ -15,7 +15,7 @@ audience: 2
 <!-- spry:children -->
 | Milestone | State | Progress |
 |---|---|---|
-| [M-1 Members can borrow books](M-1-members-borrow-books/README.md) | ready | 0 of 1 epics done · 1 open bug |
+| [M-1 Members can borrow books](M-1-members-borrow-books/README.md) | ready | 0 of 1 epics done · stories 0 of 2 · all work 1 of 4 · 1 open bug |
 <!-- /spry:children -->
 
 Done and proven across the whole plan: [Coverage](../COVERAGE.md). What to pick up next: [Backlog](../BACKLOG.md). Finished: [Done](../DONE.md).

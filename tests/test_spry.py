@@ -405,6 +405,24 @@ class Status(Base):
         self.assertTrue(self.done(t, "M-1"))
         self.assertFalse(self.done(t, "T-1"))
 
+    def test_tasks_and_bugs_count_in_the_work_not_the_done(self):
+        t = self.tree(**{f"{M}/tasks/T-1-x/README.md".replace("/", "__"): item("T-1"),
+                         f"{M}/tasks/T-1-x/SL-2-b.md".replace("/", "__"): slice_("SL-2"),
+                         f"{F}/bugs/B-1-x/README.md".replace("/", "__"): item("B-1"),
+                         f"{E}/tasks/T-2-x/README.md".replace("/", "__"): item("T-2", state="dropped")})
+        p = t.project()
+        self.assertTrue(p.done(p.items["M-1"]), "an open bug never unfinishes its milestone")
+        self.assertEqual(p.work(p.items["M-1"]), {"story": (1, 1), "task": (1, 1), "bug": (0, 1)})
+        self.assertEqual(p.progress(p.items["M-1"]), "1 of 1 epics done · stories 1 of 1 · all work 2 of 3 · 1 open bug")
+        self.assertEqual(p.progress(p.items["F-1"]), "1 of 1 stories done · all work 1 of 2 · 1 open bug",
+                         "no stories figure where the count is stories")
+        self.assertEqual(spry.coverage_block(p, os.path.join(t.root, "spry", "COVERAGE.md")).count(
+            "| All work: stories, tasks and bugs | 2 | 0 | 3 | 67% |"), 1)
+
+    def test_no_work_figures_without_tasks_or_bugs(self):
+        p = self.tree().project()
+        self.assertEqual(p.progress(p.items["M-1"]), "1 of 1 epics done")
+
     def test_unknown_level(self):
         with self.assertRaises(SystemExit):
             spry.status(self.tree().project(), "chapter")
@@ -4936,6 +4954,17 @@ class Serve(Base):
         code, _, body, _ = self.get(t, f"/{S}/SL-1-a.md")
         self.assertIn('<a class="badge" href="https://github.com/o/r/pull/1">PR #1</a>', body.decode())
         self.assertIn(f'<a href="/{S}/README.md" title="Title of S-1">S-1/AC-1</a>', body.decode())
+
+    def test_work_bar_on_items_and_the_home_page(self):
+        home = "---\ntitle: Home\naudience: 2\n---\n# Home\n"
+        t = self.tree(**{f"{F}/bugs/B-1-x/README.md".replace("/", "__"): item("B-1"), "spry__README.md": home})
+        page = self.get(t, f"/{E}/README.md")[2].decode()
+        self.assertIn('<i class="story" style="width:50.00%"></i>', page)
+        self.assertNotIn('<i class="bug"', page, "an open bug leaves its part empty")
+        self.assertIn('<b style="left:100%" title="stories 1 of 1"></b>', page)
+        self.assertIn('aria-label="all work 1 of 2 (50%) · stories alone 1 of 1 (100%)"', page)
+        self.assertNotIn('class="bar"', self.get(t, f"/{S}/README.md")[2].decode(), "no bar on a story")
+        self.assertIn('aria-label="M-1 Title of M-1: all work 1 of 2', self.get(t, "/spry/README.md")[2].decode())
 
     def test_folders_items_and_search(self):
         t = self.tree()
