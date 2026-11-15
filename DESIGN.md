@@ -1320,7 +1320,9 @@ what each is doing, without a token spent on telling it.
   `SPRY_SESSION_PID` overrides. The session is `CLAUDE_CODE_SESSION_ID`, else the one the
   session-start hook noted for that process. **Stale** when the process is gone or the worktree
   wrote no progress line for `stale_after` hours; a stale claim is taken and said. The
-  `session_end` hook drops the session's claims. The main checkout is never claimed.
+  `session_end` hook drops the session's claims, except on `/clear`, which goes on in the same
+  process: the session-start hook moves the claim to the new session id (CH-65, 0.54.0). The main
+  checkout is never claimed.
 - **Home:** `worktree home` checks the worktree's home branch out at the main branch's head, after
   a fetch, refusing uncommitted changes. `/spry:merge` runs it after the squash, because the main
   checkout holds the main branch and a worktree cannot check it out.

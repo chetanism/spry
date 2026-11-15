@@ -85,7 +85,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.53.0"
+VERSION = "0.54.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -9072,6 +9072,13 @@ def hook_worktree_lines(project: Project, payload: dict) -> list:
     index = f" (index {record['index']})" if record.get("index") else ""
     held, state = record.get("claim") or {}, claim_state(record, conf)
     if state == "live" and int(held.get("pid") or 0) == pid:
+        session = str(payload.get("session_id") or "")
+        if session and held.get("session") != session:  # a `/clear` keeps the claim under a new session id
+            with file_lock(spry_home(project, "worktrees", ".lock"), wait=5):
+                fresh = worktree_records(project).get(row["name"]) or {}
+                if int((fresh.get("claim") or {}).get("pid") or 0) == pid:
+                    fresh["claim"]["session"] = session
+                    write_json(record_path(project, row["name"]), fresh)
         return [f"This session is in worktree {row['name']}{index}, claimed by this session."]
     if state == "live":
         return [f"This session is in worktree {row['name']}{index}, which another live session claimed (pid "
@@ -9081,9 +9088,10 @@ def hook_worktree_lines(project: Project, payload: dict) -> list:
 
 
 def hook_session_end(project: Project, payload: dict) -> dict | None:
-    """When a session ends, its worktree claims go with it."""
+    """When a session ends, its worktree claims go with it — but not on `/clear`, which goes on in the same
+    process: the session-start hook that follows moves the claim to the new session id."""
     conf = worktrees_config(project)
-    if conf is None:
+    if conf is None or payload.get("reason") == "clear":
         return None
     pid, session = agent_pid(), str(payload.get("session_id") or "")
     with file_lock(spry_home(project, "worktrees", ".lock"), wait=5):
