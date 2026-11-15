@@ -40,6 +40,8 @@ The template's `audience` sets how technical the document is.
 
 - Each document type has a line budget in `spry.config.json`. ✓
 - A slice's `### Falsify` table is not counted: the tool writes its rows, one per control. ✓
+- An index's generated lines — between `<!-- spry:index -->` and `<!-- /spry:index -->` — are not
+  counted: the tool writes them, one per item. ✓
 - Over budget → split into `INDEX.md` + one file per item; the index holds one line per item,
   generated from each item's `title` and `summary`. ✓
 - Never restate another document — link it. A restatement is a second copy that will drift.

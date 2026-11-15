@@ -1293,6 +1293,9 @@ in `spry/history/writ.md`, then retires `canon/`.
   Issue #21.
 - 2026-11-15 — watch names the story, task or bug of each slice, and when its session was cleared
   (CH-64, 0.53.0).
+- 2026-11-15 — an index's generated lines do not count toward its budget (CH-66, 0.55.0): `check`
+  leaves out the lines between the `spry:index` markers, as it does a slice's Falsify table. From
+  a decisions index whose 292 generated entries alone passed its budget of 300.
 
 ## 24. Worktrees and progress
 

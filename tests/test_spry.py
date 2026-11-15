@@ -306,6 +306,22 @@ class Check(Base):
         t = self.tree(**{"spry/knowledge/glossary.md".replace("/", "__"): long})
         self.assertProblem(t.problems(), "budget 40")
 
+    def index_with_entries(self, entries, hand=0):
+        text = ("---\ntitle: Decisions\nsummary: Every decision.\naudience: 7\n---\n# Decisions\n\n"
+                + "".join(f"- note {i}\n" for i in range(hand))
+                + "<!-- spry:index -->\n" + "".join(f"- [D-{i}](D-{i}.md) — decision {i}\n" for i in range(entries))
+                + "<!-- /spry:index -->\n")
+        config = dict(CONFIG, budgets={"spry/knowledge/decisions/INDEX.md": 30})
+        return self.tree(**{"spry__spry.config.json": json.dumps(config),
+                            "spry/knowledge/decisions/INDEX.md".replace("/", "__"): text})
+
+    def test_budget_leaves_an_indexs_generated_lines_out(self):
+        self.assertEqual([p for p in self.index_with_entries(entries=300, hand=3).problems() if "budget" in p], [])
+
+    def test_budget_counts_an_indexs_hand_written_lines_and_says_what_it_left_out(self):
+        problems = self.index_with_entries(entries=300, hand=40).problems()
+        self.assertProblem(problems, "lines counted (300 of the generated index not counted), budget 30")
+
     def test_citations_are_in_path_and_line_order_whatever_the_walk(self):
         t = self.tree(**{"src__a.test.ts": 'test("x", () => {})\ntest("S-1/AC-1 two", () => {})\ntest("S-1/AC-1 three", () => {})\n',
                          "src__b.test.ts": 'test("S-1/AC-1 b", () => {})\n', "lib__z.test.ts": 'test("S-1/AC-1 z", () => {})\n'})
