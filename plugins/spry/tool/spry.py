@@ -90,7 +90,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.62.0"
+VERSION = "0.63.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -7124,7 +7124,7 @@ def review_check(payload, diff: str, own: bool = False) -> list:
 
 # ---------------------------------------------------------------- pace (§17)
 
-PACE_VERSION = 3
+PACE_VERSION = 4
 # Every second of active time gets one of these; `away` is left out of every total.
 PACE_KINDS = (("agent", "the agent, thinking and writing"), ("gate", "gate"), ("falsify", "falsify"),
               ("tests", "tests outside the gate"), ("fast", "fast checks outside the gate"),
@@ -7132,15 +7132,16 @@ PACE_KINDS = (("agent", "the agent, thinking and writing"), ("gate", "gate"), ("
               ("polling", "polling loops"), ("files", "file tools"), ("subagent", "subagents waited on"),
               ("tool", "other tools"), ("you", "waiting on you"), ("question", "a question to you"),
               ("elsewhere", "you, busy in another session"), ("background", "waiting on a background task"),
-              ("session", "waiting on another session"), ("wake", "waiting on a scheduled wake-up"))
+              ("session", "waiting on another session"), ("lock", "waiting for the check lock"),
+              ("wake", "waiting on a scheduled wake-up"))
 PACE_LABEL = dict(PACE_KINDS)
 PACE_GROUPS = (("agent", ("agent",)), ("checks", ("gate", "falsify", "tests", "fast")),
                ("other tools", ("spry", "git", "gh", "stack", "polling", "files", "tool")),
                ("subagents", ("subagent",)),
                ("you", ("you", "question")), ("you elsewhere", ("elsewhere",)),
-               ("waits", ("background", "session", "wake")))
+               ("waits", ("background", "session", "lock", "wake")))
 PACE_PHASES = ("open", "build", "close", "review", "fixes", "merge", "other")
-PACE_FLAGS = {"falsify_share": 0.2, "session_share": 0.2, "merge_wait_share": 0.5, "review_agents": 3}
+PACE_FLAGS = {"falsify_share": 0.2, "session_share": 0.2, "lock_share": 0.15, "merge_wait_share": 0.5, "review_agents": 3}
 PACE_LIMIT = 590       # a tool call this long ran into the agent's 10-minute limit
 PACE_OTHER = re.compile(r'^\{"type":\s*"(?!(?:user|assistant|system)")')  # a record pace never reads, by its first key
 PACE_GATE_STEP = re.compile(r"^([✓✗]) (.+?) · ([\d.]+)s", re.M)
@@ -7362,7 +7363,7 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
     """What one Claude Code session log says, per git branch: seconds by kind and by phase, and the
     events pace counts. A gap between two records takes the kind of what filled it: a tool still
     running, the agent writing, or a wait — on you only once the agent's turn has ended."""
-    branches, prompts, you_gaps = {}, [], []
+    branches, prompts, you_gaps, checks = {}, [], [], []
     pending = {}    # tool_use id → (start, kind, head, gate fast flag or None, review, agent: is it a review, or None)
     background = set()  # background tasks started and not yet reported finished, by tool_use id
     own, started = {}, set()   # subagents this session started: {id: is a review} still working, and every id
@@ -7474,6 +7475,8 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
                     started.add(launched.group(1))
                     background.discard(c["tool_use_id"])
                     review = False
+                if kind in ("gate", "falsify"):   # its wait for the check lock is matched in pace_slices
+                    checks.append([start, t, branch, phase, kind])
                 if seconds >= PACE_LIMIT and kind not in ("question", "you"):
                     spot["limit"] += 1
                 if kind not in ("question",):
@@ -7527,7 +7530,7 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
             elif subtype == "compact_boundary":
                 spot["compactions"] += 1
         prev = t if prev is None else max(prev, t)  # a record a few ms out of order is not counted twice
-    return {"branches": branches, "prompts": prompts, "you": you_gaps, "agents": agents}
+    return {"branches": branches, "prompts": prompts, "you": you_gaps, "agents": agents, "checks": checks}
 
 
 def pace_subagents(path: str) -> list:
@@ -7687,6 +7690,21 @@ def pace_add(into: dict, more: dict) -> None:
         into[key] = into.get(key, 0) + value
 
 
+def pace_lock_wait(s: dict, waits: list, start: float, end: float, phase: str, kind: str) -> None:
+    """Move a gate or falsify call's wait for the check lock from its kind to `lock`. The call is
+    matched to the first unmatched step-log line of its slice that ended inside it; a call with no
+    match keeps its time, so the lock can be under-counted, never over."""
+    for line in waits:
+        if not line[2] and start - 1 <= line[0] <= end + 5:
+            line[2] = True
+            cell = s["phases"].setdefault(phase, {})
+            moved = min(line[1], end - start, s["kinds"].get(kind, 0), cell.get(kind, 0))
+            for kinds in (s["kinds"], cell):
+                kinds[kind] = kinds.get(kind, 0) - moved
+                kinds["lock"] = kinds.get("lock", 0) + moved
+            return
+
+
 def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
     """{slice ID: its numbers} from the session logs, the step log and the summaries kept in
     `.spry/pace/slices/` — a summary outlives the logs it came from."""
@@ -7699,6 +7717,12 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
                                             "reviews": [], "limit": 0, "slowest": [], "suite": 0, "gates": [],
                                             "log_gates": [], "tokens": {}, "sub_tokens": {}, "requests": 0,
                                             "peak": 0, "close": None, "agents": 0, "falsify": [], "subs": {}})
+    steps = pace_steps(project)
+    waits = {}   # (slice ID, command) → [[at, seconds waited for the lock, matched]]
+    for step in steps:
+        slice_id = by_branch.get(step.get("branch", ""))
+        if slice_id and step.get("command") in ("gate", "falsify") and step.get("waited"):
+            waits.setdefault((slice_id, step["command"]), []).append([step.get("at", 0), step["waited"], False])
     prompts = sorted((t, path) for path, data in logs.items() for t in data.get("prompts", []))
     times = [p[0] for p in prompts]
     import bisect
@@ -7733,6 +7757,10 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
                 for kinds in (s["kinds"], s["phases"].setdefault(phase, {})):
                     kinds["you"] = kinds.get("you", 0) - gap
                     kinds["elsewhere"] = kinds.get("elsewhere", 0) + gap
+        for start, end, branch, phase, kind in data.get("checks", []):
+            slice_id = by_branch.get(branch)
+            if slice_id in slices:
+                pace_lock_wait(slices[slice_id], waits.get((slice_id, kind), []), start, end, phase, kind)
         for branch, seconds, review, *more in data.get("agents", []):
             if by_branch.get(branch) not in slices:
                 continue
@@ -7746,7 +7774,7 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
             pace_add(cell["tokens"], more[0] if more else {})
             if review:
                 s["reviews"].append(seconds)
-    for step in pace_steps(project):
+    for step in steps:
         slice_id = by_branch.get(step.get("branch", ""))
         if not slice_id or (only and slice_id != only):
             continue
@@ -7754,7 +7782,7 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
             spot(slice_id)["gates"].append(step)
         elif step.get("command") == "falsify":
             spot(slice_id)["falsify"].append({k: step[k] for k in ("at", "seconds", "controls", "caught", "survived",
-                                                                  "unreliable", "waited") if k in step})
+                                                                  "unreliable") if k in step})
     lines = {} if only else pace_lines(project)  # a slice at merge-check has no squash commit yet
     folder = os.path.join(pace_home(project), "slices")
     for slice_id, s in slices.items():
@@ -7900,9 +7928,8 @@ def pace_reruns(s: dict) -> dict:
         if g.get("code"):
             codes.add(g["code"])
     retried = [g for g in s.get("gates", []) if g.get("retried")]
-    waited = sum(g.get("waited", 0) for g in s.get("gates", [])) + sum(r.get("waited", 0) for r in s.get("falsify") or [])
     return {"tested": len(tested), "repeats": max(0, len(tested) - 1), "same": same, "retries": len(retried),
-            "lost": sum(pace_retry_lost(g) for g in retried), "waited": waited}
+            "lost": sum(pace_retry_lost(g) for g in retried)}
 
 
 def pace_test_step(name: str) -> bool:
@@ -7989,6 +8016,9 @@ def pace_flags(project: Project, s: dict) -> list:
     session = s["kinds"].get("session", 0)
     if session / active > conf["session_share"]:
         out.append(f"waiting on another session took {pace_share(session, active)} ({pace_time(session)})")
+    lock = s["kinds"].get("lock", 0)
+    if lock / active > conf["lock_share"]:
+        out.append(f"waiting for the check lock took {pace_share(lock, active)} ({pace_time(lock)}) — other sessions' gates held it")
     merge = s["phases"].get("merge", {})
     merge_all = sum(merge.values())
     merge_you = merge.get("you", 0) + merge.get("question", 0)
@@ -8245,8 +8275,6 @@ def pace_check_lines(s: dict, conf: dict) -> list:
         parts.append(f"{r['tested']} full gates ran tests, {r['same']} on code a full gate had already tested")
     if r["retries"]:
         parts.append(f"{r['retries']} quiet retr{'y' if r['retries'] == 1 else 'ies'} lost {pace_time(r['lost'])} to the first attempt")
-    if r["waited"] >= 1:
-        parts.append(f"{pace_time(r['waited'])} waiting for the lock")
     if parts:
         rows.append("- reruns: " + "; ".join(parts))
     return rows

@@ -1599,3 +1599,23 @@ Entry format:
   - A step-log line from before steps were marked red keeps today's wording.
 - **Adapt:** nothing.
 - **Migrate:** nothing.
+
+## CH-74 · `pace` counts a wait for the check lock as its own category
+
+- **Date:** 2026-11-17 · **Version:** 0.63.0
+- **Touches:** `tool/spry.py` (`pace`), `process/templates/spry.config.json` (`pace.flags.lock_share`)
+- **Why:** with `checks.lock` on, a gate or falsify run that sat behind another worktree's was
+  counted as checks time for as long as it waited. In one project, over three days with three
+  worktrees, the waits came to 6.3 h, a quarter of the gate's and falsify's wall-clock time, and
+  `pace` reported checks as the largest share. That cost has a different fix: fewer sessions side by
+  side, or a lighter gate in the other one.
+  - A new category, *waiting for the check lock*, in the *waits* group. Each gate or falsify call
+    in the session logs is matched to its step-log line (its slice, and a line written while the
+    call ran), and the wait that line records moves from checks to it. A call with no match keeps
+    its time, so the lock is under-counted, never over.
+  - A flag above `pace.flags.lock_share` (default 0.15 of the slice's active time).
+  - The *reruns* line no longer adds "waiting for the lock"; the category carries it.
+- **Adapt:** `pace.flags.lock_share`. A project with `checks.lock` off records no wait, and the
+  category stays empty.
+- **Migrate:** nothing. The session logs are read again on the next run. A closed slice whose logs
+  are gone keeps its kept split, so a `--compare` across this change shows checks' share falling.
