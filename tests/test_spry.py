@@ -3744,6 +3744,26 @@ class Pace(Base):
                       "falsify took 33%", "whole suite 1×"):
             self.assertIn(words, flags)
 
+    def test_a_failed_full_gate_names_the_step_that_went_red(self):
+        t = self.tree()
+
+        def gate(at, *red):
+            return {"at": at, "ok": not red, "steps": [["lint", 1.0, "lint" not in red], ["affected tests", 9.0, "affected tests" not in red]]}
+
+        def flag(*gates):
+            s = {"id": "SL-1", "kinds": {"agent": 100}, "phases": {}, "reviews": [], "gates": list(gates)}
+            return [f for f in spry.pace_flags(t.project(), s) if "full gate failed" in f][0]
+        tests = flag(gate(0, "affected tests"), gate(1, "affected tests"), gate(2, "lint"))
+        self.assertIn("the full gate failed 3×: affected tests 2×, lint 1×", tests)
+        self.assertIn("`gate --failed` reruns the tests", tests)
+        self.assertIn("`slices.steps.tests`", flag(gate(0, "affected tests")))
+        self.assertIn("fast checks while building catch most of that earlier", flag(gate(0, "lint")))
+        self.assertEqual("the full gate failed 1× — fast checks while building catch most of that earlier",
+                         flag({"at": 0, "ok": False, "steps": [["lint", 1.0]]}), "a log line from before steps were marked")
+        s = {"id": "SL-1", "kinds": {"agent": 100}, "phases": {}, "gates": [gate(0, "lint", "affected tests"), gate(1, "lint"), gate(2)]}
+        measured = spry.pace_measures(s)
+        self.assertEqual((measured["full gates failed"], measured["full gates failed in tests"]), (2, 1))
+
     def test_the_page_compares_before_and_after_a_change(self):
         t = self.tree(**{"spry__knowledge__process-changes.md": "| Date | Change | Kind | Files | Why |\n|---|---|---|---|---|\n"
                          "| 2026-09-01 | Gate once per slice | local | x | y |\n"})

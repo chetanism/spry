@@ -775,7 +775,7 @@ it never changes anything.
 
   | Flag | Usually means |
   |---|---|
-  | the full gate failed at close | fast checks were not run while building |
+  | the full gate failed at close, naming the red steps | a check: fast checks were not run while building; a test step: the step's tests were not |
   | tests ran through the full gate more than once in a slice | §15 expects one full gate |
   | tests ran with no code change between them | a stamp missed: a spry bug |
   | quiet retries | the machine is overloaded by parallel sessions, or a test is flaky |
@@ -1348,6 +1348,9 @@ in `spry/history/writ.md`, then retires `canon/`.
   prints a process file's opening and the sections named. Opening a slice read all of `slicing.md`
   (359 lines) to use about 120. Rejected: splitting the process files, which would scatter rules
   that cite each other and break every project's vendored copy.
+- 2026-11-17 — a failed full gate in `pace` names its red steps (CH-73, 0.62.0), and the hint follows
+  them; `--compare` counts full gates failed in tests. From one project where 77 of 87 red full gates
+  failed in the affected tests and the flag sent every one to fast checks.
 
 ## 24. Worktrees and progress
 
