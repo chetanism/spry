@@ -908,7 +908,8 @@ class MemoryCheck(Base):
     def test_items_paths_versions_and_commits_it_names(self):
         t = self.tree(**{"AGENTS.md": "# Rules\n\nNever merge a slice without running merge-check first, on its own branch.\n"})
         run = git_repo(t.root)
-        head = subprocess.run(["git", "rev-parse", "--short=8", "HEAD"], cwd=t.root, capture_output=True,
+        # The full hash: a short one is all digits now and then, and a number is not taken for a commit.
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=t.root, capture_output=True,
                               text=True).stdout.strip()
         files = {
             "a.md": memory("a", "project", "Fix queued as SL-1. S-1 is the story; SL-99 and D-1 are gone.\n"
