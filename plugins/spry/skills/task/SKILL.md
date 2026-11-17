@@ -6,7 +6,8 @@ argument-hint: "[#issue] [milestone or epic ID] [the work]"
 
 # spry — task
 
-- **Procedure:** `spry/process/planning.md` → *Bugs and tasks*. Read `interview.md`, `conflicts.md`
+- **Procedure:** `spry/process/planning.md` → *Bugs and tasks* — print only it: `python3 spry/tool/spry.py proc planning
+  Bugs`, adding `"From a GitHub issue"` when planning from one. Read `interview.md`, `conflicts.md`
   and `chat.md` beside it.
 - **Template:** `spry/process/templates/task.md` — audience 7.
 - **Parent:** a milestone or epic, from `$ARGUMENTS` or asked. Create with

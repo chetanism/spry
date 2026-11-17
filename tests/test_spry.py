@@ -5315,5 +5315,40 @@ class Publish(unittest.TestCase):
         self.assertEqual(self.git("rev-parse", "HEAD"), self.git("rev-parse", "origin/sl-2-b"))
 
 
+class Proc(Base):
+    """`proc` (CH-72): only the sections of a process file a skill needs."""
+
+    TEXT = ("---\ntitle: P\naudience: 8\n---\n# P\n\nOpening rule.\n\n## Open — `/spry:x`\n\nopen body\n\n"
+            "### Sub\n\nsub body\n\n## Close\n\nclose body\n")
+
+    def test_the_opening_and_each_section_named_with_what_is_under_it(self):
+        t = self.tree(**{"spry__process__p.md": self.TEXT})
+        out = spry.proc(t.project(), "p", ["open"])
+        self.assertEqual(out, "# P\n\nOpening rule.\n\n## Open — `/spry:x`\n\nopen body\n\n### Sub\n\nsub body\n")
+        self.assertIn("close body", spry.proc(t.project(), "p.md", ["Clo"]), "a heading's first words match")
+        self.assertEqual(spry.proc(t.project(), "p", [], listing=True), "Open · 8 lines\n  Sub · 4 lines\nClose · 4 lines\n")
+        with self.assertRaises(SystemExit) as caught:
+            spry.proc(t.project(), "p", ["Merge"])
+        self.assertIn("its sections: Open, Close", str(caught.exception))
+
+    def test_every_skill_names_sections_that_exist(self):
+        import shlex
+        plugin = os.path.join(REPO, "plugins", "spry")
+        t = self.tree()
+        shutil.copytree(os.path.join(plugin, "process"), os.path.join(t.root, "spry", "process"))
+        seen = 0
+        for name in os.listdir(os.path.join(plugin, "skills")):
+            with open(os.path.join(plugin, "skills", name, "SKILL.md")) as handle:
+                text = " ".join(handle.read().split())
+            for call in re.findall(r"`python3 spry/tool/spry\.py proc ([^`]+)`", text):
+                words = shlex.split(call)
+                spry.proc(t.project(), words[0], words[1:])
+                seen += 1
+            for extra in re.findall(r"adding `([^`]+)`", text):
+                file = re.search(r"spry\.py proc (\w+)", text).group(1)
+                spry.proc(t.project(), file, shlex.split(extra))
+        self.assertGreaterEqual(seen, 6)
+
+
 if __name__ == "__main__":
     unittest.main()

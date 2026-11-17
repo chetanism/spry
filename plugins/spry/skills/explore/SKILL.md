@@ -6,7 +6,8 @@ argument-hint: "[area] [sanity | regular | deep | adversarial] [seed to replay]"
 
 # spry — explore
 
-- **Procedure:** `spry/process/testing.md` → *Explore*. Read `chat.md` beside it.
+- **Procedure:** `spry/process/testing.md` → *Explore* — print only it: `python3 spry/tool/spry.py proc testing Explore`. Read
+  `chat.md` beside it.
 - **Instance:** `explore` in `spry/spry.config.json`. Any value still `<…>` → stop and fill it with
   the developer first; never fall back to the development instance.
 - **Asks:** area, depth and seed — take any already in `$ARGUMENTS`, ask the rest in one message.

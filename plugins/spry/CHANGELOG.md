@@ -1569,3 +1569,17 @@ Entry format:
   - It commits only files under `spry/` and refuses while code is uncommitted.
 - **Adapt:** nothing.
 - **Migrate:** nothing.
+
+## CH-72 · A skill reads only the sections of a process file it needs: `proc`
+
+- **Date:** 2026-11-17 · **Version:** 0.61.0
+- **Touches:** `tool/spry.py` (`proc`),
+  `skills/{slice,slice-open,slice-close,bug,task,explore,test-all}`
+- **Why:** a skill named one section of a process file, and the agent read the whole file — all
+  359 lines of `slicing.md` to open a slice that uses about 120, again at close, in every session.
+  - `proc <file> <section>…` prints the file's opening and each `##` section named, everything under
+    it included, matched by the heading's first words; `--list` the headings and their sizes.
+  - The skills above print only their sections, adding *Steps* for a slice built in steps.
+- **Adapt:** a project that renamed a heading in its `spry/process/` copy updates the skill that
+  names it — `proc` lists the sections when one is not found.
+- **Migrate:** nothing.

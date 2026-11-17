@@ -6,7 +6,8 @@ argument-hint: "[#issue] [feature or story ID] [what goes wrong]"
 
 # spry — bug
 
-- **Procedure:** `spry/process/planning.md` → *Bugs and tasks*. Read `interview.md`, `conflicts.md`
+- **Procedure:** `spry/process/planning.md` → *Bugs and tasks* — print only it: `python3 spry/tool/spry.py proc planning
+  Bugs`, adding `"From a GitHub issue"` when planning from one. Read `interview.md`, `conflicts.md`
   and `chat.md` beside it.
 - **Template:** `spry/process/templates/bug.md` — audience 4.
 - **Parent:** from `$ARGUMENTS`, or find it: `spry.py related` on a draft, or ask which screen or
