@@ -150,7 +150,10 @@ replaced that row with <em>caught</em>. <em>What changed</em> in the close summa
 <pre data-label="In your agent"><code><span class="p">&gt; </span>/spry:merge SL-2
 <span class="c"># or a PR number; with none, the current branch's PR</span></code></pre>
 
-<p>Every step runs, every time — each exists because skipping it once went wrong.</p>
+<p>Every step runs, every time — each exists because skipping it once went wrong. The tool runs them,
+so the agent reads two reports instead of running some twenty commands: <code>spry.py merge-ready</code>
+does the checks below up to the ask, and prints the ask; on your yes, <code>spry.py merge-finish</code>
+squashes and does everything after it.</p>
 
 <ol class="steps">
   <li><strong>Checks are green.</strong>

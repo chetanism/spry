@@ -31,6 +31,8 @@
     python3 spry/tool/spry.py draw --seed        # a fresh seed for an exploratory walk
     python3 spry/tool/spry.py draw <seed> <n> --pick < choices   # the same choice for ever, per (seed, n)
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
+    python3 spry/tool/spry.py merge-ready [<pr>|<slice>]   # merging.md steps 1–5 in one report, then the ask
+    python3 spry/tool/spry.py merge-finish [<pr>|<slice>] [--ci-local REASON]   # on the yes: squash, main, CI there, tables, issues, unblocked
     python3 spry/tool/spry.py link <slice> [--branch B] [--pr N] [--owner [NAME]]   # set them in the slice's front-matter
     python3 spry/tool/spry.py link <item> --issue N   # the GitHub issue a plan item came from, added to its `issues:`
     python3 spry/tool/spry.py issues [--sync [--dry-run]] [--offline] [--json]   # each linked issue's stage; --sync sets labels and comments
@@ -67,6 +69,7 @@ import contextlib
 import filecmp
 import glob
 import hashlib
+import io
 import json
 import math
 import ntpath
@@ -85,7 +88,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.58.0"
+VERSION = "0.59.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -5493,6 +5496,383 @@ def merge_message(project: Project, slice_id: str, ci_local: str | None = None) 
             ("\n".join(steps) + "\n\n" if steps else "") + "\n".join(trailers) + "\n")
 
 
+# ---------------------------------------------------------------- merge-ready / merge-finish (merging.md → Merge)
+
+RUN_IN_LINK = re.compile(r"/actions/runs/(\d+)")
+
+
+def gh_json(project: Project, *args: str):
+    """`gh … --json` parsed — None when gh cannot answer."""
+    done = gh_run(project, *args)
+    try:
+        return json.loads(done.stdout) if done.stdout.strip() else None
+    except ValueError:
+        return None
+
+
+def merge_slice_pr(project: Project, given: str | None) -> tuple:
+    """(the slice, its PR number) from a PR number, `#n`, a slice ID, or — with none — the current branch."""
+    slices = project.of_type("slice")
+    given = (given or "").strip().lstrip("#")
+    if given.isdigit():
+        found = [s for s in slices if str(s.fm.get("pr", "")).lstrip("#") == given]
+        if not found:
+            raise SystemExit(f"no slice names PR #{given} in `pr:` — not a slice's pull request; merge it by "
+                             "merging.md alone, or `link <slice> --pr` first")
+    elif given:
+        found = [s for s in slices if s.id == given]
+        if not found:
+            raise SystemExit(f"no slice {given}")
+    else:
+        here = current_branch(project)
+        found = [s for s in slices if here and here in (branch_of(s), slice_branch(s))]
+        if not found:
+            raise SystemExit(f"the branch `{here or 'HEAD'}` is no slice's — name the PR or the slice")
+    if len(found) != 1:
+        raise SystemExit("more than one slice matches: " + ", ".join(s.id for s in found) + " — name one")
+    item = found[0]
+    pr = str(item.fm.get("pr", "")).lstrip("#")
+    if not pr.isdigit():
+        raise SystemExit(f"{item.id} has no `pr:` — `link {item.id} --pr <n>`")
+    return item, pr
+
+
+def has_ci(project: Project) -> bool:
+    top = tree_top(project.root) or project.root
+    flows = os.path.join(top, ".github", "workflows")
+    return os.path.isdir(native(flows)) and any(n.endswith((".yml", ".yaml")) for n in os.listdir(native(flows)))
+
+
+def ci_state(project: Project, pr: str) -> tuple:
+    """(`green` | `red` | `pending` | `not-run` | `unknown`, what it rests on) for the PR's checks. A check
+    whose run started no step never ran — a billing lock, minutes used up, an outage — and is not red."""
+    done = gh_run(project, "pr", "checks", pr, "--json", "name,bucket,link")
+    try:
+        checks = json.loads(done.stdout) if done.stdout.strip() else []
+    except ValueError:
+        checks = None
+    if checks is None or (done.returncode != 0 and not checks and "no checks" not in (done.stderr or "")):
+        return "unknown", f"gh could not read the checks: {last_line(done)}"
+    if not checks:
+        return "not-run", ("the PR has no checks though the repository has CI" if has_ci(project)
+                           else "the repository has no CI")
+    pending = [c["name"] for c in checks if c.get("bucket") == "pending"]
+    failed = [c for c in checks if c.get("bucket") in ("fail", "cancel")]
+    if failed:
+        ran = []
+        for run in sorted({m.group(1) for c in failed for m in [RUN_IN_LINK.search(c.get("link") or "")] if m}):
+            jobs = (gh_json(project, "run", "view", run, "--json", "jobs") or {}).get("jobs")
+            if not isinstance(jobs, list) or any(j.get("steps") for j in jobs):
+                ran.append(run)
+        unlinked = [c for c in failed if not RUN_IN_LINK.search(c.get("link") or "")]
+        if ran or unlinked:
+            return "red", "red: " + ", ".join(c["name"] for c in failed)
+        if not pending:
+            return "not-run", "CI could not start — " + ", ".join(c["name"] for c in failed) + " ran no step"
+    if pending:
+        return "pending", "pending: " + ", ".join(pending)
+    return "green", f"{len(checks)} check{'s' if len(checks) != 1 else ''} green"
+
+
+def base_check_errors(root: str, base: str) -> list:
+    """`check --base`'s errors, on a fresh read of the plan."""
+    project = Project(root)
+    changed_criteria(project, base)
+    changed_blocks(project, base)
+    id_collisions(project, base)
+    step_warnings(project, base)
+    return [str(p) for p in check(project) if p.level == "error"]
+
+
+def merge_ready(project: Project, given: str | None, say=print) -> int:
+    """merging.md → Merge, steps 1–5: every check the merge needs, then the one ask and the command
+    that merges. Changes nothing but a stale PR body. Exit 0 ready, 1 not."""
+    item, pr = merge_slice_pr(project, given)
+    main = main_branch(project)
+    base = f"{REMOTE}/{main}"
+    lines: list = []
+    view = gh_json(project, "pr", "view", pr, "--json", "state,isDraft,headRefName,headRefOid,body,reviewDecision")
+    if not isinstance(view, dict):
+        say(f"✗ gh could not read PR #{pr} — `gh auth status`")
+        return 1
+    if view.get("state") != "OPEN":
+        say(f"✗ PR #{pr} is {str(view.get('state', '?')).lower()}, not open")
+        return 1
+    git(project.root, "fetch", "-q", REMOTE)
+    here = current_branch(project)
+    on_branch = here == view.get("headRefName")
+    head_here = git(project.root, "rev-parse", "HEAD").stdout.strip()
+    if not on_branch:
+        lines.append(("block", f"this tree is on `{here or 'HEAD'}` — `git checkout {view.get('headRefName')}`: "
+                               "merge-check reads the PR's copy of the slice"))
+    if view.get("isDraft"):
+        lines.append(("block", f"PR #{pr} is a draft — /spry:slice-close marks it ready"))
+
+    # 1. checks
+    state, said = ci_state(project, pr)
+    ci_local = None
+    if state == "green":
+        lines.append(("ok", f"checks: {said}"))
+    elif state == "pending":
+        lines.append(("block", f"checks {said} — wait (`gh pr checks {pr} --watch`), then run this again"))
+    elif state in ("red", "unknown"):
+        lines.append(("block", f"checks {said} — never merge a red PR"))
+    else:
+        ci_local = said
+        dirty = git(project.root, "status", "--porcelain", "--untracked-files=no").stdout.strip()
+        if not on_branch or dirty or head_here != view.get("headRefOid"):
+            lines.append(("block", f"CI did not run ({said}); the gate stands in for it on the PR's head — "
+                                   f"check out `{view.get('headRefName')}` at {str(view.get('headRefOid'))[:7]}, "
+                                   "working tree clean, and run this again"))
+        else:
+            errors = base_check_errors(project.root, base)
+            if errors:
+                lines += [("block", f"check --base {base}: {e}") for e in errors]
+            elif gate(project, say=lambda text: say("  " + text)) != 0:
+                lines.append(("block", "CI did not run, and the gate on the PR's head is red — fix it as for red CI"))
+            else:
+                lines.append(("warn", f"CI did not run ({said}); gate green locally — the person accepts this, "
+                                      "and the commit says so"))
+
+    # 2. the slice
+    if on_branch:
+        project = Project(project.root)
+        checked = merge_check(project, item.id, base)
+        item = project.items[item.id]
+        lines += [(level, f"merge-check: {text}") for level, text in checked]
+        if not any(level == "block" for level, _ in checked):
+            pace_on_merge_check(project, item.id)
+
+    # 3. the PR body
+    if on_branch:
+        body = pr_body(project, item.id, base)
+        if (view.get("body") or "").strip() == body.strip():
+            lines.append(("ok", "PR body is the slice file's"))
+        else:
+            done = gh_run(project, "pr", "edit", pr, "--body-file", "-", input=body)
+            lines.append(("ok", "PR body refreshed from the slice file") if done.returncode == 0
+                         else ("block", f"PR body is stale and `gh pr edit` failed: {last_line(done)}"))
+
+    # 4. approval
+    if members(project):
+        decision = view.get("reviewDecision") or "none"
+        lines.append(("ok", "approved") if decision == "APPROVED"
+                     else ("block", f"review decision is {decision.lower().replace('_', ' ')} — a team PR merges approved"))
+
+    # 5. the base
+    fork = git(project.root, "merge-base", base, "HEAD").stdout.strip() if on_branch else ""
+    if fork:
+        theirs = set(git(project.root, "diff", "--name-only", fork, base).stdout.split())
+        mine = set(git(project.root, "diff", "--name-only", fork, "HEAD").stdout.split())
+        moved = git(project.root, "rev-list", "--count", f"{fork}..{base}").stdout.strip() or "0"
+        both = sorted(theirs & mine)
+        if both:
+            lines.append(("block", f"{main} gained {moved} commit{'s' if moved != '1' else ''} touching this PR's files "
+                                   f"({', '.join(both[:5])}{', …' if len(both) > 5 else ''}) — the checks are against an old "
+                                   f"base: rebase, push, and run this again"))
+        else:
+            lines.append(("ok", f"base: {main} has not moved" if moved == "0"
+                          else f"base: {main} gained {moved} commit{'s' if moved != '1' else ''}, none on this PR's files"))
+        if not ci_local:  # with CI not run, step 1 ran it already
+            lines += [("block", f"check --base {base}: {e}") for e in base_check_errors(project.root, base)]
+
+    mark = {"ok": "✓", "warn": "!", "block": "✗"}
+    for level, text in lines:
+        say(f"{mark[level]} {text}")
+    blocks = [t for level, t in lines if level == "block"]
+    progress_event(project, "merge-check", "merge-ready: " + ("ready" if not blocks else
+                                                               f"{len(blocks)} block{'s' if len(blocks) != 1 else ''}"), item.id)
+    if blocks:
+        say(f"{len(blocks)} thing{'s block' if len(blocks) != 1 else ' blocks'} the merge")
+        return 1
+    accept = [t for level, t in lines if level == "warn"]
+    say(f"ready — ask: squash PR #{pr} `{item.id} {item.title}` into {main} with `Slice: {item.id}`"
+        + (f", the person accepting the {len(accept)} `!` above" if accept else ""))
+    say(f"then: spry.py merge-finish {pr}" + (f' --ci-local "{ci_local}"' if ci_local else ""))
+    return 0
+
+
+def merge_update_main(project: Project, conf: dict | None, say) -> bool:
+    """This tree on the main branch's head: a spry worktree goes home, the main checkout fast-forwards."""
+    main = main_branch(project)
+    row = here_row(project, worktree_rows(project, conf)) if conf else None
+    if row and not row.get("main"):
+        return worktree_home(project, conf, None, say=lambda text: say("  " + text)) == 0
+    git(project.root, "fetch", "-q", REMOTE, main)
+    for args in (("checkout", "-q", main), ("merge", "-q", "--ff-only", f"{REMOTE}/{main}")):
+        done = git(project.root, *args)
+        if done.returncode != 0:
+            say(f"✗ `git {' '.join(args)}` failed: {last_line(done)}")
+            return False
+    return True
+
+
+def watch_run(project: Project, run: str) -> bool:
+    """Wait for a CI run; True when it ends green."""
+    try:
+        done = subprocess.run(["gh", "run", "watch", run, "--exit-status", "-i", "20"], cwd=project.root,
+                              capture_output=True, text=True)
+    except OSError:
+        return False
+    return done.returncode == 0
+
+
+def main_runs(project: Project, *filters: str) -> list:
+    runs = gh_json(project, "run", "list", "--branch", main_branch(project), *filters, "--json", "databaseId,status")
+    return [str(r["databaseId"]) for r in runs or [] if isinstance(r, dict) and r.get("databaseId")]
+
+
+def merge_tables(project: Project, pr: str, conf: dict | None, say) -> bool:
+    """merging.md step 8: the progress tables fresh on the main branch — CI writes them; when it left them
+    stale, write them here and push, three tries when someone merged meanwhile."""
+    main = main_branch(project)
+    for _ in range(3):
+        stale = index(Project(project.root), dry=True)
+        if not stale:
+            say("✓ progress tables up to date")
+            return True
+        going = main_runs(project, "--status", "in_progress")
+        if going:
+            say(f"  waiting for CI on {main} ({len(going)} run{'s' if len(going) != 1 else ''}) — it writes the tables")
+            for run in going:
+                watch_run(project, run)
+            merge_update_main(project, conf, say)
+            continue
+        written = index(Project(project.root), dry=False)
+        rels = list(written)
+        git(project.root, "add", "--", *rels)
+        done = git(project.root, "commit", "-q", "-m", f"chore(spry): refresh progress after #{pr} [skip ci]", "--", *rels)
+        if done.returncode != 0:
+            say(f"✗ committing the progress tables failed: {last_line(done)}")
+            return False
+        before = git(project.root, "rev-parse", "HEAD~1").stdout.strip()
+        done = git(project.root, "push", "-q", REMOTE, f"HEAD:{main}")
+        if done.returncode == 0:
+            say(f"✓ progress tables written and pushed ({len(rels)} file{'s' if len(rels) != 1 else ''})")
+            return True
+        tip = remote_tip(project, main)
+        git(project.root, "fetch", "-q", REMOTE, main)
+        git(project.root, "reset", "-q", "--keep", f"{REMOTE}/{main}")
+        if tip is None or tip == before:
+            say(f"✗ {REMOTE} refused the push to {main} ({last_line(done)}) — the tables stay stale until CI runs")
+            return False
+        say(f"  {main} moved while writing — again")
+    say(f"✗ {main} moved under three pushes — run `spry.py index` there later")
+    return False
+
+
+def unblocked_by(project: Project, slice_id: str) -> list:
+    """What this slice's merge set free: items whose `blocked_by` named it or its parent, with nothing
+    else in the way, then the next planned slice under its parent."""
+    item = project.items.get(slice_id)
+    if item is None:
+        return []
+    named = {slice_id} | ({item.parent.id} if item.parent and project.done(item.parent) else set())
+    out = []
+    for other in project.items.values():
+        refs = other.fm.get("blocked_by") if isinstance(other.fm.get("blocked_by"), list) else []
+        if named & set(refs) and not project.done(other) and not blockers(project, other):
+            out.append(f"{other.id} {other.title} — nothing blocks it now")
+    if item.parent:
+        nxt = next((s for s in sorted(project.of_type("slice"), key=lambda s: s.num)
+                    if s.parent is item.parent and s.state == "planned" and not claimed(s)
+                    and not blockers(project, s)), None)
+        if nxt:
+            out.append(f"{nxt.id} {nxt.title} — the next planned slice of {item.parent.id}")
+    return out
+
+
+def merge_finish(project: Project, given: str | None, ci_local: str | None, say=print) -> int:
+    """merging.md → Merge, steps 7–8, on the person's yes: squash with the slice's commit, bring this tree
+    to the main branch, wait for CI there when the main branch moved under the PR, the progress tables,
+    the request issues, and what is unblocked. Refuses what `merge-ready` would."""
+    item, pr = merge_slice_pr(project, given)
+    main = main_branch(project)
+    view = gh_json(project, "pr", "view", pr, "--json", "state,isDraft,headRefName,headRefOid")
+    if not isinstance(view, dict) or view.get("state") != "OPEN":
+        say(f"✗ PR #{pr} is not open" if isinstance(view, dict) else f"✗ gh could not read PR #{pr}")
+        return 1
+    branch = view.get("headRefName") or ""
+    head = view.get("headRefOid") or ""
+    if current_branch(project) != branch:
+        say(f"✗ this tree is on `{current_branch(project) or 'HEAD'}` — `git checkout {branch}` and run merge-ready first")
+        return 1
+    state, said = ci_state(project, pr)
+    if ci_local and state != "not-run":
+        say(f"✗ --ci-local, but CI {'ran: ' + said if state != 'unknown' else 'cannot be read: ' + said} — run merge-ready again")
+        return 1
+    if not ci_local and state != "green":
+        say(f"✗ checks {said} — never merge a red or pending PR; merge-ready says what to do")
+        return 1
+    if ci_local and git(project.root, "rev-parse", "HEAD").stdout.strip() != head:
+        say(f"✗ the gate stood in on this tree's HEAD, which is not the PR's head {head[:7]} — run merge-ready again")
+        return 1
+    checked = merge_check(project, item.id, f"{REMOTE}/{main}")
+    blocks = [t for level, t in checked if level == "block"]
+    if blocks:
+        say("\n".join("✗ merge-check: " + t for t in blocks))
+        return 1
+    message = merge_message(project, item.id, ci_local)
+    subject, _, body = message.partition("\n\n")
+    done = gh_run(project, "pr", "merge", pr, "--squash", "--subject", subject.strip(), "--body", body.strip(),
+                  "--match-head-commit", head)
+    if done.returncode != 0:
+        say(f"✗ gh pr merge failed: {last_line(done)} — nothing merged")
+        return 1
+    say(f"✓ merged PR #{pr} — {subject.strip()}")
+    progress_event(project, "merge", f"merged #{pr}", item.id)
+    git(project.root, "push", "-q", REMOTE, "--delete", branch)  # gone already when GitHub deletes head branches
+
+    conf = worktrees_config(project)
+    if not merge_update_main(project, conf, say):
+        say(f"✗ this tree is not on {main} — bring it there, then `spry.py index --check` and `issues --sync`")
+        return 1
+    git(project.root, "fetch", "-q", "--prune", REMOTE)
+    if git(project.root, "rev-parse", "-q", "--verify", f"refs/heads/{branch}").returncode == 0:
+        git(project.root, "branch", "-q", "-D", branch)
+    say(f"✓ on {main} at {git(project.root, 'rev-parse', '--short', 'HEAD').stdout.strip()}; `{branch}` deleted")
+
+    project = Project(project.root)
+    code = 0
+    if not code_changed_since(project, head):
+        say(f"✓ {main} gained no code the PR's checks did not see — nothing to run")
+    else:
+        sha = git(project.root, "rev-parse", "HEAD").stdout.strip()
+        runs: list = []
+        for _ in range(6):  # a push takes a moment to start its run
+            runs = main_runs(project, "--commit", sha)
+            if runs:
+                break
+            time.sleep(5)
+        if not runs or ci_local:
+            say(f"! {main} gained code the PR's checks never saw, and no CI runs on it here — "
+                "run the full suite once: /spry:test-all")
+        else:
+            say(f"  {main} gained code the PR's checks never saw — waiting for CI on {main} (run {runs[0]})")
+            if watch_run(project, runs[0]):
+                say(f"✓ CI on {main} green at {sha[:7]}")
+            else:
+                say(f"✗ CI on {main} is red at {sha[:7]} — `gh run view {runs[0]}`; offer a bug or a revert")
+                code = 1
+    if not merge_tables(project, pr, conf, say):
+        code = 1
+    project = Project(project.root)
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out):
+        synced = issues_command(project, argparse.Namespace(legacy=False, sync=True, dry_run=False, offline=False,
+                                                            json=False, close=False))
+    for line in out.getvalue().splitlines():
+        say("  issues: " + line)
+    if synced != 0:
+        say("! issues --sync failed — run it again: `spry.py issues --sync`")
+    for line in unblocked_by(project, item.id):
+        say("→ unblocked: " + line)
+    for level, text in checked:
+        if level == "warn":
+            say("[Test] " + text)
+    return code
+
+
 # ---------------------------------------------------------------- steps (§15 *Steps mode*)
 
 STEP_HEAD = re.compile(r"^Step\s+(\d+)\s*(?:·|—|–|-|:)\s*(\S.*)$")
@@ -6886,7 +7266,7 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
                 elif block.get("name") == "Bash":
                     if re.search(r"\blink\b.*--pr\b", command):
                         phase, phase_turn = "build", turn
-                    elif re.search(r"\bmerge-check\b", command):
+                    elif re.search(r"\bmerge-(?:check|ready|finish)\b", command):
                         phase, phase_turn = "merge", turn
                     if pace_runs_suite(command, suite):
                         spot["suite"] += 1
@@ -9725,6 +10105,11 @@ def main(argv=None) -> int:
     p = sub.add_parser("merge-message", help="the squash commit for a slice: subject, summary, trailers")
     p.add_argument("slice")
     p.add_argument("--ci-local", metavar="REASON", help="CI never ran, for this reason; the gate stood in for it")
+    p = sub.add_parser("merge-ready", help="merging.md steps 1–5: checks, merge-check, PR body, approval, base — then the ask")
+    p.add_argument("target", nargs="?", help="PR number or slice ID (default: the current branch's slice)")
+    p = sub.add_parser("merge-finish", help="on the person's yes: squash, the main branch, CI there, tables, issues, unblocked")
+    p.add_argument("target", nargs="?", help="PR number or slice ID (default: the current branch's slice)")
+    p.add_argument("--ci-local", metavar="REASON", help="CI never ran, for this reason; merge-ready's gate stood in")
     p = sub.add_parser("step", help="steps mode: a slice's next step, or --commit it after the fast checks")
     p.add_argument("slice")
     p.add_argument("--commit", action="store_true", help="run `gate --fast` — and, with `slices.steps.tests`, the test files the step touched — then commit the step with its `Step:` trailer")
@@ -10052,6 +10437,10 @@ def main(argv=None) -> int:
     if args.command == "changed":
         print(f"code={'true' if code_changed_since(project, args.base) else 'false'}")
         return 0
+    if args.command == "merge-ready":
+        return merge_ready(project, args.target)
+    if args.command == "merge-finish":
+        return merge_finish(project, args.target, args.ci_local)
     if args.command == "merge-message":
         print(merge_message(project, args.slice, args.ci_local), end="")
         return 0

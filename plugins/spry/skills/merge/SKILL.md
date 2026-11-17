@@ -9,16 +9,15 @@ argument-hint: "[PR number or slice ID]"
 - **Procedure:** `spry/process/merging.md` → *Merge* — every step, in order, every time. Read
   `chat.md` beside it.
 - **Pull request:** `$ARGUMENTS`, or the current branch's. Never guess between two.
+- **The tool runs the steps:** `spry.py merge-ready <n>` (steps 1–5, then the ask and the command),
+  and on the yes `spry.py merge-finish <n>` (steps 7–8). By hand only for a PR no slice names.
 - **Never merge** a red or pending PR, without a yes for this PR in this conversation, or with
   `--admin`. A review's *fix, then merge* answer is that yes, unless the merge finds something the
   review did not report.
 - **CI that never ran** (no step started — billing, minutes, an outage) is neither green nor red:
-  the gate stands in for it on the PR's head, the person accepts that at the ask, and the commit
-  says so (`merge-message --ci-local`).
-- After merging, check whether the main branch moved under the PR (`spry.py changed --base <PR head>`):
-  `code=false` → run nothing; `code=true` → wait for CI on the main branch, or with no CI on push,
-  run the full suite once.
-- **Request issues:** after the merge, `spry.py issues --sync` — the issues the work came from show
-  its stage (`merging.md` step 8).
-- **Progress tables:** after the merge, `spry.py index --check` on the main branch; stale with no CI
-  run left to write them → `index`, commit only those files, push (`merging.md` step 8).
+  `merge-ready` runs the gate on the PR's head in its place, the person accepts that at the ask, and
+  `merge-finish --ci-local "<reason>"` puts it in the commit.
+- **After merging** `merge-finish` brings this tree to the main branch, waits for CI there only when
+  the main branch moved under the PR, writes the progress tables when CI left them stale, syncs the
+  request issues and names what is unblocked. Its `! … /spry:test-all` line means run the full suite
+  once; its `[Test]` lines go to QA.

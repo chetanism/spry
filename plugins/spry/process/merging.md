@@ -12,6 +12,17 @@ from the argument (`SL-n` or a PR number), or from the current branch's `open` /
 
 **Every step, every time.** Each exists because skipping it once went wrong.
 
+**The tool runs them** (CH-70), so the agent reads one report instead of running each command:
+
+- `python3 spry/tool/spry.py merge-ready <n>` — steps 1–5 on the PR's branch: one `✓`, `!` or `✗` line
+  each, a stale PR body refreshed, and — when CI never ran — the gate on the PR's head. It ends with
+  the ask for step 6 and the command for step 7. `✗` → stop and say what it says; never work round it.
+- Step 6 is the agent's: the ask, with every `!` line as something the person accepts.
+- `python3 spry/tool/spry.py merge-finish <n>` — on the yes, steps 7–8, with `--ci-local "<reason>"`
+  exactly as `merge-ready` printed it. It re-checks the checks and `merge-check` first and refuses
+  what `merge-ready` would. Report from its output; a `✗` line there is said at once.
+- A PR no slice names (a plan PR), or no `gh`: the steps below by hand.
+
 1. **Checks are green:** `gh pr checks <n>`. Red → stop and say which. Pending → wait, or stop and
    say so. **Never merge a red or pending PR.** Nothing on the platform may stop it, so this step is
    the only guard.
@@ -53,11 +64,13 @@ from the argument (`SL-n` or a PR number), or from the current branch's `open` /
    - **Already answered** when the person chose *fix, then merge* in a review of this PR
    (`reviewing.md` §5a) and every `!` here was in that review's report. Anything new — a `!` the
    report did not name, CI that did not run — is asked, as above.
-7. **Merge:** first note the PR's head, `head=$(gh pr view <n> --json headRefOid -q .headRefOid)`,
+7. **Merge** (`merge-finish`): first note the PR's head, `head=$(gh pr view <n> --json headRefOid -q .headRefOid)`,
    for step 8. Squash, with the commit from `spry.py merge-message SL-<n>` — its subject as
    `--subject`, the rest as `--body`; the `Slice:` trailer lives in the commit, because a squash
-   keeps nothing else. `gh pr merge <n> --squash --subject "…" --body "…" --delete-branch`.
-8. **After the merge:**
+   keeps nothing else. `gh pr merge <n> --squash --subject "…" --body "…" --match-head-commit "$head"`, then
+   `git push origin --delete <branch>` — a local `--delete-branch` fails in a worktree, where the
+   main checkout holds `<main>`.
+8. **After the merge** (`merge-finish`):
    - `git checkout <main> && git pull --ff-only && git fetch --prune`; delete the local branch with
      `git branch -D` (a squash merge makes `-d` refuse). In a worktree spry made, the main checkout
      holds `<main>`: `python3 spry/tool/spry.py worktree home` instead of the checkout — the worktree
