@@ -885,6 +885,8 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
+| `merge-ready [<pr>\|<slice>]` | `merging.md` steps 1–5 in one report: checks (a run that started no step never ran, and the gate on the PR's head stands in), `merge-check`, the PR body refreshed when stale, approval with a team, the base not moved under the PR's files, `check --base`; then the ask and the `merge-finish` command |
+| `merge-finish [<pr>\|<slice>] [--ci-local]` | on the yes, steps 7–8: CI and `merge-check` again, the squash with `merge-message` at the PR's head, this tree to the main branch, CI there when the main branch moved under the PR, the progress tables when CI left them stale, `issues --sync`, what is unblocked |
 | `vendor` | copy `process/` and the tool into a project (plugin's copy only); `--diff` lists what differs |
 | `scrub <file>` | private words (product, people, glossary terms, emails, URLs) left in text about to leave the project |
 | `find <query>` | full-text search, best sections first (§11) |
@@ -912,7 +914,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `slice-open` | 8 | Work order (opening with a brief summary of what will be done), conflict check, with `slices.design_review` a review of the work order by a new agent, branch, draft PR with the work order as its body; then builds — asking first only for something hard to undo |
 | `slice-close` | 8 | Rebase, then the close summary from the diff, AC proof, done list; review and its fixes on the draft PR; then falsify and the gate, once; PR body refreshed with both parts |
 | `review` | 8 | Fresh eyes — a new agent, never the author's session — on a slice PR (against its work order), a plan PR or item (against its parent, the code and the glossary), or any other PR; verified findings as blocker / should / nit, posted only on a yes as one inline comment per line with a suggested change for wording; `COMMENT` only on your own PR; on your own PR one answer can be *post, fix, then merge*, done by this session, never the reviewing agent (`process/reviewing.md`) |
-| `merge` | 8 | Checks green — or, when CI never started, the gate on the PR's head, accepted at the ask and named in a `CI:` trailer —, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main if main moved under the PR → progress tables written when CI left them stale → what is unblocked |
+| `merge` | 8 | `merge-ready`, the ask, then `merge-finish` — checks green — or, when CI never started, the gate on the PR's head, accepted at the ask and named in a `CI:` trailer —, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main if main moved under the PR → progress tables written when CI left them stale → what is unblocked |
 | `bug` / `task` | 4 / 7 | Record one, attached to its parent |
 | `status` | reader's | Roll-up explained at the asker's tone |
 | `work-report` | reader's | What one person built between two dates: each story, task and bug with 2–3 lines on their part, written from the close summaries, and its slices by ID and title; what they are building now. Report only |
@@ -1330,6 +1332,12 @@ in `spry/history/writ.md`, then retires `canon/`.
   the median of each step's last five green runs, from the step log; output line by line even into
   a pipe. Rejected: a periodic "still running" line, which adds noise an estimate already answers;
   and the mean, which one slow run on a busy machine pulls.
+- 2026-11-17 — the merge's steps run by the tool (CH-70, 0.59.0): `merge-ready` (steps 1–5) and
+  `merge-finish` (7–8); the agent keeps the ask. Some twenty commands a merge, each read back into
+  the context, become two reports. `merge-finish` checks CI and `merge-check` again, since the
+  `gh pr merge` hook never sees a merge the tool makes, and merges at the PR's head only. Rejected:
+  one command that asks itself, since the ask is the agent's in the person's tone (`chat.md`); and
+  `gh pr merge --delete-branch`, whose local half fails in a worktree.
 
 ## 24. Worktrees and progress
 

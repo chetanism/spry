@@ -382,6 +382,24 @@ what it would do. <code>--offline</code> — the stages alone, without asking Gi
 issues spry made per slice before 0.41.0 that are still open; <code>--close</code> closes them, each with a
 comment.</p>
 
+<h3 id="merge-ready">merge-ready</h3>
+<p>Everything <code>/spry:merge</code> checks before its ask, in one report: the PR's checks (a run
+that started no step never ran, and then the gate on the PR's head stands in for CI),
+<code>merge-check</code>, the PR body (refreshed when it differs from the slice file), approval when
+there is a team, and whether the main branch moved under the PR's files. Exits 1 if anything blocks
+the merge. It ends with the ask and the exact <code>merge-finish</code> command to run on a yes.</p>
+<pre><code>spry merge-ready [pr | slice]</code></pre>
+<p>With no target, the current branch's slice. Run it on the PR's branch.</p>
+
+<h3 id="merge-finish">merge-finish</h3>
+<p>On the person's yes: checks CI and <code>merge-check</code> again, squashes with
+<code>merge-message</code> at the PR's head, deletes the branch, brings this tree to the main branch
+(a spry worktree goes home), waits for CI there only when the main branch gained code the PR's checks
+never saw, writes the progress tables when CI left them stale, runs <code>issues --sync</code>, and
+names what is unblocked.</p>
+<pre><code>spry merge-finish [--ci-local REASON] [pr | slice]</code></pre>
+<p><code>--ci-local REASON</code> — as <code>merge-ready</code> printed it, when CI never ran.</p>
+
 <h3 id="merge-message">merge-message</h3>
 <p>The squash commit for a slice: subject, summary, and the <code>Slice:</code>, <code>Parent:</code>
 and <code>Covers:</code> trailers.</p>

@@ -1529,3 +1529,23 @@ Entry format:
   - `process/slicing.md`: run the full gate in the background and read it as it goes.
 - **Adapt:** nothing.
 - **Migrate:** nothing — the estimates start from the step log the project already has.
+
+## CH-70 · The merge's steps run by the tool: `merge-ready`, then `merge-finish`
+
+- **Date:** 2026-11-17 · **Version:** 0.59.0
+- **Touches:** `tool/spry.py` (`merge-ready`, `merge-finish`; `pace` reads both as the merge phase),
+  `process/merging.md`, `skills/merge`
+- **Why:** every merge had the agent run some twenty commands by hand — `gh pr checks` and each failed
+  run's jobs, `pr-body` against the PR's body, `reviewDecision`, the base against the branch's files,
+  the squash, the checkout and branch delete, `changed`, `gh run watch`, `index` with its push and
+  three retries, `issues --sync` — each read back into the context, each a rule to get right from
+  memory. Only the ask needs a judgement.
+  - `merge-ready <n>` runs steps 1–5: a line per check, a stale PR body refreshed, the gate on the
+    PR's head when CI never ran. It ends with the ask and the exact `merge-finish` command.
+  - `merge-finish <n> [--ci-local REASON]`, on the yes, checks the CI and `merge-check` again, squashes
+    with `merge-message` (`--match-head-commit`, so a push after the ask merges nothing), brings the
+    tree to the main branch (a spry worktree goes home), waits for CI there only when the main
+    branch moved under the PR, writes the progress tables when CI left them stale, syncs the request
+    issues and names what is unblocked.
+- **Adapt:** nothing.
+- **Migrate:** nothing — `merge-check`, `merge-message` and the hook on `gh pr merge` stay.

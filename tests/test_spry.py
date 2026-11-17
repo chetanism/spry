@@ -5079,5 +5079,147 @@ class Serve(Base):
         caught.exception.close()
 
 
+class MergeFlow(unittest.TestCase):
+    """`merge-ready` and `merge-finish` (CH-70): merging.md's steps, run by the tool against a real remote,
+    with gh faked."""
+
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.remote = os.path.join(self.tmp, "remote.git")
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", self.remote], check=True)
+        files = base()
+        files[f"{S}/SL-1-a.md"] = Merge().closed_slice("| guard | never true | S-1/AC-1 | caught |\n")
+        files[f"{S}/SL-2-b.md"] = slice_("SL-2", state="planned", check=False).replace("pr: 1\n", "")
+        files[f"{S}/SL-1-a.md"] = files[f"{S}/SL-1-a.md"].replace("state: closed", "state: open")
+        seed = Tree(files).root
+        self.addCleanup(shutil.rmtree, seed, True)
+        git_repo(seed)("push", "-q", self.remote, "main")
+        self.root = os.path.join(self.tmp, "clone")
+        subprocess.run(["git", "clone", "-q", self.remote, self.root], check=True)
+        for key, value in (("user.email", "t@t"), ("user.name", "t")):
+            self.git("config", key, value)
+        self.git("switch", "-qc", "sl-1-a")
+        self.edit(f"{S}/SL-1-a.md", "state: open", "state: closed")
+        self.git("commit", "-qam", "docs(slice): SL-1 close summary")
+        self.git("push", "-q", "origin", "sl-1-a")
+        self.checks = [{"name": "test", "bucket": "pass", "link": "https://x/actions/runs/7/job/1"}]
+        self.jobs = [{"name": "test", "steps": [{"name": "run"}]}]
+        self.body, self.calls, self.decision = "old body", [], ""
+
+    def git(self, *args, root=None):
+        return subprocess.run(["git", *args], cwd=root or self.root, check=True, capture_output=True, text=True).stdout.strip()
+
+    def edit(self, rel, old, new):
+        path = os.path.join(self.root, rel)
+        with open(path) as handle:
+            text = handle.read()
+        with open(path, "w") as handle:
+            handle.write(text.replace(old, new))
+
+    def gh(self, _project, *args, input=None):
+        self.calls.append(args)
+        ok = lambda out="": subprocess.CompletedProcess(args, 0, out, "")
+        if args[:2] == ("pr", "view"):
+            head = self.git("rev-parse", "origin/sl-1-a")
+            return ok(json.dumps({"state": "OPEN", "isDraft": False, "headRefName": "sl-1-a", "headRefOid": head,
+                                  "body": self.body, "reviewDecision": self.decision}))
+        if args[:2] == ("pr", "checks"):
+            return ok(json.dumps(self.checks))
+        if args[:2] == ("run", "view"):
+            return ok(json.dumps({"jobs": self.jobs}))
+        if args[:2] == ("pr", "edit"):
+            self.body = input
+            return ok()
+        if args[:2] == ("pr", "merge"):  # squash, as GitHub would: one commit on main with the PR's tree
+            work = os.path.join(self.tmp, "github")
+            subprocess.run(["git", "clone", "-q", self.remote, work], check=True)
+            self.git("config", "user.email", "g@g", root=work)
+            self.git("config", "user.name", "g", root=work)
+            self.git("merge", "-q", "--squash", "origin/sl-1-a", root=work)
+            subprocess.run(["git", "commit", "-qF", "-"], cwd=work, input=args[args.index("--subject") + 1] + "\n\n"
+                           + args[args.index("--body") + 1], text=True, check=True)
+            self.git("push", "-q", "origin", "main", root=work)
+            shutil.rmtree(work)
+            return ok()
+        return ok("[]")
+
+    def run_tool(self, *args):
+        out = io.StringIO()
+        with unittest.mock.patch.object(spry, "gh_run", self.gh), contextlib.redirect_stdout(out):
+            code = spry.main(["--root", self.root, *args])
+        return code, out.getvalue()
+
+    def test_ready_refreshes_the_body_and_names_the_command_that_merges(self):
+        code, out = self.run_tool("merge-ready", "1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("✓ checks: 1 check green", out)
+        self.assertIn("✓ PR body refreshed from the slice file", out)
+        self.assertIn("SL-1", self.body)
+        self.assertIn("ready — ask: squash PR #1 `SL-1 Slice SL-1` into main with `Slice: SL-1`", out)
+        self.assertTrue(out.rstrip().endswith("then: spry.py merge-finish 1"), out)
+        code, out = self.run_tool("merge-ready")
+        self.assertIn("✓ PR body is the slice file's", out, "the current branch's slice, with no target")
+
+    def test_red_and_pending_checks_block(self):
+        self.checks[0]["bucket"] = "fail"
+        code, out = self.run_tool("merge-ready", "SL-1")
+        self.assertEqual(code, 1)
+        self.assertIn("✗ checks red: test — never merge a red PR", out)
+        self.checks[0]["bucket"] = "pending"
+        self.assertIn("✗ checks pending: test — wait", self.run_tool("merge-ready", "1")[1])
+
+    def test_ci_that_never_started_is_stood_in_for_by_the_gate(self):
+        self.checks[0]["bucket"], self.jobs[0]["steps"] = "fail", []
+        with unittest.mock.patch.object(spry, "gate", lambda *a, **k: 0) as _:
+            code, out = self.run_tool("merge-ready", "1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("! CI did not run (CI could not start — test ran no step); gate green locally", out)
+        self.assertIn('then: spry.py merge-finish 1 --ci-local "CI could not start — test ran no step"', out)
+        with unittest.mock.patch.object(spry, "gate", lambda *a, **k: 1):
+            self.assertIn("the gate on the PR's head is red", self.run_tool("merge-ready", "1")[1])
+
+    def test_another_branch_a_team_without_approval_and_a_moved_base_block(self):
+        self.git("switch", "-q", "main")
+        self.assertIn("✗ this tree is on `main` — `git checkout sl-1-a`", self.run_tool("merge-ready", "1")[1])
+        self.git("switch", "-q", "sl-1-a")
+        work = os.path.join(self.tmp, "other")
+        subprocess.run(["git", "clone", "-q", self.remote, work], check=True)
+        with open(os.path.join(work, S, "SL-1-a.md"), "a") as handle:
+            handle.write("\nmoved\n")
+        self.git("-c", "user.name=o", "-c", "user.email=o@o", "commit", "-qam", "touch", root=work)
+        self.git("push", "-q", "origin", "main", root=work)
+        code, out = self.run_tool("merge-ready", "1")
+        self.assertEqual(code, 1)
+        self.assertIn(f"✗ main gained 1 commit touching this PR's files ({S}/SL-1-a.md) — the checks are against "
+                      "an old base: rebase, push, and run this again", out)
+
+    def test_finish_squashes_comes_home_writes_the_tables_and_names_what_is_unblocked(self):
+        head = self.git("rev-parse", "HEAD")
+        code, out = self.run_tool("merge-finish", "1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("✓ merged PR #1 — SL-1 Slice SL-1 (#1)", out)
+        merge = [c for c in self.calls if c[:2] == ("pr", "merge")][0]
+        self.assertIn("--match-head-commit", merge)
+        self.assertIn(head, merge)
+        self.assertIn("Slice: SL-1", merge[merge.index("--body") + 1])
+        self.assertEqual(self.git("branch", "--show-current"), "main")
+        self.assertEqual(self.git("branch", "--list", "sl-1-a"), "", "the local branch is deleted")
+        self.assertIn("✓ main gained no code the PR's checks did not see — nothing to run", out)
+        self.assertIn("✓ progress tables written and pushed", out)
+        self.assertEqual(self.git("log", "-1", "--format=%s", "main", root=self.remote),
+                         "chore(spry): refresh progress after #1 [skip ci]")
+        self.assertIn("→ unblocked: SL-2 Slice SL-2 — the next planned slice of S-1", out)
+
+    def test_finish_refuses_what_ready_would(self):
+        self.checks[0]["bucket"] = "fail"
+        code, out = self.run_tool("merge-finish", "1")
+        self.assertEqual(code, 1)
+        self.assertIn("never merge a red or pending PR", out)
+        self.checks[0]["bucket"] = "pass"
+        self.assertIn("✗ --ci-local, but CI ran", self.run_tool("merge-finish", "1", "--ci-local", "x")[1])
+        self.assertFalse([c for c in self.calls if c[:2] == ("pr", "merge")], "nothing merged")
+
+
 if __name__ == "__main__":
     unittest.main()
