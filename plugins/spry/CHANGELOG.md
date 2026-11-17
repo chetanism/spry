@@ -1513,3 +1513,19 @@ Entry format:
   - `max_lines: 0` turns the slice cap off.
 - **Adapt:** set `slices.steps.step_lines`, and optionally `max_lines: 0` to drop the slice cap.
 - **Migrate:** nothing.
+
+## CH-69 · The gate says each step as it starts, and how long it usually takes
+
+- **Date:** 2026-11-17 · **Version:** 0.58.0
+- **Touches:** `tool/spry.py` (`gate`; every command's output), `process/slicing.md`
+- **Why:** a full gate runs for minutes and said nothing until each step ended — and into a pipe,
+  as an agent runs it, Python held even those lines back until the gate exited. Nobody watching
+  could tell which step was running or how long was left.
+  - Every command now writes each line as it goes, even into a pipe.
+  - Before its steps the gate prints `– about 3m22s by the last green runs`, and before each step
+    `→ affected tests · usually 3m20s`: the median of that step's last five green runs in the step
+    log (§17). A step never timed green, or one that runs given files (the changed tests, a step's
+    tests), is named with no estimate.
+  - `process/slicing.md`: run the full gate in the background and read it as it goes.
+- **Adapt:** nothing.
+- **Migrate:** nothing — the estimates start from the step log the project already has.

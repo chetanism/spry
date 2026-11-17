@@ -346,6 +346,11 @@ first so a slow one never runs only to be thrown away by a lint error.
   affected tests fail on a timeout (`tests.retry_when`) and `tests.retry` is set, the gate runs that
   once — the same tests with no parallelism — so load on a busy machine is not a red gate; a real
   failure fails both runs.
+- **A gate says where it is** (CH-69). Before its steps it prints the time they usually take
+  together, and before each step its name and its usual time: the median of that step's last five
+  green runs in the step log (§17). A step never timed green, or one that runs given files, gets no
+  estimate. Output is written line by line even into a pipe, so a gate run in the background shows
+  each step as it starts and ends.
 - **One heavy run at a time** (`checks.lock`, off by default). Sessions in separate worktrees that
   start a gate or a falsify run together fill a laptop's memory, and the timeouts that follow are
   retried. With the switch on, the gate's checks and tests and `falsify run` hold one lock for as
@@ -1321,6 +1326,10 @@ in `spry/history/writ.md`, then retires `canon/`.
   cap off. A reviewer reads one step at a time, so the step is the size that matters once a slice
   holds several. Rejected: refusing the commit, since the size is for a person to accept, as the
   slice cap is.
+- 2026-11-17 — the gate says each step as it starts, and how long it usually takes (CH-69, 0.58.0):
+  the median of each step's last five green runs, from the step log; output line by line even into
+  a pipe. Rejected: a periodic "still running" line, which adds noise an estimate already answers;
+  and the mean, which one slow run on a busy machine pulls.
 
 ## 24. Worktrees and progress
 

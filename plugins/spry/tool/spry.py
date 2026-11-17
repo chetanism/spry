@@ -85,7 +85,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.57.0"
+VERSION = "0.58.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -6017,6 +6017,33 @@ def named_commands(entries, key: str, prefix: str = "") -> list:
 STEP_TESTS = "step tests"
 
 
+def step_estimates(project: Project, names: list) -> dict:
+    """{step name: seconds} — the median of the last five green runs of each of `names` in the step
+    log (§17). Steps that run given files (the changed tests, a step's tests) vary with the files, so
+    they get none; nor does a step never timed green."""
+    wanted = {n for n in names if not n.startswith(("changed tests", STEP_TESTS))}
+    times = {}
+    for row in reversed(pace_steps(project)):
+        if row.get("command") != "gate" or not isinstance(row.get("steps"), list):
+            continue
+        for step in row["steps"]:
+            if (isinstance(step, list) and len(step) == 3 and step[0] in wanted and step[2] is True
+                    and isinstance(step[1], (int, float)) and len(times.setdefault(step[0], [])) < 5):
+                times[step[0]].append(float(step[1]))
+        if wanted and all(len(times.get(n, [])) == 5 for n in wanted):
+            break
+    def median(values):
+        v, m = sorted(values), len(values) // 2
+        return v[m] if len(v) % 2 else (v[m - 1] + v[m]) / 2
+    return {n: median(t) for n, t in times.items() if t}
+
+
+def duration(seconds: float) -> str:
+    """`42s`, `3m40s`, `1h05m` — a duration as a person reads it."""
+    s = max(0, round(seconds))
+    return f"{s}s" if s < 60 else f"{s // 60}m{s % 60:02d}s" if s < 3600 else f"{s // 3600}h{s % 3600 // 60:02d}m"
+
+
 def gate_steps(project: Project, fast: bool = False, changed_tests: list | None = None,
                label: str = "changed tests") -> list:
     """[(name, command, cwd)] — fast checks cheapest first, then, unless `fast`, the affected tests —
@@ -6324,14 +6351,20 @@ def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: d
         return 1
     fast_count = len(project.config.get("checks", {}).get("fast") or [])
     failed, left_out = [], False
+    usual = step_estimates(project, [name for name, *_ in steps])
     with heavy_lock(project, "gate", say) as waited:
         if waited >= 0.1:
             seen["waited"] = round(waited, 1)
+        if usual:
+            untimed = [name for name, *_ in steps if name not in usual]
+            say(f"– about {duration(sum(usual.values()))} by the last green runs"
+                + (f", {', '.join(untimed)} not counted" if untimed else ""))
         for n, (name, command, cwd) in enumerate(steps):
             if failed and keep != "all" and (keep == "off" or n >= fast_count):
                 left_out = keep == "fast" and any(f[0] in {s[0] for s in steps[:fast_count]} for f in failed)
                 break
             seen["tests"] = seen["tests"] or "test" in name
+            say(f"→ {name}" + (f" · usually {duration(usual[name])}" if name in usual else ""))
             started = time.time()
             done = subprocess.run(command, shell=True, cwd=cwd, capture_output=True, text=True)
             say(f"{'✓' if done.returncode == 0 else '✗'} {name} · {time.time() - started:.1f}s")
@@ -9583,10 +9616,11 @@ def find_root(start: str):
 
 
 def main(argv=None) -> int:
-    # a cp1252 console (Windows PowerShell) cannot print ✓ and ✗: speak UTF-8 whatever the console says
+    # a cp1252 console (Windows PowerShell) cannot print ✓ and ✗: speak UTF-8 whatever the console says.
+    # Line by line even into a pipe, so a gate run in the background shows each step as it happens.
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
-            stream.reconfigure(encoding="utf-8", errors="replace")
+            stream.reconfigure(encoding="utf-8", errors="replace", line_buffering=True)
     parser = argparse.ArgumentParser(prog="spry", description="spry project tool")
     parser.add_argument("--root", help="project root (default: nearest folder holding spry/spry.config.json)")
     parser.add_argument("--version", action="version", version=VERSION)

@@ -118,7 +118,9 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
 - **Check each change with `spry.py gate --fast`:** `spry check`, then the fast checks
   (`checks.fast`: format, lint, types — cheapest first), no tests. `spry.py gate` adds the affected
   tests — run it when a test's answer is what you need, not on every change: it costs minutes on a
-  big project, and it runs once more at close, after the review, on the code that merges.
+  big project, and it runs once more at close, after the review, on the code that merges. Run the
+  full gate in the background and tell the person how long it usually takes: it prints that first,
+  then each step as it starts (`→ affected tests · usually 3m20s`) and ends.
 - **The tool is the proof**, not the test commands by hand. The fast checks all run and the tests
   wait for them; a failing test step stops the gate. A full pass is stamped against the code; while
   only documents change it runs `check` alone. So fix lint before tests run, and write documents
