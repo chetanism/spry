@@ -5221,5 +5221,99 @@ class MergeFlow(unittest.TestCase):
         self.assertFalse([c for c in self.calls if c[:2] == ("pr", "merge")], "nothing merged")
 
 
+class Publish(unittest.TestCase):
+    """`publish` (CH-71): a slice's commits, pushes and pull request at open, before the review and at close."""
+
+    def setUp(self):
+        self.tmp = os.path.realpath(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.remote = os.path.join(self.tmp, "remote.git")
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", self.remote], check=True)
+        files = base()
+        files[f"{S}/SL-2-b.md"] = slice_("SL-2", state="planned").replace("pr: 1\n", "").replace("owner: A\n", "")
+        seed = Tree(files).root
+        self.addCleanup(shutil.rmtree, seed, True)
+        git_repo(seed)("push", "-q", self.remote, "main")
+        self.root = os.path.join(self.tmp, "clone")
+        subprocess.run(["git", "clone", "-q", self.remote, self.root], check=True)
+        for key, value in (("user.email", "t@t"), ("user.name", "Tess")):
+            self.git("config", key, value)
+        self.git("switch", "-qc", "sl-2-b")
+        self.doc = os.path.join(self.root, S, "SL-2-b.md")
+        self.calls, self.inputs = [], []
+
+    def git(self, *args):
+        return subprocess.run(["git", *args], cwd=self.root, check=True, capture_output=True, text=True).stdout.strip()
+
+    def gh(self, _project, *args, input=None):
+        self.calls.append(args)
+        self.inputs.append(input)
+        out = "https://github.com/o/r/pull/12\n" if args[:2] == ("pr", "create") else ""
+        return subprocess.CompletedProcess(args, 0, out, "")
+
+    def run_tool(self, *args, gate=0):
+        out = io.StringIO()
+        with unittest.mock.patch.object(spry, "gh_run", self.gh), \
+                unittest.mock.patch.object(spry, "gate", lambda *a, **k: gate), contextlib.redirect_stdout(out):
+            code = spry.main(["--root", self.root, *args])
+        return code, out.getvalue()
+
+    def fm(self):
+        return spry.Project(self.root).items["SL-2"].fm
+
+    def test_open_commits_the_work_order_pushes_and_opens_a_draft(self):
+        code, out = self.run_tool("publish", "SL-2", "open")
+        self.assertEqual(code, 0, out)
+        fm = self.fm()
+        self.assertEqual((fm["state"], fm["branch"], fm["owner"], str(fm["pr"])), ("open", "sl-2-b", "Tess", "12"))
+        self.assertEqual(self.git("log", "--format=%s", "main..HEAD").splitlines(),
+                         ["docs(slice): SL-2 PR #12", "docs(slice): SL-2 work order"])
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.git("rev-parse", "origin/sl-2-b"), "pushed")
+        create = [c for c in self.calls if c[:2] == ("pr", "create")][0]
+        self.assertIn("--draft", create)
+        self.assertEqual(create[create.index("--title") + 1], "SL-2 Slice SL-2")
+        self.assertIn("✓ draft PR #12 opened", out)
+        self.assertEqual(self.git("status", "--porcelain", "--", ".", ":!.spry"), "")
+
+    def test_open_refuses_code_and_a_work_order_check_refuses(self):
+        with open(os.path.join(self.root, "src", "a.test.ts"), "a") as handle:
+            handle.write("// more\n")
+        with self.assertRaises(SystemExit) as caught:
+            self.run_tool("publish", "SL-2", "open")
+        self.assertIn("outside spry/ not committed (src/a.test.ts)", str(caught.exception))
+        self.git("checkout", "--", "src")
+        with open(self.doc) as handle:
+            text = handle.read()
+        with open(self.doc, "w") as handle:
+            handle.write(text.split("### Conflict check")[0])
+        code, out = self.run_tool("publish", "SL-2", "open")
+        self.assertEqual(code, 1)
+        self.assertIn("nothing committed; finish the work order", out)
+        self.assertEqual(self.fm()["state"], "planned", "the file is put back")
+        self.assertEqual(self.git("log", "--format=%s", "main..HEAD"), "")
+        self.assertFalse(self.calls)
+
+    def test_review_then_ready(self):
+        self.assertEqual(self.run_tool("publish", "SL-2", "open")[0], 0)
+        with open(self.doc, "a") as handle:
+            handle.write("\n## Close summary\n\n### What changed\n\n- Nothing.\n")
+        code, out = self.run_tool("publish", "SL-2", "review")
+        self.assertEqual(code, 0, out)
+        self.assertEqual(self.git("log", "-1", "--format=%s"), "docs(slice): SL-2 close notes")
+        self.assertIn(("pr", "edit", "12", "--body-file", "-"), self.calls)
+        self.assertIn("What changed", self.inputs[-1])
+        code, out = self.run_tool("publish", "SL-2", "ready", gate=1)
+        self.assertEqual(code, 1)
+        self.assertIn("the gate is red — SL-2 left open", out)
+        self.assertEqual(self.fm()["state"], "open")
+        code, out = self.run_tool("publish", "SL-2", "ready")
+        self.assertEqual(code, 0, out)
+        fm = self.fm()
+        self.assertEqual((fm["state"], fm["closed"]), ("closed", datetime.date.today().isoformat()))
+        self.assertEqual(self.git("log", "-1", "--format=%B").strip(), "docs(slice): SL-2 close summary\n\nSlice: SL-2")
+        self.assertEqual(self.calls[-1], ("pr", "ready", "12"))
+        self.assertEqual(self.git("rev-parse", "HEAD"), self.git("rev-parse", "origin/sl-2-b"))
+
+
 if __name__ == "__main__":
     unittest.main()

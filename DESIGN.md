@@ -885,6 +885,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
+| `publish <slice> open\|review\|ready [--owner]` | a slice's pull request, filed: `open` — `state: open`, branch, owner, refused when `check` refuses; the work order committed first, pushed, a draft PR opened and linked; `review` — close notes committed, pushed with `--force-with-lease`, body refreshed; `ready` — closed today, the gate, the commit with `Slice:`, pushed, body refreshed, PR marked ready. Commits only `spry/`; refuses uncommitted code |
 | `merge-ready [<pr>\|<slice>]` | `merging.md` steps 1–5 in one report: checks (a run that started no step never ran, and the gate on the PR's head stands in), `merge-check`, the PR body refreshed when stale, approval with a team, the base not moved under the PR's files, `check --base`; then the ask and the `merge-finish` command |
 | `merge-finish [<pr>\|<slice>] [--ci-local]` | on the yes, steps 7–8: CI and `merge-check` again, the squash with `merge-message` at the PR's head, this tree to the main branch, CI there when the main branch moved under the PR, the progress tables when CI left them stale, `issues --sync`, what is unblocked |
 | `vendor` | copy `process/` and the tool into a project (plugin's copy only); `--diff` lists what differs |
@@ -1338,6 +1339,10 @@ in `spry/history/writ.md`, then retires `canon/`.
   `gh pr merge` hook never sees a merge the tool makes, and merges at the PR's head only. Rejected:
   one command that asks itself, since the ask is the agent's in the person's tone (`chat.md`); and
   `gh pr merge --delete-branch`, whose local half fails in a worktree.
+- 2026-11-17 — a slice's pull request filed by the tool (CH-71, 0.60.0): `publish open|review|ready`
+  replaces the commits, pushes and `gh` calls of `slicing.md` *Open* step 6 and *Close* steps 5 and 8.
+  It commits only the plan under `spry/` and refuses while code is uncommitted. Rejected: committing
+  the whole tree, which would sweep up code steps mode commits one step at a time.
 
 ## 24. Worktrees and progress
 

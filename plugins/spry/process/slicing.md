@@ -103,12 +103,11 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
 5. **Show the summary and the plan.** Ask to approve only when the plan does something hard to undo
    (*When to stop and ask*), departs from the story, or the design review left a Blocker; otherwise
    go on.
-6. Then:
-   - set `state: open`, and `spry.py link SL-<n> --branch <branch> --owner` (`--owner <name>` when
-     building it for someone else); `spry.py check`; commit `docs(slice): SL-<n> work order` —
-     the branch's first commit, before any code;
-   - push; open a **draft** pull request titled `SL-<n> <title>`, body from
-     `spry.py pr-body SL-<n>`; `spry.py link SL-<n> --pr <number>`; commit and push.
+6. Then `spry.py publish SL-<n> open` (`--owner <name>` when building it for someone else). It
+   sets `state: open`, `branch:` and `owner:`; refuses, changing nothing, when `check` does; commits
+   `docs(slice): SL-<n> work order` — the branch's first commit, before any code; pushes; opens a
+   **draft** pull request titled `SL-<n> <title>` with the body from `pr-body`; and links, commits
+   and pushes its number. It commits only files under `spry/`, and refuses while code is uncommitted.
 7. **Build**, in this session, unless the person asked to open only. Then close.
 
 ## While building
@@ -161,8 +160,10 @@ that merges.
 4. **Follow-ups:** bugs, tasks, decisions found — create them (`spry.py new …`, `/spry:record`) and
    list their IDs. With `mint: main` each number is taken on the main branch and the main branch is
    merged into this one, so the ID is final at once: cite it anywhere.
-5. **Review:** commit; push (`git push --force-with-lease` after step 1's rebase); replace the PR body with `spry.py pr-body SL-<n> --base origin/<main>`;
-   the PR stays a draft. `/spry:review SL-<n>`, and the fixes accepted applied (`reviewing.md` §5a)
+5. **Review:** `spry.py publish SL-<n> review` — commits the close notes under `spry/`, pushes
+   (`--force-with-lease`, so step 1's rebase goes up), and replaces the PR body with
+   `pr-body --base origin/<main>`; the PR stays a draft. Code is committed first, as it was built.
+   `/spry:review SL-<n>`, and the fixes accepted applied (`reviewing.md` §5a)
    — before falsify and the gate, so a fix costs neither a second time. A steps slice gets one
    reviewer per step and one for the seams; each fix is a fixup of its step (*Steps* → *Close*). The review reads no
    Falsify rows yet; `merge-check` and the merge's ask cover them. The close waits for the review's
@@ -221,10 +222,11 @@ that merges.
    fix what fails and run it again — it repeats only what the fix could change. A branch that
    changed only test files runs just those, then `tests.always`, and says so on its first line;
    it stamps green like any pass. A changed integration test runs too, so start its services first.
-8. Set `state: closed` and `closed: <today, YYYY-MM-DD>` — the Done page dates the item by it, and
-   `merge-check` blocks without it; `spry.py gate` (only `check` runs — nothing but documents changed); commit
-   `docs(slice): SL-<n> close summary` with the trailer `Slice: SL-<n>` in the body; push; replace
-   the PR body with `spry.py pr-body SL-<n> --base origin/<main>`; mark the PR ready for review.
+8. `spry.py publish SL-<n> ready` — sets `state: closed` and `closed: <today>` (the Done page dates
+   the item by it, and `merge-check` blocks without it); runs the gate (only `check` runs — nothing
+   but documents changed), and on red puts the slice back to open and commits nothing; commits
+   `docs(slice): SL-<n> close summary` with the trailer `Slice: SL-<n>`; pushes; replaces the PR body
+   with `pr-body --base origin/<main>`; and marks the PR ready for review.
    A slice gets no GitHub issue: the request issues its story, bug or task came from follow the
    plan through `spry.py issues --sync` (`planning.md` → *From a GitHub issue*).
 9. **Merge only through `/spry:merge`.** The review is done (step 5): on its answer *a*, run

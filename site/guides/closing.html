@@ -64,7 +64,8 @@ replay the branch's commits on top of the latest main branch.
   <li><strong>Follow-ups.</strong>
     <p>Bugs, tasks and decisions found along the way are created now, with real IDs, and listed.</p></li>
   <li><strong>Review.</strong>
-    <p>Committed and pushed; the draft PR's body refreshed from the slice file. Then
+    <p>Committed and pushed; the draft PR's body refreshed from the slice file
+    (<code>spry.py publish SL-n review</code>). Then
     <a href="reviews.html"><code>/spry:review</code></a>: a new agent, with none of this session's reasoning,
     reads the PR against its work order. You answer its first question, one choice for what happens next:
     <em>a</em> post its comments, fix every blocker and should, then merge; <em>b</em> post and fix, but stop
@@ -84,7 +85,8 @@ replay the branch's commits on top of the latest main branch.
     first folds the fixups into their steps.</p></li>
   <li><strong>Mark it closed and ready.</strong>
     <p><code>state: closed</code> and <code>closed:</code> today's date, committed with a <code>Slice: SL-n</code>
-    trailer (a labelled line at the end of the commit message), pushed; the PR body refreshed with both parts; the PR marked ready for review.</p></li>
+    trailer (a labelled line at the end of the commit message), pushed; the PR body refreshed with both parts; the PR marked ready for review — all by
+    <code>spry.py publish SL-n ready</code>, which runs the gate first and leaves the slice open if it is red.</p></li>
   <li><strong>Merge — only through <code>/spry:merge</code>.</strong>
     <p>If your answer to the review was <em>a</em> (post, fix, then merge), the close runs it now. Otherwise the PR is
     ready for it, and a teammate may still review.</p></li>

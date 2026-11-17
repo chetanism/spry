@@ -1549,3 +1549,23 @@ Entry format:
     issues and names what is unblocked.
 - **Adapt:** nothing.
 - **Migrate:** nothing — `merge-check`, `merge-message` and the hook on `gh pr merge` stay.
+
+## CH-71 · A slice's pull request filed by the tool: `publish open | review | ready`
+
+- **Date:** 2026-11-17 · **Version:** 0.60.0
+- **Touches:** `tool/spry.py` (`publish`; `pace` reads `publish … open` as the build starting),
+  `process/slicing.md` (*Open* step 6, *Close* steps 5 and 8), `skills/{slice-open,slice-close}`
+- **Why:** opening and closing a slice ended in a dozen commands by hand — set the state, `link`,
+  `check`, commit, push, `gh pr create`, `link --pr`, commit, push; then at close the date, the gate,
+  the trailer, the push, `pr-body` into `gh pr edit`, `gh pr ready` — each read back into the
+  context, each one a step that could be skipped.
+  - `publish SL-<n> open` — `state: open`, branch and owner (refused, nothing changed, when `check`
+    refuses); the work order committed as the branch's first commit; pushed; a draft PR opened with
+    the `pr-body` and its number linked, committed and pushed.
+  - `publish SL-<n> review` — close notes committed, pushed with `--force-with-lease`, PR body
+    refreshed; the PR stays a draft.
+  - `publish SL-<n> ready` — `state: closed`, today's `closed:`, the gate (red → left open, nothing
+    committed), the commit with `Slice:`, pushed, PR body refreshed, PR marked ready.
+  - It commits only files under `spry/` and refuses while code is uncommitted.
+- **Adapt:** nothing.
+- **Migrate:** nothing.
