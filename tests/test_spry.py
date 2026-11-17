@@ -3653,6 +3653,28 @@ class Pace(Base):
         self.assertFalse(d["gates"][0]["ok"])
         self.assertEqual(d["prompts"], 3)
 
+    def test_a_wait_for_the_check_lock_is_its_own_category(self):
+        t = self.tree()
+        self.log(t, "a", [said(0, "<command-name>/spry:slice-close</command-name>"),
+                          tool(10, "g", command="python3 spry/tool/spry.py gate"), result(1210, "g", GATE_OUT),
+                          tool(1215, "f", command="spry falsify run plan.json"), result(1300, "f"),
+                          tool(1305, "h", command="python3 spry/tool/spry.py gate"), result(1405, "h", GATE_OUT),
+                          reply(1410)])
+        # the gate sat 15 minutes behind another worktree's; falsify waited 30 s; the second gate's
+        # line was written by another session and ends outside the call, so it stays gate time
+        steps = [{"command": "gate", "at": T0 + 1209, "seconds": 300, "waited": 900, "ok": False, "steps": []},
+                 {"command": "falsify", "at": T0 + 1299, "seconds": 55, "waited": 30, "controls": 1},
+                 {"command": "gate", "at": T0 + 2000, "seconds": 60, "waited": 40, "ok": True, "steps": []}]
+        os.makedirs(os.path.join(t.root, ".spry", "pace"))
+        with open(os.path.join(t.root, ".spry", "pace", "steps.jsonl"), "w") as handle:
+            handle.write("".join(json.dumps({"branch": "sl-1-a", **step}) + "\n" for step in steps))
+        p = t.project()
+        s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
+        self.assertEqual((s["kinds"]["gate"], s["kinds"]["falsify"], s["kinds"]["lock"]), (1200 + 100 - 900, 85 - 30, 930))
+        self.assertEqual(s["phases"]["close"]["lock"], 930)
+        self.assertIn("waiting for the check lock took 66% (15m30) — other sessions' gates held it", spry.pace_flags(p, s))
+        self.assertIn("lock", dict(spry.PACE_GROUPS)["waits"])
+
     def test_a_wait_while_a_background_task_runs_is_not_on_you(self):
         t = self.tree()
         records = [said(0, "review it"),
@@ -4060,13 +4082,13 @@ class Pace(Base):
         s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
         f = spry.pace_falsify(s)
         self.assertEqual((f["runs"], f["controls"], f["caught"], f["survived"], f["unreliable"], f["each"]), (2, 26, 18, 6, 2, 400 / 26))
-        self.assertEqual(spry.pace_reruns(s), {"tested": 3, "repeats": 2, "same": 1, "retries": 2, "lost": 118 + 40, "waited": 30},
+        self.assertEqual(spry.pace_reruns(s), {"tested": 3, "repeats": 2, "same": 1, "retries": 2, "lost": 118 + 40},
                          "a line with no retry_lost falls back to the gate's seconds less its steps'")
         lines = "\n".join(spry.pace_slice_lines(s, spry.pace_flags(p, s), spry.pace_config(p)))
         self.assertIn("- falsify: 2 runs, 26 controls — 18 caught, 6 survived, 2 unreliable; 6m40, 15.4s a control; "
                       "the last run: 6 caught, 0 survived, 0 unreliable of 6", lines)
         self.assertIn("- reruns: 3 full gates ran tests, 1 on code a full gate had already tested; "
-                      "2 quiet retries lost 2m38 to the first attempt; 0m30 waiting for the lock", lines)
+                      "2 quiet retries lost 2m38 to the first attempt\n", lines)
         self.assertIn("- flag: 2 quiet retries, 2m38 lost to the first attempt", lines)
         self.assertNotIn("- tokens:", lines, "a log with no usage adds no token line")
 

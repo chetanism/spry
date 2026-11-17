@@ -680,6 +680,10 @@ it never changes anything.
     the slice was not idle — and a subagent that never reported stops counting where its own log
     ends.
   - Waiting on another session, or on a scheduled wake-up.
+  - **Waiting for the check lock:** the part of a gate or falsify call spent behind another
+    worktree's run (`checks.lock`). The call is matched to its step-log line — its slice, and a
+    line written while it ran — and the `waited` there moves from checks to this category. A call
+    with no match keeps its time, so the lock is under-counted, never over.
   - **Away:** a gap longer than `pace.away` (default 30 min) that is not a tool running. Away time is
     left out of every total.
   - Session start and `/clear` count as the end of a turn. Parallel sessions are summed, and the page
@@ -781,6 +785,7 @@ it never changes anything.
   | quiet retries | the machine is overloaded by parallel sessions, or a test is flaky |
   | a call ran to the agent's time limit | a wait that belonged in the background, or a hung test |
   | waiting on another session above a share | sessions queueing behind each other |
+  | waiting for the check lock above a share | other sessions' gates held it: fewer side by side, or a lighter gate |
   | waiting on you during merge above a share | the merge ask waits; merges could be batched |
   | more than three review agents | the slice is too big, or its work order unclear |
   | a compaction | the slice is too big for one context |
@@ -1351,6 +1356,10 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-11-17 — a failed full gate in `pace` names its red steps (CH-73, 0.62.0), and the hint follows
   them; `--compare` counts full gates failed in tests. From one project where 77 of 87 red full gates
   failed in the affected tests and the flag sent every one to fast checks.
+- 2026-11-17 — `pace` counts a wait for the check lock as its own category (CH-74, 0.63.0), with a
+  `lock_share` flag. A gate that waited 20 minutes behind another worktree's counted as 20 minutes of
+  checks; in one project the waits were a quarter of the gate's wall-clock time. Rejected: reading
+  the wait from the gate's printed output, which a `tail` in the command cuts.
 
 ## 24. Worktrees and progress
 
