@@ -80,6 +80,9 @@ run in another worktree to finish.</p>
   instead of the affected tests, says so, and stamps green marked <code>tests-only</code>. A changed
   file not named as a test, or one another file mentions, sends it the long way.</li>
   <li><code>tests.always</code> runs after the tests whenever the gate runs tests, whatever changed.</li>
+  <li>It says where it is as it goes: first how long its steps usually take together, then each step as
+  it starts (<code>→ affected tests · usually 3m20s</code>) and ends. The usual time is the median of
+  that step's last five green runs in the step log; a step never timed green gets none.</li>
   <li>With <code>tests.retry</code> set, affected tests that fail on a timeout run once more with no
   parallelism. A real failure fails both runs.</li>
   <li><code>--fast</code> — <code>check</code> and the fast checks only, no tests; stamps nothing. Used

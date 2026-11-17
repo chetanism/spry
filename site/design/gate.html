@@ -35,6 +35,21 @@ never thrown away by a lint error.</p>
 mechanism — <code>vitest --changed</code>, turbo filters, <code>pytest-testmon</code> and so on. The setup
 interview captures your stack, and the stack profile turns on parallel test execution by default.</p>
 
+<h2>How long it will take</h2>
+<p>A full gate can run for minutes, so it says where it is as it goes. Before its steps it prints how
+long they usually take together; before each step, its name and its usual time; after it, how long it
+took:</p>
+<pre><code>– about 3m22s by the last green runs
+→ lint · usually 2s
+✓ lint · 1.8s
+→ affected tests · usually 3m20s
+✓ affected tests · 201.4s</code></pre>
+<p>The usual time is the median of that step's last five green runs, read from the step log
+(<code>.spry/pace/steps.jsonl</code>) — a median, so one slow run on a busy machine does not move it. A
+step that has never passed yet, or one that runs a given set of files, is named with no estimate. Each
+line is written the moment it is said, even into a pipe, so an agent can run the gate in the background
+and read how far it has got.</p>
+
 <h2>The stamp</h2>
 <p>When <code>gate</code> passes, it writes a stamp in <code>.spry/green</code> with a fingerprint of the code:
 every file outside <code>checks.docs</code> (by default <code>spry/**</code> and <code>**/*.md</code>). While the

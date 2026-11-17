@@ -908,7 +908,8 @@ class MemoryCheck(Base):
     def test_items_paths_versions_and_commits_it_names(self):
         t = self.tree(**{"AGENTS.md": "# Rules\n\nNever merge a slice without running merge-check first, on its own branch.\n"})
         run = git_repo(t.root)
-        head = subprocess.run(["git", "rev-parse", "--short=8", "HEAD"], cwd=t.root, capture_output=True,
+        # The full hash: a short one is all digits now and then, and a number is not taken for a commit.
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=t.root, capture_output=True,
                               text=True).stdout.strip()
         files = {
             "a.md": memory("a", "project", "Fix queued as SL-1. S-1 is the story; SL-99 and D-1 are gone.\n"
@@ -3114,6 +3115,32 @@ class Falsify(unittest.TestCase):
         self.assertEqual([s[0] for s in first["steps"]], ["spry check", "lint", "affected tests"])
         self.assertEqual(second["skipped"], "stamp")
         self.assertEqual(second["steps"][0][0], "spry check")
+
+    def test_gate_says_each_step_as_it_starts_and_how_long_it_usually_takes(self):
+        self.gate_config("echo f >> LOG")
+        code, said = self.gate()
+        self.assertEqual(code, 0)
+        self.assertIn("→ lint", said, "no history: the step is named, with no estimate")
+        self.assertFalse(any(x.startswith("– about") for x in said), said)
+        rows = [{"command": "gate", "steps": [["spry check", 0.1, True], ["lint", lint, ok], ["affected tests", tests, True],
+                                              ["changed tests", 9.0, True]]}
+                for lint, ok, tests in [(1.0, True, 60.0), (2.0, True, 240.0), (3.0, True, 200.0), (100.0, False, 200.0)]]
+        with open(os.path.join(self.root, ".spry", "pace", "steps.jsonl"), "w") as handle:
+            handle.write("".join(json.dumps(r) + "\n" for r in rows) + "not json\n")
+        self.assertEqual(spry.step_estimates(spry.Project(self.root), ["lint", "affected tests", "changed tests"]),
+                         {"lint": 2.0, "affected tests": 200.0}, "the median of green runs; a red one and given files never count")
+        said = []
+        self.assertEqual(spry.gate(spry.Project(self.root), force=True, say=said.append), 0)
+        self.assertIn("– about 3m22s by the last green runs", said)
+        self.assertLess(said.index("→ lint · usually 2s"), said.index("→ affected tests · usually 3m20s"))
+        self.assertEqual([spry.duration(s) for s in (42, 220, 3900)], ["42s", "3m40s", "1h05m"])
+
+    def test_the_tool_writes_each_line_as_it_goes_even_into_a_pipe(self):
+        done = subprocess.run([sys.executable, "-c", "import sys; sys.path.insert(0, sys.argv[1]); import spry\n"
+                               "try: spry.main(['--version'])\nexcept SystemExit: pass\n"
+                               "sys.stderr.write(str(sys.stdout.line_buffering))", os.path.dirname(spry.__file__)],
+                              capture_output=True, text=True)
+        self.assertEqual(done.stderr, "True")
 
     def test_changed_tells_ci_whether_tests_must_run(self):
         p = spry.Project(self.root)
