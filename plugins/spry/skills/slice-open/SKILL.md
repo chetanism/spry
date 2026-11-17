@@ -19,6 +19,8 @@ argument-hint: "[slice ID]"
 - **With `slices.design_review` on**, one new agent reads the finished work order before any code
   and its findings are recorded under `### Design review`; a Blocker is asked first (`slicing.md` →
   *Open* step 4).
+- **The branch, the commits and the draft PR** are `spry.py publish SL-<n> open` — never `git commit`,
+  `git push` and `gh pr create` by hand (`slicing.md` → *Open* step 6).
 - **Ask only** when the plan does something hard to undo or departs from the story (`slicing.md` →
   *When to stop and ask*). Otherwise open the branch and the draft PR, build, and close — unless
   the person said to open only.

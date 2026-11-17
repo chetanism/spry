@@ -382,6 +382,22 @@ what it would do. <code>--offline</code> — the stages alone, without asking Gi
 issues spry made per slice before 0.41.0 that are still open; <code>--close</code> closes them, each with a
 comment.</p>
 
+<h3 id="publish">publish</h3>
+<p>The commits, pushes and pull-request steps around a slice, so the agent never runs them by hand.
+It commits only files under <code>spry/</code>, and refuses while code is uncommitted.</p>
+<pre><code>spry publish [--owner NAME] slice {open,review,ready}</code></pre>
+<ul>
+  <li><code>open</code> — the slice goes <code>open</code> with its branch and owner; refused, with nothing
+  changed, when <code>check</code> refuses it. The work order is committed as the branch's first commit,
+  pushed, and a draft PR titled <code>SL-n title</code> is opened with the body from <code>pr-body</code>; its
+  number is linked, committed and pushed.</li>
+  <li><code>review</code> — before the review at close: the close notes committed, the branch pushed
+  (<code>--force-with-lease</code>, after a rebase), the PR body refreshed. The PR stays a draft.</li>
+  <li><code>ready</code> — at the end of the close: <code>state: closed</code> and today's
+  <code>closed:</code>, the gate (on red the slice goes back to open and nothing is committed), the commit
+  with its <code>Slice:</code> trailer, the push, the PR body, and the PR marked ready.</li>
+</ul>
+
 <h3 id="merge-ready">merge-ready</h3>
 <p>Everything <code>/spry:merge</code> checks before its ask, in one report: the PR's checks (a run
 that started no step never ran, and then the gate on the PR's head stands in for CI),

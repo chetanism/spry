@@ -20,6 +20,9 @@ argument-hint: "[slice ID]"
   Confirm `git status` is clean afterwards.
 - **Gate after falsify,** once, with the tool (`spry.py gate`), never by running test commands by hand,
   and never the full suite.
+- **Push and the PR** with the tool: `spry.py publish SL-<n> review` before the review, and
+  `spry.py publish SL-<n> ready` at the end — it closes the slice, runs the gate, commits with the
+  `Slice:` trailer, pushes and marks the PR ready (`slicing.md` → *Close* steps 5 and 8).
 - **Follow-ups** are created with `spry.py new` (or `/spry:record`), never by copying a file and
   picking a number — with `mint: main` that takes the ID on the main branch.
 - **Never merge** here — only `/spry:merge` merges; on the review's answer *a*, the close ends by

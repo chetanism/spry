@@ -31,6 +31,7 @@
     python3 spry/tool/spry.py draw --seed        # a fresh seed for an exploratory walk
     python3 spry/tool/spry.py draw <seed> <n> --pick < choices   # the same choice for ever, per (seed, n)
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
+    python3 spry/tool/spry.py publish <slice> open|review|ready   # a slice's PR: draft opened, body refreshed, marked ready — with the commits and pushes
     python3 spry/tool/spry.py merge-ready [<pr>|<slice>]   # merging.md steps 1–5 in one report, then the ask
     python3 spry/tool/spry.py merge-finish [<pr>|<slice>] [--ci-local REASON]   # on the yes: squash, main, CI there, tables, issues, unblocked
     python3 spry/tool/spry.py link <slice> [--branch B] [--pr N] [--owner [NAME]]   # set them in the slice's front-matter
@@ -88,7 +89,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.59.0"
+VERSION = "0.60.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -5873,6 +5874,133 @@ def merge_finish(project: Project, given: str | None, ci_local: str | None, say=
     return code
 
 
+# ---------------------------------------------------------------- publish (slicing.md → Open step 6, Close steps 5 and 8)
+
+PR_URL = re.compile(r"/pull/(\d+)")
+
+
+def tree_changes(project: Project) -> list:
+    """Files changed in this tree since HEAD, untracked ones included, relative to the project root."""
+    done = git(project.root, "diff", "--name-only", "--relative", "--no-renames", "HEAD")
+    new = git(project.root, "ls-files", "-o", "--exclude-standard")
+    return sorted(p for p in set(done.stdout.split("\n") + new.stdout.split("\n")) if p and not p.startswith(".spry/"))
+
+
+def commit_docs(project: Project, paths: list, message: str, say) -> bool:
+    """Commit just these files; True when a commit was made."""
+    if not paths:
+        return False
+    git(project.root, "add", "--", *paths)
+    done = git(project.root, "commit", "-q", "-F", "-", "--", *paths, input=message + "\n")
+    if done.returncode != 0:
+        raise SystemExit(f"`git commit` failed: {last_line(done)}")
+    say(f"✓ committed {len(paths)} file{'s' if len(paths) != 1 else ''}: {message.splitlines()[0]}")
+    return True
+
+
+def push_branch(project: Project, branch: str, say) -> None:
+    done = git(project.root, "push", "-q", "--force-with-lease", "-u", REMOTE, branch)
+    if done.returncode != 0:
+        raise SystemExit(f"`git push` of `{branch}` failed: {last_line(done)}")
+    say(f"✓ pushed `{branch}`")
+
+
+def publish(project: Project, slice_id: str, stage: str, owner: str | None = None, say=print) -> int:
+    """The git and GitHub bookkeeping around a slice's pull request, so the agent writes and builds and
+    the tool files: `open` (slicing.md → Open step 6), `review` (Close step 5), `ready` (Close step 8).
+    Commits only the plan and knowledge under `spry/`; code is the agent's to commit, step by step."""
+    item = project.items.get(slice_id)
+    if item is None or item.type != "slice":
+        raise SystemExit(f"no slice {slice_id}")
+    branch = current_branch(project)
+    if not branch or branch not in (branch_of(item), slice_branch(item)):
+        raise SystemExit(f"this tree is on `{branch or 'HEAD'}`, not {slice_id}'s branch — "
+                         f"`claim {slice_id}` makes it, or `git checkout {branch_of(item) or slice_branch(item)}`")
+    main = main_branch(project)
+    rel = project.rel(item.doc)
+    changed = tree_changes(project)
+    docs = [p for p in changed if p == rel or p.startswith("spry/")]
+    code = [p for p in changed if p not in docs]
+    if code:
+        raise SystemExit(f"{len(code)} file{'s' if len(code) != 1 else ''} outside spry/ not committed "
+                         f"({', '.join(code[:3])}{', …' if len(code) > 3 else ''}) — publish commits only the plan; "
+                         "commit the code first" + (f" (`step {slice_id} --commit`)" if slice_steps(item.text) else ""))
+
+    def refresh_body(pr: str, base: str | None) -> None:
+        done = gh_run(project, "pr", "edit", pr, "--body-file", "-", input=pr_body(Project(project.root), slice_id, base))
+        if done.returncode != 0:
+            raise SystemExit(f"`gh pr edit {pr}` failed: {last_line(done)}")
+        say(f"✓ PR #{pr} body from the slice file")
+
+    if stage == "open":
+        if item.state not in ("planned", "open"):
+            raise SystemExit(f"{slice_id} is {item.state} — only a planned slice opens")
+        fields = {"state": "open", "branch": branch}
+        if owner is not None or not owner_of(item):
+            fields["owner"] = resolve_owner(project, owner or "")
+        before = item.text
+        write(item.doc, set_fields(item.text, fields))
+        errors = [str(p) for p in check(Project(project.root)) if p.level == "error"]
+        if errors:
+            write(item.doc, before)
+            say("\n".join("✗ " + e for e in errors))
+            say(f"✗ check refuses {slice_id} open — nothing committed; finish the work order")
+            return 1
+        commit_docs(project, [p for p in tree_changes(project) if p == rel or p.startswith("spry/")],
+                    f"docs(slice): {slice_id} work order", say)
+        push_branch(project, branch, say)
+        pr = str(Project(project.root).items[slice_id].fm.get("pr", "")).lstrip("#")
+        if pr.isdigit():
+            refresh_body(pr, None)
+        else:
+            done = gh_run(project, "pr", "create", "--draft", "--base", main, "--head", branch,
+                          "--title", f"{slice_id} {item.title}", "--body-file", "-",
+                          input=pr_body(Project(project.root), slice_id))
+            found = PR_URL.search(done.stdout or "")
+            if done.returncode != 0 or not found:
+                raise SystemExit(f"`gh pr create` failed: {last_line(done)} — the work order is pushed; "
+                                 f"open the draft PR, then `link {slice_id} --pr <n>`")
+            pr = found.group(1)
+            say(f"✓ draft PR #{pr} opened: {done.stdout.strip()}")
+            link_slice(Project(project.root), slice_id, {"pr": pr})
+            commit_docs(project, [rel], f"docs(slice): {slice_id} PR #{pr}", say)
+            push_branch(project, branch, say)
+        progress_event(project, "open", f"opened, PR #{pr}", slice_id)
+        say(f"next: build {slice_id}" + (f" — `step {slice_id}`" if slice_steps(item.text) else ""))
+        return 0
+
+    pr = str(item.fm.get("pr", "")).lstrip("#")
+    if not pr.isdigit():
+        raise SystemExit(f"{slice_id} has no `pr:` — `publish {slice_id} open` opens it")
+    base = f"{REMOTE}/{main}"
+    if stage == "review":
+        commit_docs(project, docs, f"docs(slice): {slice_id} close notes", say)
+        push_branch(project, branch, say)
+        refresh_body(pr, base)
+        say(f"next: /spry:review {slice_id} — the PR stays a draft")
+        return 0
+
+    # ready
+    if item.state not in ("open", "closed"):
+        raise SystemExit(f"{slice_id} is {item.state} — only an open slice closes")
+    before = item.text
+    write(item.doc, set_fields(item.text, {"state": "closed", "closed": closed_on(item) or date.today().isoformat()}))
+    if gate(Project(project.root), say=lambda text: say("  " + text)) != 0:
+        write(item.doc, before)
+        say(f"✗ the gate is red — {slice_id} left open, nothing committed")
+        return 1
+    commit_docs(project, [p for p in tree_changes(project) if p == rel or p.startswith("spry/")],
+                f"docs(slice): {slice_id} close summary\n\nSlice: {slice_id}", say)
+    push_branch(project, branch, say)
+    refresh_body(pr, base)
+    done = gh_run(project, "pr", "ready", pr)
+    if done.returncode != 0:
+        raise SystemExit(f"`gh pr ready {pr}` failed: {last_line(done)}")
+    say(f"✓ PR #{pr} ready for review")
+    progress_event(project, "close", f"closed, PR #{pr} ready", slice_id)
+    return 0
+
+
 # ---------------------------------------------------------------- steps (§15 *Steps mode*)
 
 STEP_HEAD = re.compile(r"^Step\s+(\d+)\s*(?:·|—|–|-|:)\s*(\S.*)$")
@@ -7264,7 +7392,7 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
                 elif kind == "question":
                     spot["questions"] += 1
                 elif block.get("name") == "Bash":
-                    if re.search(r"\blink\b.*--pr\b", command):
+                    if re.search(r"\blink\b.*--pr\b|\bpublish\s+\S+\s+open\b", command):
                         phase, phase_turn = "build", turn
                     elif re.search(r"\bmerge-(?:check|ready|finish)\b", command):
                         phase, phase_turn = "merge", turn
@@ -10105,6 +10233,10 @@ def main(argv=None) -> int:
     p = sub.add_parser("merge-message", help="the squash commit for a slice: subject, summary, trailers")
     p.add_argument("slice")
     p.add_argument("--ci-local", metavar="REASON", help="CI never ran, for this reason; the gate stood in for it")
+    p = sub.add_parser("publish", help="a slice's PR bookkeeping: open (commit, push, draft PR), review (push, body), ready (close, gate, ready)")
+    p.add_argument("slice")
+    p.add_argument("stage", choices=("open", "review", "ready"))
+    p.add_argument("--owner", help="open: who builds it, a team.members name or login (default: the slice's, else you)")
     p = sub.add_parser("merge-ready", help="merging.md steps 1–5: checks, merge-check, PR body, approval, base — then the ask")
     p.add_argument("target", nargs="?", help="PR number or slice ID (default: the current branch's slice)")
     p = sub.add_parser("merge-finish", help="on the person's yes: squash, the main branch, CI there, tables, issues, unblocked")
@@ -10437,6 +10569,8 @@ def main(argv=None) -> int:
     if args.command == "changed":
         print(f"code={'true' if code_changed_since(project, args.base) else 'false'}")
         return 0
+    if args.command == "publish":
+        return publish(project, args.slice, args.stage, args.owner)
     if args.command == "merge-ready":
         return merge_ready(project, args.target)
     if args.command == "merge-finish":
