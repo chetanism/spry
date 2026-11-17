@@ -1583,3 +1583,19 @@ Entry format:
 - **Adapt:** a project that renamed a heading in its `spry/process/` copy updates the skill that
   names it — `proc` lists the sections when one is not found.
 - **Migrate:** nothing.
+
+## CH-73 · A failed full gate in `pace` names the step that went red
+
+- **Date:** 2026-11-17 · **Version:** 0.62.0
+- **Touches:** `tool/spry.py` (`pace`)
+- **Why:** the flag said "the full gate failed N× — fast checks while building catch most of that
+  earlier" whatever failed. In one project 77 of 87 red full gates failed in the affected tests,
+  which fast checks never run, so the advice pointed `/spry:pace` at the wrong fix.
+  - The flag names the red steps and their counts: `the full gate failed 3×: affected tests 2×,
+    lint 1×`. Its hint follows what failed: fast checks for a check, the step's tests
+    (`slices.steps.tests`) and `gate --failed` for a test step.
+  - `--compare` gains *full gates failed in tests, per slice*, so a change aimed at red tests is
+    judged on its own number.
+  - A step-log line from before steps were marked red keeps today's wording.
+- **Adapt:** nothing.
+- **Migrate:** nothing.

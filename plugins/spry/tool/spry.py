@@ -90,7 +90,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.61.0"
+VERSION = "0.62.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -7905,14 +7905,34 @@ def pace_reruns(s: dict) -> dict:
             "lost": sum(pace_retry_lost(g) for g in retried), "waited": waited}
 
 
+def pace_test_step(name: str) -> bool:
+    """A gate step that runs tests, not a check."""
+    return "test" in name or name.startswith("failed files")
+
+
+def pace_red_steps(g: dict) -> list:
+    """The steps that went red in one gate; empty in a log line from before steps were marked."""
+    return [name for name, _seconds, *ok in g.get("steps", []) if ok and not ok[0]]
+
+
+def pace_failed_full(s: dict) -> dict:
+    """{step: red full gates} for a slice — the step a failed full gate went red in, a test step
+    or a check; `None` counts a failed full gate whose step was not recorded."""
+    out = {}
+    for g in pace_full_gates(s):
+        if not g.get("ok", True):
+            pace_add(out, dict.fromkeys(pace_red_steps(g) or [None], 1))
+    return out
+
+
 def pace_red_checks(s: dict) -> dict:
     """{check: {runs, rules: {rule: times}, rule_runs: {rule: red runs}}} — each check that failed a
     gate of this slice, fast or full, and the rules its output named (recorded from CH-61 on). A
     test step is not a check."""
     out = {}
     for g in s.get("gates", []):
-        for name, _seconds, *ok in g.get("steps", []):
-            if not ok or ok[0] or "test" in name or name.startswith("failed files"):
+        for name in pace_red_steps(g):
+            if pace_test_step(name):
                 continue
             cell = out.setdefault(name, {"runs": 0, "rules": {}, "rule_runs": {}})
             cell["runs"] += 1
@@ -7935,9 +7955,18 @@ def pace_flags(project: Project, s: dict) -> list:
     active = pace_active(s) or 1
     full = pace_full_gates(s)
     out = []
-    failed = [g for g in full if not g.get("ok", True)]
+    failed = sum(1 for g in full if not g.get("ok", True))
     if failed:
-        out.append(f"the full gate failed {len(failed)}× — fast checks while building catch most of that earlier")
+        red = pace_failed_full(s)
+        named = sorted(((n, k) for k, n in red.items() if k), key=lambda x: (-x[0], x[1]))
+        tests = any(pace_test_step(k) for _n, k in named)
+        checks = any(not pace_test_step(k) for _n, k in named)
+        hint = ("the step's tests while building (`slices.steps.tests`) and `gate --failed` catch that earlier"
+                if tests and not checks else
+                "fast checks while building catch the checks earlier; `gate --failed` reruns the tests" if tests else
+                "fast checks while building catch most of that earlier")
+        out.append(f"the full gate failed {failed}×" + (": " + ", ".join(f"{k} {n}×" for n, k in named) if named else "")
+                   + " — " + hint)
     tested = [g for g in full if g.get("tests")]
     if len(tested) > 1:
         out.append(f"tests ran through the full gate {len(tested)}× — §15 expects one full gate")
@@ -8032,7 +8061,8 @@ def pace_merged(slices: list, changes: list) -> list:
     return out
 
 
-PACE_COUNTED = ("full gates failed", "quiet retries", "time lost to quiet retries", "full gates repeated on unchanged code",
+PACE_COUNTED = ("full gates failed", "full gates failed in tests", "quiet retries", "time lost to quiet retries",
+                "full gates repeated on unchanged code",
                 "falsify controls", "falsify controls survived", "fast checks failed", "questions asked",
                 "design-review Blockers", "review Blockers", "review Shoulds",
                 "choices taken without asking", "bugs filed later")   # a mean per slice that has the number; every other measure is a median
@@ -8049,6 +8079,8 @@ def pace_measures(s: dict, weights: dict | None = None) -> dict:
     reruns, falsify = pace_reruns(s), pace_falsify(s) or {}
     tokens = pace_token_numbers(s, weights or PACE_WEIGHTS) or {}
     out["full gates failed"] = sum(1 for g in full if not g.get("ok", True))
+    out["full gates failed in tests"] = sum(1 for g in full if not g.get("ok", True)
+                                            and any(pace_test_step(k) for k in pace_red_steps(g)))
     out["quiet retries"] = reruns["retries"]
     out["time lost to quiet retries"] = reruns["lost"]
     out["full gates repeated on unchanged code"] = reruns["same"]
