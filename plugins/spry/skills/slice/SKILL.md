@@ -6,7 +6,9 @@ argument-hint: "<story, task or bug ID>"
 
 # spry — slice
 
-- **Procedure:** `spry/process/slicing.md` → *What a slice is* and *Split*. Read `chat.md` beside it.
+- **Procedure:** `spry/process/slicing.md` → *What a slice is* and *Split* — print only those:
+  `python3 spry/tool/spry.py proc slicing "What a slice" Split`, adding `Steps` with `slices.mode: steps`. Read `chat.md`
+  beside it.
 - **Parent:** `$ARGUMENTS`; without one, list ready stories, tasks and bugs that have no slices yet
   (`python3 spry/tool/spry.py status`) and ask.
 - Every criterion of a story must be covered by its slices between them; say which slice covers each.

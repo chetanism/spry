@@ -24,6 +24,7 @@
     python3 spry/tool/spry.py scrub <file>       # private words left in text about to leave the project
     python3 spry/tool/spry.py falsify suggest <slice> [--base main]   # draft a plan from the diff
     python3 spry/tool/spry.py falsify run <plan.json> [--dry-run] [--record <slice>] [--jobs N]
+    python3 spry/tool/spry.py proc <file> ["<section>" …] [--list]   # a process file, or only the sections a skill needs
     python3 spry/tool/spry.py find "<words>"     # search spry/ and AGENTS.md, best sections first
     python3 spry/tool/spry.py check --base origin/main   # also warn on criteria changed under tests or manual checks
     python3 spry/tool/spry.py codeowners [--check]       # .github/CODEOWNERS from team.review
@@ -89,7 +90,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.60.0"
+VERSION = "0.61.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -4140,6 +4141,51 @@ def falsify_suggest(project: Project, slice_id: str, base: str, fallback: bool =
         if STATEMENT_LINE.match(source) and once(path, source) and whole_statement(source, *neighbours(text_of(path), source)):
             plan.append(entry(path, source, "", "delete the line — no guard was added; keep the lines a test must notice"))
     return plan
+
+
+# ---------------------------------------------------------------- proc
+
+def proc_heading(line: str):
+    """(level, name) of a markdown heading — the name without its `— /spry:…` tail — else None."""
+    found = re.match(r"^(#{2,6})\s+(.*\S)\s*$", line)
+    if not found:
+        return None
+    return len(found.group(1)), re.split(r"\s+[—–]\s+", found.group(2), maxsplit=1)[0].strip()
+
+
+def proc(project: Project, name: str, sections: list, listing: bool = False) -> str:
+    """A process file, or only the sections a skill needs: the file's opening, then each `##`
+    section named, with everything under it. A name matches a heading it starts, ignoring case."""
+    base = name if name.endswith(".md") else name + ".md"
+    here = os.path.join(project.spry, "process", base)
+    plugin = os.path.join(os.path.dirname(os.path.abspath(__file__)), os.pardir, "process", base)
+    path = here if os.path.isfile(native(here)) else plugin
+    if "/" in base or "\\" in base or not os.path.isfile(native(path)):
+        raise SystemExit(f"no process file {base} in spry/process/")
+    lines = read(path).split("\n")
+    _fm, start, _errors = parse_front_matter("\n".join(lines))
+    lines = lines[start:]
+    heads = [(i, *proc_heading(line)) for i, line in enumerate(lines) if proc_heading(line)]
+    if listing:
+        out = []
+        for k, (i, level, title) in enumerate(heads):
+            end = next((j for j, lv, _ in heads[k + 1:] if lv <= level), len(lines))
+            out.append(f"{'  ' * (level - 2)}{title} · {end - i} lines")
+        return "\n".join(out) + "\n"
+    if not sections:
+        return "\n".join(lines).strip("\n") + "\n"
+    opening = lines[:heads[0][0]] if heads else lines
+    chunks = ["\n".join(opening).strip("\n")]
+    for want in sections:
+        hit = next(((k, h) for k, h in enumerate(heads) if h[2].lower() == want.lower()), None) or \
+            next(((k, h) for k, h in enumerate(heads) if h[2].lower().startswith(want.lower())), None)
+        if hit is None:
+            raise SystemExit(f"no section `{want}` in {base} — its sections: "
+                             + ", ".join(t for _, lv, t in heads if lv == 2))
+        k, (i, level, _title) = hit
+        end = next((j for j, lv, _ in heads[k + 1:] if lv <= level), len(lines))
+        chunks.append("\n".join(lines[i:end]).strip("\n"))
+    return "\n\n".join(c for c in chunks if c) + "\n"
 
 
 # ---------------------------------------------------------------- find
@@ -10205,6 +10251,10 @@ def main(argv=None) -> int:
     p.add_argument("--diff", action="store_true", help="change nothing; list what differs from the plugin")
     p = sub.add_parser("scrub", help="private words still in a file meant to leave the project")
     p.add_argument("file")
+    p = sub.add_parser("proc", help="a process file, or only the sections a skill needs")
+    p.add_argument("file", help="e.g. slicing (spry/process/slicing.md)")
+    p.add_argument("section", nargs="*", help="`##` headings to print, by their first words; none prints the whole file")
+    p.add_argument("--list", action="store_true", help="the headings and their sizes")
     p = sub.add_parser("find", help="search spry/ and AGENTS.md")
     p.add_argument("query", nargs="+")
     p.add_argument("--limit", type=int, default=10)
@@ -10368,7 +10418,7 @@ def main(argv=None) -> int:
         return 2
     # `new`, `claim` and `release` open only the files they write (`Names`), `memory-check` only the
     # items a memory names; a document needs the plan.
-    light = args.command in ("claim", "release", "memory-check", "worktree", "say", "watch") or (args.command == "new" and args.type not in DOCUMENT_KINDS)
+    light = args.command in ("claim", "release", "memory-check", "worktree", "say", "watch", "proc") or (args.command == "new" and args.type not in DOCUMENT_KINDS)
     project = Project(root, load=not light)
 
     if args.command == "check":
@@ -10521,6 +10571,9 @@ def main(argv=None) -> int:
         print(f"{args.slice} released from `{was}` — planned again" + (
             f" on {main_branch(project)}; the branch is left for its owner to delete" if mint_mode(project) == "main"
             else "; commit it"))
+        return 0
+    if args.command == "proc":
+        print(proc(project, args.file, args.section, args.list), end="")
         return 0
     if args.command == "find":
         hits = find(project, " ".join(args.query), args.limit, args.rebuild)

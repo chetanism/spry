@@ -458,6 +458,14 @@ including on an error, Ctrl-C or SIGTERM.</p>
 
 <h2>Knowledge and search</h2>
 
+<h3 id="proc">proc</h3>
+<p>A process file, or only the sections a skill needs: the file's opening, then each <code>##</code>
+section named, with everything under it. A name matches a heading it starts, ignoring case. Skills
+use it so the agent reads, say, <em>Open</em> and <em>While building</em> of <code>slicing.md</code> — about
+120 lines — instead of all 360.</p>
+<pre><code>spry proc [--list] file [section ...]</code></pre>
+<p><code>--list</code> — the headings and their sizes. With no section, the whole file.</p>
+
 <h3 id="find">find</h3>
 <p>Full-text search over <code>spry/</code> and <code>AGENTS.md</code>, best sections first. Uses
 SQLite's full-text search (FTS5), through the standard library's <code>sqlite3</code>, kept in <code>.spry/index.db</code> and refreshed per file;

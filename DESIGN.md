@@ -890,6 +890,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `merge-finish [<pr>\|<slice>] [--ci-local]` | on the yes, steps 7–8: CI and `merge-check` again, the squash with `merge-message` at the PR's head, this tree to the main branch, CI there when the main branch moved under the PR, the progress tables when CI left them stale, `issues --sync`, what is unblocked |
 | `vendor` | copy `process/` and the tool into a project (plugin's copy only); `--diff` lists what differs |
 | `scrub <file>` | private words (product, people, glossary terms, emails, URLs) left in text about to leave the project |
+| `proc <file> [<section>…] [--list]` | a process file's opening and only the `##` sections named, matched by their first words — what a skill reads instead of the whole file; `--list` the headings and their sizes |
 | `find <query>` | full-text search, best sections first (§11) |
 | `falsify suggest <slice>` · `falsify run <plan>` | §16 |
 | `tests --slowest` | §15 |
@@ -1343,6 +1344,10 @@ in `spry/history/writ.md`, then retires `canon/`.
   replaces the commits, pushes and `gh` calls of `slicing.md` *Open* step 6 and *Close* steps 5 and 8.
   It commits only the plan under `spry/` and refuses while code is uncommitted. Rejected: committing
   the whole tree, which would sweep up code steps mode commits one step at a time.
+- 2026-11-17 — a skill reads only the sections it needs (CH-72, 0.61.0): `proc <file> <section>…`
+  prints a process file's opening and the sections named. Opening a slice read all of `slicing.md`
+  (359 lines) to use about 120. Rejected: splitting the process files, which would scatter rules
+  that cite each other and break every project's vendored copy.
 
 ## 24. Worktrees and progress
 

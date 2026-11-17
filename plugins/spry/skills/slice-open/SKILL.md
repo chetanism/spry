@@ -6,8 +6,10 @@ argument-hint: "[slice ID]"
 
 # spry — slice-open
 
-- **Procedure:** `spry/process/slicing.md` → *What a slice is* and *Open*. Read `conflicts.md`,
-  `chat.md` and `writing.md` beside it.
+- **Procedure:** `spry/process/slicing.md` → *When to stop and ask*, *What a slice is*, *Open* and
+  *While building* — print only those: `python3 spry/tool/spry.py proc slicing "When to stop" "What a slice" Open
+  "While building"`, adding `Steps` for a slice with `### Steps`. Read `conflicts.md`, `chat.md` and
+  `writing.md` beside it.
 - **Slice:** `$ARGUMENTS`; without one, run `python3 spry/tool/spry.py backlog` and ask which row
   of *Ready to build* to open — the first recommended and the next two as alternatives, or, with
   `slices.pick: ask`, the first four with none recommended (`slicing.md` → *Open*).
