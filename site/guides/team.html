@@ -48,6 +48,9 @@ working on one repository at once.</p>
   developers slice and build; QA writes and runs the checks.</li>
   <li><strong>Plan items go through pull requests</strong> when a team is configured and the path falls under a
   <code>review</code> rule — instead of being committed to the main branch.</li>
+  <li><strong>A PR merges approved</strong> — unless its author is in <code>team.approval.exempt</code>, such
+  as a lead who approves everyone else's, or <code>team.approval.missing</code> is <code>"warn"</code>, when
+  a missing approval is a warning you accept at the merge. A review asking for changes always blocks.</li>
 </ul>
 
 <h2>Review routing and CODEOWNERS</h2>

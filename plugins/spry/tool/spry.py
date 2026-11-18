@@ -90,7 +90,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.63.0"
+VERSION = "0.64.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -959,6 +959,11 @@ def check(project: Project):
     if mode not in (None, "split", "steps"):
         project.problem(os.path.join(project.spry, "spry.config.json"), 1,
                         f"`slices.mode` is `{mode}` — `split` or `steps`")
+    conf = (project.config.get("team") or {}).get("approval")
+    if conf is not None and (not isinstance(conf, dict) or conf.get("missing", "block") not in ("block", "warn")
+                             or not isinstance(conf.get("exempt", []), list)):
+        project.problem(os.path.join(project.spry, "spry.config.json"), 1,
+                        "`team.approval` is `{\"missing\": \"block\" or \"warn\", \"exempt\": [GitHub logins]}`")
     review = (project.config.get("slices") or {}).get("design_review")
     if review not in (None, True, False):
         project.problem(os.path.join(project.spry, "spry.config.json"), 1,
@@ -5638,7 +5643,7 @@ def merge_ready(project: Project, given: str | None, say=print) -> int:
     main = main_branch(project)
     base = f"{REMOTE}/{main}"
     lines: list = []
-    view = gh_json(project, "pr", "view", pr, "--json", "state,isDraft,headRefName,headRefOid,body,reviewDecision")
+    view = gh_json(project, "pr", "view", pr, "--json", "state,isDraft,headRefName,headRefOid,body,reviewDecision,author")
     if not isinstance(view, dict):
         say(f"✗ gh could not read PR #{pr} — `gh auth status`")
         return 1
@@ -5702,9 +5707,7 @@ def merge_ready(project: Project, given: str | None, say=print) -> int:
 
     # 4. approval
     if members(project):
-        decision = view.get("reviewDecision") or "none"
-        lines.append(("ok", "approved") if decision == "APPROVED"
-                     else ("block", f"review decision is {decision.lower().replace('_', ' ')} — a team PR merges approved"))
+        lines.append(approval_line(project, view))
 
     # 5. the base
     fork = git(project.root, "merge-base", base, "HEAD").stdout.strip() if on_branch else ""
@@ -5737,6 +5740,31 @@ def merge_ready(project: Project, given: str | None, say=print) -> int:
         + (f", the person accepting the {len(accept)} `!` above" if accept else ""))
     say(f"then: spry.py merge-finish {pr}" + (f' --ci-local "{ci_local}"' if ci_local else ""))
     return 0
+
+
+def approval(project: Project) -> dict:
+    """`team.approval`: what a team PR with no approval does (`missing`: block or warn), and the GitHub
+    logins whose own PRs merge without one (`exempt`) — a lead whose approvals nobody else gives."""
+    conf = (project.config.get("team") or {}).get("approval") or {}
+    return {"missing": conf.get("missing", "block"),
+            "exempt": {str(login).lstrip("@").lower() for login in conf.get("exempt") or []}}
+
+
+def approval_line(project: Project, view: dict) -> tuple:
+    """merging.md step 4 on a team: approved, or why it may merge without, or what blocks it."""
+    decision = view.get("reviewDecision") or "none"
+    if decision == "APPROVED":
+        return ("ok", "approved")
+    said = decision.lower().replace("_", " ")
+    if decision == "CHANGES_REQUESTED":  # someone objected: neither setting below waives that
+        return ("block", f"review decision is {said} — answer the review first")
+    conf, author = approval(project), str((view.get("author") or {}).get("login") or "")
+    if author.lower() in conf["exempt"]:
+        return ("ok", f"review decision is {said} — @{author} merges without an approval (`team.approval.exempt`)")
+    if conf["missing"] == "warn":
+        return ("warn", f"review decision is {said} — the person merges without an approval "
+                        "(`team.approval.missing` is `warn`)")
+    return ("block", f"review decision is {said} — a team PR merges approved")
 
 
 def merge_update_main(project: Project, conf: dict | None, say) -> bool:

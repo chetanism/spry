@@ -1619,3 +1619,19 @@ Entry format:
   category stays empty.
 - **Migrate:** nothing. The session logs are read again on the next run. A closed slice whose logs
   are gone keeps its kept split, so a `--compare` across this change shows checks' share falling.
+
+## CH-75 · A team PR may merge without an approval
+
+- **Date:** 2026-11-18 · **Version:** 0.64.0
+- **Touches:** `tool/spry.py` (`merge-ready`, `check`), `process/merging.md`,
+  `process/templates/spry.config.json` (`team.approval`)
+- **Why:** with a team, `merge-ready` blocked every PR not approved. A lead who approves everyone
+  else's PRs had nobody to approve their own, and a team that wants approvals as a nudge, not a
+  gate, had no way to say so.
+  - `team.approval.exempt`: GitHub logins whose own PRs merge without an approval.
+  - `team.approval.missing`: `block` (default) or `warn` — a missing approval becomes a `!` the
+    person accepts at the ask.
+  - Changes requested blocks under either: it is an objection, not a missing approval.
+  - GitHub's branch protection still applies; if it requires a review, `gh pr merge` refuses.
+- **Adapt:** `team.approval` — leave it out to keep approvals required for everyone.
+- **Migrate:** nothing.

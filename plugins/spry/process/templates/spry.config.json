@@ -1,6 +1,6 @@
 {
-  "spry": "0.63.0",
-  "spry_baseline": "CH-74",
+  "spry": "0.64.0",
+  "spry_baseline": "CH-75",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -9,7 +9,8 @@
   },
   "team": {
     "members": [],
-    "review": {}
+    "review": {},
+    "approval": {"missing": "block", "exempt": []}
   },
   "budgets": {
     "AGENTS.md": 150,
