@@ -143,7 +143,8 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
     {"name": "Ravi", "github": "ravi", "roles": ["developer"]},
     {"name": "Meera", "github": "meera", "roles": ["qa"]}
   ],
-  "review": {"spry/plan/**": ["product"], "src/**": ["developer"]}
+  "review": {"spry/plan/**": ["product"], "src/**": ["developer"]},
+  "approval": {"missing": "block", "exempt": ["asha"]}
 }</code></pre>
 
 <table>
@@ -151,6 +152,7 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
   <tbody>
     <tr><td><code>team.members</code></td><td>Name, GitHub handle and roles for each person. <strong>Empty means solo</strong>: nothing is routed for review, and approval is not required to merge.</td></tr>
     <tr><td><code>team.review</code></td><td>Which roles review which paths. <code>spry codeowners</code> turns it into <code>.github/CODEOWNERS</code>. Planning skills open a pull request instead of committing to the main branch when a document falls under a rule here.</td></tr>
+    <tr><td><code>team.approval</code></td><td>What a team PR with no approval does at merge. <code>exempt</code>: GitHub handles whose own PRs merge without one — a lead who approves everyone else's. <code>missing</code>: <code>"block"</code> (default) or <code>"warn"</code>, a warning the person accepts before merging. Changes requested always blocks.</td></tr>
   </tbody>
 </table>
 <p>More: <a href="../guides/team.html">Work as a team</a>.</p>

@@ -5147,7 +5147,7 @@ class MergeFlow(unittest.TestCase):
         self.git("push", "-q", "origin", "sl-1-a")
         self.checks = [{"name": "test", "bucket": "pass", "link": "https://x/actions/runs/7/job/1"}]
         self.jobs = [{"name": "test", "steps": [{"name": "run"}]}]
-        self.body, self.calls, self.decision = "old body", [], ""
+        self.body, self.calls, self.decision, self.author = "old body", [], "", "t"
 
     def git(self, *args, root=None):
         return subprocess.run(["git", *args], cwd=root or self.root, check=True, capture_output=True, text=True).stdout.strip()
@@ -5165,7 +5165,8 @@ class MergeFlow(unittest.TestCase):
         if args[:2] == ("pr", "view"):
             head = self.git("rev-parse", "origin/sl-1-a")
             return ok(json.dumps({"state": "OPEN", "isDraft": False, "headRefName": "sl-1-a", "headRefOid": head,
-                                  "body": self.body, "reviewDecision": self.decision}))
+                                  "body": self.body, "reviewDecision": self.decision,
+                                  "author": {"login": self.author}}))
         if args[:2] == ("pr", "checks"):
             return ok(json.dumps(self.checks))
         if args[:2] == ("run", "view"):
@@ -5235,6 +5236,50 @@ class MergeFlow(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn(f"✗ main gained 1 commit touching this PR's files ({S}/SL-1-a.md) — the checks are against "
                       "an old base: rebase, push, and run this again", out)
+
+    def team(self, approval=None):
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            conf = json.load(handle)
+        conf["team"] = {"members": [{"name": "A", "github": "lead"}, {"name": "B", "github": "dev"}]}
+        if approval is not None:
+            conf["team"]["approval"] = approval
+        with open(path, "w") as handle:
+            json.dump(conf, handle)
+
+    def test_a_team_pr_merges_approved_unless_its_author_is_exempt_or_a_missing_approval_only_warns(self):
+        self.author = "dev"
+        self.team()
+        code, out = self.run_tool("merge-ready", "1")
+        self.assertEqual(code, 1, out)
+        self.assertIn("✗ review decision is none — a team PR merges approved", out)
+        self.decision = "APPROVED"
+        self.assertIn("✓ approved", self.run_tool("merge-ready", "1")[1])
+        self.decision = "REVIEW_REQUIRED"
+        self.team({"exempt": ["@Lead"]})
+        self.assertIn("✗ review decision is review required — a team PR merges approved",
+                      self.run_tool("merge-ready", "1")[1], "only the exempt login's own PRs")
+        self.author = "lead"
+        code, out = self.run_tool("merge-ready", "1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("✓ review decision is review required — @lead merges without an approval", out)
+        self.author = "dev"
+        self.team({"missing": "warn"})
+        code, out = self.run_tool("merge-ready", "1")
+        self.assertEqual(code, 0, out)
+        self.assertIn("! review decision is review required — the person merges without an approval", out)
+        self.assertIn("the person accepting the 1 `!` above", out)
+        self.decision = "CHANGES_REQUESTED"
+        self.team({"missing": "warn", "exempt": ["dev"]})
+        self.assertIn("✗ review decision is changes requested — answer the review first",
+                      self.run_tool("merge-ready", "1")[1], "neither setting waives an objection")
+
+    def test_a_malformed_team_approval_is_a_check_error(self):
+        self.team({"missing": "maybe"})
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            spry.main(["--root", self.root, "check"])
+        self.assertIn("`team.approval` is", out.getvalue())
 
     def test_finish_squashes_comes_home_writes_the_tables_and_names_what_is_unblocked(self):
         head = self.git("rev-parse", "HEAD")

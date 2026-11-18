@@ -49,7 +49,9 @@ from the argument (`SL-n` or a PR number), or from the current branch's `open` /
 3. **The PR body is the slice file's:** `spry.py pr-body SL-<n> --base origin/<main>` against
    `gh pr view <n> --json body`; refresh it with `gh pr edit <n> --body-file -` when they differ.
 4. **Approval:** with a team configured, `gh pr view <n> --json reviewDecision` is `APPROVED`. Solo
-   projects skip this.
+   projects skip this. A PR whose author is in `team.approval.exempt` needs none; with
+   `team.approval.missing: "warn"`, a missing approval is a `!` carried to step 6. Changes requested
+   blocks either way.
 5. **The base has not moved under it:** `git fetch`; if the main branch gained commits since the
    branch was cut and they touch any file this PR touches (`git diff --name-only`), the PR's green
    checks are against an old base — ask to rebase, push, and start again at step 1.

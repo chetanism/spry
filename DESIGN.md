@@ -296,11 +296,16 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
 ```json
 "team": {
   "members": [{"name": "Asha", "github": "asha", "roles": ["product"]}],
-  "review": {"spry/plan/**": ["product"], "src/**": ["developer"]}
+  "review": {"spry/plan/**": ["product"], "src/**": ["developer"]},
+  "approval": {"missing": "block", "exempt": ["asha"]}
 }
 ```
 
 - Empty `members` = solo: nothing is routed for review.
+- **Approval at merge** (`merge-ready`, step 4): a team PR merges approved. `approval.exempt` lists
+  GitHub logins whose own PRs merge without one — a lead who approves everyone else's has nobody to
+  approve theirs. `approval.missing: "warn"` turns a missing approval into a `!` the person accepts
+  at the ask. Changes requested blocks under either: it is an objection, not a missing approval.
 - `CODEOWNERS` is generated from `review`. Skills read roles to decide who an item goes to.
 
 ### Requests in GitHub issues
@@ -1360,6 +1365,11 @@ in `spry/history/writ.md`, then retires `canon/`.
   `lock_share` flag. A gate that waited 20 minutes behind another worktree's counted as 20 minutes of
   checks; in one project the waits were a quarter of the gate's wall-clock time. Rejected: reading
   the wait from the gate's printed output, which a `tail` in the command cuts.
+- 2026-11-18 — a team PR may merge without an approval (CH-75, 0.64.0): `team.approval.exempt` names
+  the authors whose own PRs need none, and `missing: "warn"` makes a missing approval a `!`. A lead
+  who approves everyone's PRs had no one to approve theirs, and `merge-ready` blocked them. Exempting
+  the author, not whoever runs the merge: a lead merging a developer's PR can approve it. Changes
+  requested still blocks.
 
 ## 24. Worktrees and progress
 

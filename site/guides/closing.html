@@ -169,7 +169,10 @@ squashes and does everything after it.</p>
   <li><strong>The PR body matches the slice file.</strong>
     <p>Refreshed if they differ. The file is the source; the body is never edited by hand.</p></li>
   <li><strong>Approval.</strong>
-    <p>With a team configured, the PR must be approved. Solo projects skip this.</p></li>
+    <p>With a team configured, the PR must be approved. Solo projects skip this. A PR by someone in
+    <code>team.approval.exempt</code> — a lead nobody else approves — needs none, and with
+    <code>team.approval.missing</code> set to <code>"warn"</code> a missing approval is a <code>!</code>
+    you accept at the ask. A review asking for changes always blocks.</p></li>
   <li><strong>The base hasn't moved under it.</strong>
     <p>If the main branch gained commits touching the same files, the green checks are against an old
     base: rebase, push, start again. It also looks for an ID the branch and the main branch both took.</p></li>
