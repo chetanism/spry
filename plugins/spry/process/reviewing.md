@@ -47,6 +47,10 @@ together. With no argument, the current branch's PR.
   - this file;
   - the output shape in §4.
 - **Leave out why the work was written as it was.** That reasoning is what the review is testing.
+- **A slice's reviewer starts with `spry.py brief SL-<n> --diff`:** the work order, the criteria in
+  words and the whole diff in one call, rather than piece by piece with `git show` and `sed`. It
+  opens a file only for what the diff does not show. Never paste the brief into its prompt — the
+  session would pay to write it.
 - **A slice built in steps** (`slicing.md` *Steps*) gets one new agent per step and one for the
   seams, all in parallel (§3a).
 - **An agent with no subagents:** ask the person to run `/spry:review <target>` in a new session.

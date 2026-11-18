@@ -112,6 +112,14 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
 
 ## While building
 
+- **Every request reads the whole session again.** The cost of a step is the session's size times
+  the requests it takes, so take fewer:
+  - Independent reads and commands go in one call (`a; b; c`) or in parallel calls, never one by
+    one.
+  - Read only the part of a file or an output you need (`sed -n`, `grep -n`), never a whole log.
+  - Let the tool wait (`gate` in the background, `merge-ready --wait`), never a polling loop.
+  - `spry.py brief SL-<n>` gives the work order, the criteria in words and the files changed in
+    one call.
 - **A slice built in steps** is built one step at a time and never committed by hand — *Steps* →
   *Build*.
 - **Check each change with `spry.py gate --fast`:** `spry check`, then the fast checks
@@ -149,6 +157,9 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
 The review comes first and the slow proof last, so falsify and the gate each run once, on the code
 that merges.
 
+0. **Brief:** `spry.py brief SL-<n>` — the slice in one call. When it says the session's context is
+   past `slices.fresh_context`, stop: `[Run] /clear`, then `/spry:slice-close SL-<n>` — the slice
+   file is the hand-off, and every request of the close would otherwise re-read the build.
 1. **Rebase:** working tree committed; `git fetch`, and when `origin/<main>` has moved, rebase onto
    it — the gate stands for the code that merges, so a rebase after it means a second gate.
    `spry.py gate --fast` passes.

@@ -1635,3 +1635,27 @@ Entry format:
   - GitHub's branch protection still applies; if it requires a review, `gh pr merge` refuses.
 - **Adapt:** `team.approval` — leave it out to keep approvals required for everyone.
 - **Migrate:** nothing.
+
+## CH-76 · Fewer, smaller requests to the model
+
+- **Date:** 2026-11-18 · **Version:** 0.65.0
+- **Touches:** `tool/spry.py` (`brief`, `merge-ready --wait`, `pace`, `check`), `process/slicing.md`
+  (*While building*, *Close* step 0), `process/reviewing.md` §2, `process/merging.md`,
+  `skills/slice-close`, `skills/merge`, `skills/review`, `process/templates/spry.config.json`
+  (`slices.fresh_context`)
+- **Why:** in two projects' session logs, 78% of the spend was cache reads — the whole context read
+  again on every request — at a median context of 155k tokens. 96% of the requests that called a
+  tool called one; some 2,400 calls polled CI or slept; reviewers rebuilt the slice from thousands of
+  `git show`, `sed` and `grep` calls. A step costs its requests times the session's size, so:
+  - `spry.py brief SL-n` — the work order, the criteria in words and the files changed, in one
+    call; `--diff` adds the whole diff, and a slice's reviewer starts with it.
+  - `slice-close` starts with `brief`. When the session's context is past `slices.fresh_context`
+    (150k), it stops: `/clear`, then `/spry:slice-close SL-n` — the slice file is the hand-off.
+  - `merge-ready --wait [min]` waits for pending checks on the machine, in the background, and
+    reports once — never a `gh pr checks` or `sleep` loop.
+  - `slicing.md` → *While building*: independent reads and commands in one call; only the part of
+    a file or output needed.
+  - `spry pace` splits the main session's spend by phase — open, build, close, review, fixes,
+    merge — to show where it went, and whether this helped.
+- **Adapt:** `slices.fresh_context` — tokens; `0` turns the check off.
+- **Migrate:** nothing.

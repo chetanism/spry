@@ -8,7 +8,8 @@ argument-hint: "[PR number, slice ID or plan item ID …]"
 
 - **Procedure:** `spry/process/reviewing.md`. Read `chat.md` beside it.
 - **Target:** `$ARGUMENTS` — PR numbers, `SL-n`, or plan item IDs — or the current branch's PR.
-- **Fresh eyes:** a new agent reviews each target, never this session or a fork of it (§2).
+- **Fresh eyes:** a new agent reviews each target, never this session or a fork of it (§2). A
+  slice's reviewer starts with `spry.py brief SL-n --diff`.
 - **A slice built in steps:** one new agent per step, given only that step's diff
   (`spry.py step SL-n --ranges`), and one for the seams between them (§3a).
 - Verify every finding on its line before showing it; post only on a yes, after

@@ -240,7 +240,7 @@ search is <code>find</code>; the <a href="#pace">pace</a> page is at <code>/-/pa
   <li>flags</li>
   <li>a row per slice, with its lines changed — and, apart from them, the lines in <code>checks.generated</code> files</li>
   <li>by size: the medians of active time and spend for slices of each size, each per 100 changed lines as p25 / median / p75, and the bugs filed later</li>
-  <li>tokens per slice: the spend in input-token equivalents, the subagents' share, the largest context, and the context when the close started</li>
+  <li>tokens per slice: the spend in input-token equivalents, the subagents' share, the main session's spend by phase, the largest context, and the context when the close started</li>
   <li>subagents, by what each was started for (build, design review, review, fix, tests, other): how many, their own working time and their spend</li>
   <li>findings per slice, from the slice file: the design review's Blockers, Shoulds and asks; the close review's Blockers, Shoulds, Nits and fixes (<em>Review</em>); the questions the agent asked; the bullets under <em>Choices taken</em>, where a project keeps that section; and the bugs filed later against the slice — each bug whose <code>introduced_by</code> names it</li>
   <li>red checks: how often each fast check failed a gate, and the rules its output named — an oxlint or eslint rule, a <code>TS</code> number, a ruff, flake8 or mypy code, a biome rule. Rules are recorded from 0.50.0 on</li>
@@ -362,6 +362,16 @@ and for a slice, every open slice and the files its plan touches.</p>
 
 <h2>Pull requests and issues</h2>
 
+<h3 id="brief">brief</h3>
+<p>A slice in one call: the <code>pr-body</code> page (covered criteria in words, falsify gaps, the work
+order), then the files the branch changed. A session reads it instead of opening the slice, the story and
+<code>git diff</code> one by one. Every request to the model reads the whole session again, so one call in
+place of ten saves nine readings of it.</p>
+<pre><code>spry brief [--diff] slice</code></pre>
+<p><code>--diff</code> — add the branch's whole diff: what a slice's reviewer starts with. Without it,
+<code>brief</code> first says when this checkout's session carries more context than
+<code>slices.fresh_context</code> — the cue to <code>/clear</code> before the close.</p>
+
 <h3 id="pr-body">pr-body</h3>
 <p>A slice's pull request body: <em>For the reviewer</em> first (covered criteria in words, criteria
 changed, falsify gaps, manual checks due), then the work order and close summary. The PR body is always
@@ -404,8 +414,11 @@ that started no step never ran, and then the gate on the PR's head stands in for
 <code>merge-check</code>, the PR body (refreshed when it differs from the slice file), approval when
 there is a team, and whether the main branch moved under the PR's files. Exits 1 if anything blocks
 the merge. It ends with the ask and the exact <code>merge-finish</code> command to run on a yes.</p>
-<pre><code>spry merge-ready [pr | slice]</code></pre>
+<pre><code>spry merge-ready [--wait [MINUTES]] [pr | slice]</code></pre>
 <p>With no target, the current branch's slice. Run it on the PR's branch.</p>
+<p><code>--wait</code> — when checks are still pending, wait for them on this machine (up to 30 minutes,
+or <code>MINUTES</code>), then report. Run in the background, it costs the agent one call where polling
+<code>gh pr checks</code> cost one a look.</p>
 
 <h3 id="merge-finish">merge-finish</h3>
 <p>On the person's yes: checks CI and <code>merge-check</code> again, squashes with

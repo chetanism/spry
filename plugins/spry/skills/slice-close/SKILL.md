@@ -10,6 +10,9 @@ argument-hint: "[slice ID]"
   — print only those: `python3 spry/tool/spry.py proc slicing Close "When to stop" "While building"`, adding `Steps`
   for a slice with `### Steps`. Read `chat.md` and `writing.md` beside it.
 - **Slice:** `$ARGUMENTS`; without one, the `open` slice whose `branch` is the current branch.
+- **Start with `spry.py brief SL-<n>`.** When it says this session's context is past
+  `slices.fresh_context`, stop and tell the person to `/clear` and run `/spry:slice-close SL-<n>`
+  (`slicing.md` → *Close* step 0).
 - **Order:** rebase and the review come before falsify and the gate, so those run once, on the code
   that merges. Review fixes are checked with `spry.py gate --fast` only.
 - **A slice built in steps:** one reviewer per step and one for the seams; review fixes and

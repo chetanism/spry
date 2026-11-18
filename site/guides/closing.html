@@ -49,6 +49,11 @@ the <a href="../reference/glossary.html">glossary</a>.</p>
 
 <h2>Closing, step by step</h2>
 
+<p>The close starts with <code>spry.py brief SL-n</code>: the slice in one call. When the session has
+grown past <code>slices.fresh_context</code> (150k tokens) while building, it stops there and asks you to
+<code>/clear</code> and run <code>/spry:slice-close</code> again. Every request of the close would otherwise
+read the whole build again; the slice file holds everything the close needs.</p>
+
 <ol class="steps">
   <li><strong>Rebase.</strong>
     <p>Everything committed, then <code>git fetch</code>; if the main branch moved, rebase onto it —
@@ -159,7 +164,8 @@ squashes and does everything after it.</p>
 
 <ol class="steps">
   <li><strong>Checks are green.</strong>
-    <p>Red or pending → stop. Nothing on the platform may stop a bad merge, so this step is the only guard.</p></li>
+    <p>Red → stop. Pending → <code>merge-ready --wait</code> waits for them on this machine, in the background.
+    Nothing on the platform may stop a bad merge, so this step is the only guard.</p></li>
   <li><strong>The slice is ready.</strong>
     <p><code>spry.py merge-check</code> blocks when a control the diff adds has no falsify row, when a
     row says only <em>survived</em> with no reason, when a criterion was changed together with code without

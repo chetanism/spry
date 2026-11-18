@@ -1,6 +1,6 @@
 {
-  "spry": "0.64.0",
-  "spry_baseline": "CH-75",
+  "spry": "0.65.0",
+  "spry_baseline": "CH-76",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -90,6 +90,7 @@
     "pick": "offer",
     "mode": "split",
     "design_review": false,
+    "fresh_context": 150000,
     "steps": {"max": 5, "max_lines": 800, "step_lines": 0, "tests": false, "tests_skip": []}
   },
   "worktrees": {
