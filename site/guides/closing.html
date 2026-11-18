@@ -37,8 +37,9 @@ affected tests. Then <code>/spry:merge</code> merges — only on your yes.</p>
 </div>
 <div class="legend"><span>the agent runs it</span><span class="person">a person decides</span><span class="hi">the result</span></div>
 
-<p>Normally <code>/spry:slice-open</code> runs this for you once the code is built; type it yourself
-for a slice you opened only, or picked up in a new session. New words — rebase, squash, trailer — are in
+<p>Run it in a fresh session: <code>/spry:slice-open</code> and <code>/spry:slice-build</code> stop once
+the code is built and committed, and ask you to <code>/clear</code> and run
+<code>/spry:slice-close SL-n</code>. The slice file and the commits are the hand-off. New words — rebase, squash, trailer — are in
 the <a href="../reference/glossary.html">glossary</a>.</p>
 
 <p>The order matters. The review comes first and the slow proof last, so falsify and the gate each run

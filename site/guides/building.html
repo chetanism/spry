@@ -21,7 +21,8 @@
 <p class="lead"><code>/spry:slice-open</code> is where code starts — but not before a written plan. The
 agent writes a <strong>work order</strong> first, checks it against everything else in flight, opens a
 draft pull request with it, and then builds. It only stops to ask when the plan does something hard to
-undo.</p>
+undo. To plan and build in separate sessions — say, on different models — use
+<a href="#plan-and-build-apart"><code>/spry:slice-plan</code> and <code>/spry:slice-build</code></a>.</p>
 
 <h2>Pick a slice</h2>
 
@@ -55,7 +56,7 @@ not settled, an outside team's date — is the person's call. See <a href="team.
     <p>Against the story, its siblings, decisions — and every open slice, including which files each
     one touches. Findings and how each was resolved are written into the work order. See
     <a href="../design/conflicts.html">The conflict check</a>.</p></li>
-  <li><strong>Design review</strong> — only when the project turned it on.
+  <li><strong>Design review</strong> — when the project turned it on, and always under <code>/spry:slice-plan</code>.
     <p>A new agent reads the work order and looks for choices that would be hard to undo. See
     <a href="#the-design-review">The design review</a> below.</p></li>
   <li><strong>Show the summary and the plan.</strong>
@@ -67,9 +68,35 @@ not settled, an outside team's date — is the person's call. See <a href="team.
     opened, its body generated from the slice file. One command does all of it —
     <code>spry.py publish SL-2 open</code> — and it changes nothing if <code>check</code> refuses the work order.</p></li>
   <li><strong>Build.</strong>
-    <p>In the same session, unless you said to open only. Then the agent goes on to
-    <a href="closing.html">close the slice</a>.</p></li>
+    <p>In the same session, unless you said to open only. When the code is built and committed, the
+    agent stops and asks you to <code>/clear</code> and run <code>/spry:slice-close SL-2</code>, so the
+    <a href="closing.html">close</a> starts in a fresh session instead of re-reading the whole build on
+    every request. The slice file and the commits carry everything it needs.</p></li>
 </ol>
+
+<h2 id="plan-and-build-apart">Plan and build in separate sessions</h2>
+
+<p>Writing the plan and closing the slice take the most judgement. Building to a concrete plan takes
+the least. Two skills split <code>/spry:slice-open</code> in half, so each half can run in its own
+session, on the model you pick with <code>/model</code>:</p>
+
+<div class="flow" role="list" aria-label="Plan and build apart">
+  <span class="step" role="listitem"><b>/spry:slice-plan</b><small>larger model</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>/spry:slice-build</b><small>smaller model</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step" role="listitem"><b>/spry:slice-close</b><small>larger model</small></span><span class="arrow" aria-hidden="true">→</span>
+  <span class="step person" role="listitem"><b>/spry:merge</b><small>smaller model, your yes</small></span>
+</div>
+
+<ul>
+  <li><strong><code>/spry:slice-plan</code></strong> does steps 1–7 above and stops before any code. The
+    design review always runs here, whatever the config says, because whoever builds the plan will not
+    know why it says what it does. Each file's plan is written concretely enough for a smaller model
+    to follow.</li>
+  <li><strong><code>/spry:slice-build</code></strong> switches to the slice's branch and builds what the
+    work order says. When the plan turns out wrong or short, it stops and asks instead of guessing. When
+    everything is built and committed, nothing pushed, it stops for a fresh close.</li>
+  <li>Run <code>/clear</code> between them. spry never picks the model for you.</li>
+</ul>
 
 <h2>The work order</h2>
 
@@ -159,7 +186,8 @@ only the third comes up:</p>
 review at close comes too late for it: by then the code exists, and that review asks whether the code matches the
 work order, not whether the work order was right. A project can set
 <code>slices.design_review</code> to <code>true</code> in its <a href="../reference/config.html">config</a>
-to have the work order read before anything is built. It is off by default.</p>
+to have the work order read before anything is built. It is off by default for
+<code>/spry:slice-open</code>; <code>/spry:slice-plan</code> always runs it.</p>
 
 <ul>
   <li><strong>Who reads it.</strong> One new agent, which did not write the work order and is not told the
@@ -224,7 +252,8 @@ along the way goes into the project's knowledge later, with <a href="knowledge.h
 <h2>If the session ends mid-slice</h2>
 
 <p>Nothing is lost. The work order, the branch and the draft pull request are all in git, so any agent —
-in a new session, or a different tool — reads the slice file and carries on.</p>
+in a new session, or a different tool — reads the slice file and carries on:
+<code>/spry:slice-build SL-2</code> picks up the build, <code>/spry:slice-close SL-2</code> the close.</p>
 
 <h2>Next</h2>
 

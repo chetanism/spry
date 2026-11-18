@@ -1,21 +1,21 @@
 ---
 name: slice-open
-description: Open a slice — write its work order (starting with a short summary of what will be done), check it for conflicts with open slices and the project's rules, create the branch and a draft pull request, then build it — asking first only when the plan does something hard to undo. Use when starting work on a slice.
+description: Open a slice — write its work order (starting with a short summary of what will be done), check it for conflicts with open slices and the project's rules, create the branch and a draft pull request, then build it in the same session — asking first only when the plan does something hard to undo — and stop for a fresh /spry:slice-close. Use when starting work on a slice; /spry:slice-plan and /spry:slice-build do the two halves in separate sessions.
 argument-hint: "[slice ID]"
 ---
 
 # spry — slice-open
 
-- **Procedure:** `spry/process/slicing.md` → *When to stop and ask*, *What a slice is*, *Open* and
-  *While building* — print only those: `python3 spry/tool/spry.py proc slicing "When to stop" "What a slice" Open
-  "While building"`, adding `Steps` for a slice with `### Steps`. Read `conflicts.md`, `chat.md` and
+- **Procedure:** `spry/process/slicing.md` → *When to stop and ask*, *What a slice is*, *Open*,
+  *Plan*, *Build* and *While building* — print only those: `python3 spry/tool/spry.py proc slicing "When to stop" "What a slice" Open
+  Plan Build "While building"`, adding `Steps` for a slice with `### Steps`. Read `conflicts.md`, `chat.md` and
   `writing.md` beside it.
 - **Slice:** `$ARGUMENTS`; without one, run `python3 spry/tool/spry.py backlog --section ready --rows 4 --plain` and ask which row
   of *Ready to build* to open — the first recommended and the next two as alternatives, or, with
-  `slices.pick: ask`, the first four with none recommended (`slicing.md` → *Open*).
-- **Brief:** `spry.py brief SL-<n>` is the first read. When it says this session's context is past
-  `slices.fresh_context`, stop and tell the person to `/clear` and run `/spry:slice-open SL-<n>`
-  (`slicing.md` → *Open* step 1).
+  `slices.pick: ask`, the first four with none recommended (`slicing.md` → *Plan*).
+- **Brief:** `spry.py brief SL-<n> --as slice-open` is the first read. When it says this session's
+  context is past `slices.fresh_context`, stop and tell the person to `/clear` and run
+  `/spry:slice-open SL-<n>` (`slicing.md` → *Plan* step 1).
 - **Claim first:** `spry.py claim SL-<n>` makes the branch — and with `mint: main` takes the slice
   on the main branch, or names who holds it (`slicing.md` → *IDs and claims*).
 - **A slice with `### Steps`** gets each step's plan under its heading, and is built one step at a
@@ -23,9 +23,11 @@ argument-hint: "[slice ID]"
   hand (`slicing.md` → *Steps*).
 - **With `slices.design_review` on**, one new agent reads the finished work order before any code
   and its findings are recorded under `### Design review`; a Blocker is asked first (`slicing.md` →
-  *Open* step 4).
+  *Plan* step 4).
 - **The branch, the commits and the draft PR** are `spry.py publish SL-<n> open` — never `git commit`,
-  `git push` and `gh pr create` by hand (`slicing.md` → *Open* step 6).
+  `git push` and `gh pr create` by hand (`slicing.md` → *Plan* step 6).
 - **Ask only** when the plan does something hard to undo or departs from the story (`slicing.md` →
-  *When to stop and ask*). Otherwise open the branch and the draft PR, build, and close — unless
-  the person said to open only.
+  *When to stop and ask*). Otherwise open the branch and the draft PR, then build — unless the
+  person said to open only.
+- **Stop when built,** as `slicing.md` → *Build* step 5: `gate --fast` green, everything
+  committed, then `[Run] /clear` and `/spry:slice-close SL-<n>`. Never close in this session.

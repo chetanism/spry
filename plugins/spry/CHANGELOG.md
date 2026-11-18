@@ -1682,3 +1682,25 @@ Entry format:
     that called a tool and called only one — flagged over `pace.flags.lone_share` (0.9).
 - **Adapt:** `pace.flags.lone_share` — a fraction.
 - **Migrate:** nothing.
+
+## CH-78 · Plan and build in separate sessions; the close always starts fresh
+
+- **Date:** 2026-11-18 · **Version:** 0.67.0
+- **Touches:** `skills/slice-plan` (new), `skills/slice-build` (new), `skills/slice-open`,
+  `skills/slice`, `process/slicing.md` (*Open*, *Plan*, *Build*), `tool/spry.py` (`brief --as`,
+  `pace`)
+- **Why:** `slice-open` planned, built and closed in one session, on one model. Writing the plan and
+  closing need the most judgement; building to a concrete plan needs the least, yet it ran on the
+  same model. And the close carried the whole build on every request unless the session had passed
+  `slices.fresh_context`.
+  - `/spry:slice-plan` — the work order, the conflict check, the design review (always, whatever
+    `slices.design_review` says), the branch and the draft PR; then it stops, before any code.
+  - `/spry:slice-build` — builds a published work order on its branch, stops to ask when the plan
+    turns out wrong or short rather than guessing, commits, and stops.
+  - `/spry:slice-open` still plans and builds in one session, and now stops after the build too.
+    Every close starts after `/clear`, with the slice file and the commits as the hand-off.
+  - `spry.py brief SL-n --as <skill>` names the skill a context stop restarts; `spry pace` counts
+    `slice-plan` as *open* and `slice-build` as *build*.
+  - Which model runs each skill is the person's choice (`/model`); nothing is pinned.
+- **Adapt:** nothing.
+- **Migrate:** nothing.

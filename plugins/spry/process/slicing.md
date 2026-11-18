@@ -5,8 +5,8 @@ audience: 8
 ---
 # Slicing
 
-Run by `slice`, `slice-open` and `slice-close`. Tone: audience 8 — the person is a developer —
-except a slice's `Summary`, which anyone on the team can read.
+Run by `slice`, `slice-open`, `slice-plan`, `slice-build` and `slice-close`. Tone: audience 8 — the
+person is a developer — except a slice's `Summary`, which anyone on the team can read.
 
 ## When to stop and ask
 
@@ -52,10 +52,19 @@ missing. So open, build, test and close run as one piece of work.
    with the earlier slices it needs — none when it only comes after one. A steps slice also gets its
    `### Steps` heading and each step's `#### Step <k> · <title>` with its `Covers:` line.
    The backlog lists a slice as ready only when those are closed, so two people never pick up a
-   pair that cannot be built side by side. Everything else waits for `slice-open`.
+   pair that cannot be built side by side. Everything else waits for `slice-plan` or `slice-open`.
 5. `spry.py check`; commit `docs(plan): slices for <ID>`.
 
 ## Open — `/spry:slice-open [SL-n]`
+
+*Plan*, then *Build*, in one session — for a person who builds with the model they plan with. The
+design review runs only with `slices.design_review` on. Then stop, as *Build* ends: the close
+starts in a fresh session. The person asked to open only → stop where *Plan* does.
+
+## Plan — `/spry:slice-plan [SL-n]`
+
+The work order, reviewed and published, and nothing else — so the person can build it in a session
+of its own, with a smaller model if they like (`/spry:slice-build`), and close in another.
 
 No argument → read *Ready to build* with `spry.py backlog --section ready --rows 4 --plain` — the
 rows to choose from, without the rest of the backlog or its links' paths — and ask which slice to
@@ -71,19 +80,23 @@ open:
    the main branch and pushes; refused when someone
    holds it, naming the branch — then offer the next ready row. Either way it makes the branch
    `sl-<n>-<slug>` and switches to it. Not opened after all → `spry.py release SL-<n>`.
-1. **Read:** `spry.py brief SL-<n>` first — the slice and the criteria it covers in one call. When it
-   says the session's context is past `slices.fresh_context`, stop: `[Run] /clear`, then
-   `/spry:slice-open SL-<n>` — a session that built and merged the last slice would carry it into
+1. **Read:** `spry.py brief SL-<n> --as <skill>` first — the slice and the criteria it covers in one
+   call; `<skill>` is the one running, `slice-plan` or `slice-open`. When it says the session's
+   context is past `slices.fresh_context`, stop: `[Run] /clear`, then that skill again — a session that built and merged the last slice would carry it into
    every request of this one. Then the parent and its feature, every knowledge file the change could touch (conventions,
    decisions, external behaviour, security, performance), and the code.
 2. **Write the work order** — every `###` under `## Work order`:
    - `Summary` first: 2–4 bullets, readable by anyone — what will be done and what a person will see.
-   - `Plan`: one bullet per file. `Must not`: the rules this could break, linked. A steps slice has
+   - `Plan`: one bullet per file, concrete enough to build without this session — what changes in
+     it, the names and shapes it adds — since the build may run in another session, on a smaller
+     model. `Must not`: the rules this could break, linked. A steps slice has
      no `Plan`: each step under `### Steps` gets its plan bullets (*Steps* → *Work order*).
    - `Tests`: one per criterion at least, each name containing `<story>/AC-<n>`.
    - `Demo`: copy-pasteable; no value to fill in by hand.
 3. **Conflict check** — `conflicts.md`, including open slices on the same files (`spry.py related`).
-4. **Design review** — only with `slices.design_review` on. The review at close asks whether the
+4. **Design review** — always under `slice-plan`; under `slice-open` only with
+   `slices.design_review` on. A plan another session builds from gets its second reading here or
+   nowhere. The review at close asks whether the
    code is what the work order said; this one asks whether the work order is right, while changing
    it costs nothing.
    - **One new agent**, never a fork of this session, given only: the slice file, its parent and
@@ -113,7 +126,35 @@ open:
    `docs(slice): SL-<n> work order` — the branch's first commit, before any code; pushes; opens a
    **draft** pull request titled `SL-<n> <title>` with the body from `pr-body`; and links, commits
    and pushes its number. It commits only files under `spry/`, and refuses while code is uncommitted.
-7. **Build**, in this session, unless the person asked to open only. Then close.
+7. **Stop.** Under `slice-plan`: `[Run] /clear`, then `/spry:slice-build SL-<n>` — `/model` first
+   to build on a smaller one; the work order is the hand-off. Under `slice-open`: *Build* from its
+   step 2, in this session.
+
+## Build — `/spry:slice-build [SL-n]`
+
+The code for a work order already published — by `/spry:slice-plan`, or by an open stopped early.
+Run on whichever model the person chose; the work order holds what this session needs.
+
+0. **Brief:** `spry.py brief SL-<n> --as slice-build` (no ID → the `open` slice whose `branch` is the
+   current branch). Past `slices.fresh_context` → stop: `[Run] /clear`, then
+   `/spry:slice-build SL-<n>`. A slice still `planned`, or with no `## Work order` → stop:
+   `/spry:slice-plan SL-<n>` comes first.
+1. **Branch:** on the slice's `branch:` — `git fetch`, then `git switch <branch>`. Checked out in
+   another worktree → build there (`/spry:worktree`). Never a new branch.
+2. **Read** what the work order names: the files in `Plan` (or the step's plan), the rules linked
+   under `Must not`, the `### Design review` answers. Not the planning again: the parent, the
+   feature and the knowledge indexes were read when the plan was written.
+3. **Build** to the plan, as *While building* says; a steps slice one step at a time (*Steps* →
+   *Build*).
+4. **The work order turns out wrong or short** — a file it names does not fit, a test cannot be
+   written as planned, the change needs a shape or a file the plan does not name → stop and ask,
+   with what the plan says and what the code needs. The session that wrote the plan, and its
+   reasons, are gone, so a gap is never filled by guessing. A detail no reviewer would weigh — a
+   helper, a local name — is noted for `What changed` and built.
+5. **Stop** when the plan is built: `spry.py gate --fast` passes and every change is committed —
+   not pushed (*While building*). Then `[Run] /clear`, then `/spry:slice-close SL-<n>` — `/model`
+   first to close on a larger one. The slice file and the commits are the hand-off; a close that
+   carried the build would read it again on every request (*Close* step 0).
 
 ## While building
 

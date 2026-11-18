@@ -17,4 +17,5 @@ argument-hint: "<story, task or bug ID>"
   `slices.steps` (`slicing.md` → *Steps*); each slice's file gets its `### Steps` headings and
   `Covers:` lines.
 - Creates `planned` slices only, all in one `spry.py new slice` with a `--title` each — no branch,
-  no code. `/spry:slice-open` comes next.
+  no code. `/spry:slice-open` comes next — or `/spry:slice-plan`, then `/spry:slice-build`, to
+  build in a session of its own.
