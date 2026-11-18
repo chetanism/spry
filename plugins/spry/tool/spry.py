@@ -34,6 +34,7 @@
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
     python3 spry/tool/spry.py publish <slice> open|review|ready   # a slice's PR: draft opened, body refreshed, marked ready — with the commits and pushes
     python3 spry/tool/spry.py brief <slice> [--diff]   # one call: work order, criteria in words, files changed (--diff: the diff, for a reviewer); warns when this session's context is past slices.fresh_context
+    python3 spry/tool/spry.py backlog [--section NAME]… [--rows N] [--plain]   # the backlog, or only the rows asked for, links as text
     python3 spry/tool/spry.py merge-ready [<pr>|<slice>] [--wait [MIN]]   # merging.md steps 1–5 in one report, then the ask; --wait waits for pending checks here
     python3 spry/tool/spry.py merge-finish [<pr>|<slice>] [--ci-local REASON]   # on the yes: squash, main, CI there, tables, issues, unblocked
     python3 spry/tool/spry.py link <slice> [--branch B] [--pr N] [--owner [NAME]]   # set them in the slice's front-matter
@@ -91,7 +92,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.65.0"
+VERSION = "0.66.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -1359,6 +1360,36 @@ def backlog(project: Project) -> dict:
     return out
 
 
+def page_trim(text: str, sections: list | None = None, rows: int | None = None, plain: bool = False) -> str:
+    """A generated page cut to what a reader asked for: only the `###` sections named (by their first
+    words, ignoring case), at most `rows` rows of each table, and with `plain` each link as its text
+    alone — most of a row is its links' paths, which an agent does not need to choose a slice."""
+    parts = re.split(r"(?m)^(?=### )", text)
+    if sections:
+        wanted = [w.lower() for w in sections]
+        parts = [part for part in parts if part.startswith("### ")
+                 and any(part[4:].lower().startswith(w) for w in wanted)]
+    if rows is not None:
+        kept = []
+        for part in parts:
+            lines, out, n, cut = part.split("\n"), [], 0, 0
+            for line in lines:
+                if re.match(r"^\|\s*\d+\s*\|", line):
+                    n += 1
+                    if n > rows:
+                        cut += 1
+                        continue
+                out.append(line)
+            if cut:
+                out.insert(len(out) - (1 if out and not out[-1] else 0), f"… and {cut} more")
+            kept.append("\n".join(out))
+        parts = kept
+    out = "".join(parts)
+    if plain:
+        out = re.sub(r"\[([^\]]+)\]\([^)\s]+\)", r"\1", out)
+    return out
+
+
 def backlog_block(project: Project, doc: str) -> str:
     """The backlog page: what is being built, what to build next, and what stands in the way."""
     items = backlog(project)
@@ -2578,6 +2609,18 @@ def session_context(project: Project) -> int | None:
     return transcript.context if transcript and transcript.context else None
 
 
+def context_stop(project: Project, then: str) -> str | None:
+    """The line that stops a session too big to go on in (`slices.fresh_context`), naming what to run
+    after `/clear`; None when it is small enough, unmeasured, or the check is off."""
+    limit = fresh_context(project)
+    context = session_context(project) if limit else None
+    if not context or context <= limit:
+        return None
+    return (f"this session carries {pace_tokens(context)} tokens of context, over `slices.fresh_context` "
+            f"({pace_tokens(limit)}), and every request reads all of it again — stop here: [Run] `/clear`, "
+            f"then `{then}`; the slice file holds everything it needs")
+
+
 def brief(project: Project, slice_id: str, diff: bool = False) -> str:
     """What a session or a reviewer needs of a slice, in one call: its work order with the criteria in
     words, and what the branch changed — the whole diff with `diff`. Without it, a session about to close
@@ -2590,14 +2633,16 @@ def brief(project: Project, slice_id: str, diff: bool = False) -> str:
     head = "HEAD" if not branch or current_branch(project) == branch else f"{REMOTE}/{branch}"
     known = git(project.root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode == 0
     out = []
-    limit = fresh_context(project)
-    if not diff and limit:
-        context = session_context(project)
-        if context and context > limit:
-            out.append(f"! this session carries {pace_tokens(context)} tokens of context, over `slices.fresh_context` "
-                       f"({pace_tokens(limit)}), and every request reads all of it again — stop here: [Run] `/clear`, "
-                       f"then `/spry:slice-close {item.id}`; the slice file holds everything the close needs\n")
-    out.append(pr_body(project, item.id, base if known else None))
+    if not diff:
+        skill = "slice-close" if item.state in ("open", "closed") else "slice-open"
+        stop = context_stop(project, f"/spry:{skill} {item.id}")
+        if stop:
+            out.append(f"! {stop}\n")
+    if "## Work order" in item.text:
+        out.append(pr_body(project, item.id, base if known else None))
+    else:   # planned, its work order not written yet: the slice as /spry:slice left it, and what it covers
+        page = reviewer_page(project, item, None)
+        out.append(f"**{item.label}** — `{project.rel(item.doc)}`\n\n{page}" + "\n".join(item.text.split("\n")[item.body_start:]).strip() + "\n")
     if known:
         stat = git(project.root, "diff", "--stat", f"{base}...{head}").stdout.rstrip()
         out.append(f"## Changed since {base}\n\n" + (f"```\n{stat}\n```" if stat else "nothing yet") + "\n")
@@ -5759,6 +5804,10 @@ def merge_ready(project: Project, given: str | None, say=print, wait: float | No
                 lines.append(("warn", f"CI did not run ({said}); gate green locally — the person accepts this, "
                                       "and the commit says so"))
 
+    stop = context_stop(project, f"/spry:merge {pr}")
+    if stop:
+        say(f"… {stop} — before the ask")
+
     # 2. the slice
     if on_branch:
         project = Project(project.root)
@@ -7242,7 +7291,9 @@ PACE_GROUPS = (("agent", ("agent",)), ("checks", ("gate", "falsify", "tests", "f
                ("you", ("you", "question")), ("you elsewhere", ("elsewhere",)),
                ("waits", ("background", "session", "lock", "wake")))
 PACE_PHASES = ("open", "build", "close", "review", "fixes", "merge", "other")
-PACE_FLAGS = {"falsify_share": 0.2, "session_share": 0.2, "lock_share": 0.15, "merge_wait_share": 0.5, "review_agents": 3}
+PACE_FLAGS = {"falsify_share": 0.2, "session_share": 0.2, "lock_share": 0.15, "merge_wait_share": 0.5, "review_agents": 3,
+              "lone_share": 0.9}
+PACE_LONE_MIN = 20   # requests that called a tool, before the share that called one is worth a flag
 PACE_LIMIT = 590       # a tool call this long ran into the agent's 10-minute limit
 PACE_OTHER = re.compile(r'^\{"type":\s*"(?!(?:user|assistant|system)")')  # a record pace never reads, by its first key
 PACE_GATE_STEP = re.compile(r"^([✓✗]) (.+?) · ([\d.]+)s", re.M)
@@ -7433,7 +7484,7 @@ def pace_records(path: str):
 def pace_branch_entry() -> dict:
     return {"kinds": {}, "phases": {}, "first": None, "last": None, "prompts": 0, "questions": 0,
             "compactions": 0, "gates": [], "limit": 0, "slowest": [], "suite": 0,
-            "tokens": {}, "phase_tokens": {}, "requests": 0, "peak": 0, "close": None}
+            "tokens": {}, "phase_tokens": {}, "requests": 0, "peak": 0, "close": None, "tool_requests": 0, "lone": 0}
 
 
 def pace_usage(record: dict, seen: set) -> dict | None:
@@ -7473,6 +7524,8 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
     prev, branch, ended, phase = None, "", True, "other"
     turn = phase_turn = 0   # a phase set in this turn follows the agent to a new branch; an older one does not
     requests = set()
+    calls = {}       # request → [branch, tool calls it made]
+    timeline = []    # [time, phase] each time the phase changed — the phase a subagent started in
 
     def entry(name):
         return branches.setdefault(name or "", pace_branch_entry())
@@ -7529,6 +7582,9 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
             phase = phase if phase_turn == turn else "other"
         spot = entry(branch)
         if kind_of_record == "assistant":
+            made = sum(1 for b in content if b.get("type") == "tool_use") if isinstance(content, list) else 0
+            if made:
+                calls.setdefault(record.get("requestId") or message.get("id") or id(record), [branch, 0])[1] += made
             for block in content if isinstance(content, list) else []:
                 if block.get("type") != "tool_use":
                     continue
@@ -7631,12 +7687,22 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
                 ended = ended or not pending
             elif subtype == "compact_boundary":
                 spot["compactions"] += 1
+        if not timeline or timeline[-1][1] != phase:
+            timeline.append([t, phase])
         prev = t if prev is None else max(prev, t)  # a record a few ms out of order is not counted twice
-    return {"branches": branches, "prompts": prompts, "you": you_gaps, "agents": agents, "checks": checks}
+    for name, made in calls.values():
+        entry(name)["tool_requests"] += 1
+        entry(name)["lone"] += made == 1
+    import bisect
+    starts = [at for at, _ in timeline]
+    phases = {a[5]: timeline[bisect.bisect_right(starts, a[7]) - 1][1] if a[7] is not None and starts and a[7] >= starts[0]
+              else "other" for a in agents}
+    return {"branches": branches, "prompts": prompts, "you": you_gaps, "agents": agents, "checks": checks,
+            "agent_phases": phases}
 
 
 def pace_subagents(path: str) -> list:
-    """[branch, seconds, review, tokens, kind, id, last record's time] for each subagent this session
+    """[branch, seconds, review, tokens, kind, id, last record's time, first's] for each subagent this session
     started. Its kind comes from the description in its `.meta.json`; without one, a review agent is
     one whose first prompt says review, and any other is `other`."""
     found = []
@@ -7660,7 +7726,7 @@ def pace_subagents(path: str) -> list:
         if first is not None:
             kind = pace_agent_kind(said) if said else "review" if review else "other"
             ident = re.sub(r"^agent-", "", os.path.basename(sub)[:-6])
-            found.append([branch, round(last - first, 1), kind == "review", tokens, kind, ident, last])
+            found.append([branch, round(last - first, 1), kind == "review", tokens, kind, ident, last, first])
     return found
 
 
@@ -7817,7 +7883,8 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
         return slices.setdefault(slice_id, {"id": slice_id, "kinds": {}, "phases": {}, "first": None, "last": None,
                                             "sessions": 0, "prompts": 0, "questions": 0, "compactions": 0,
                                             "reviews": [], "limit": 0, "slowest": [], "suite": 0, "gates": [],
-                                            "log_gates": [], "tokens": {}, "phase_tokens": {}, "sub_tokens": {}, "requests": 0,
+                                            "log_gates": [], "tokens": {}, "phase_tokens": {}, "sub_phase_tokens": {}, "sub_tokens": {},
+                                            "tool_requests": 0, "lone": 0, "requests": 0,
                                             "peak": 0, "close": None, "agents": 0, "falsify": [], "subs": {}})
     steps = pace_steps(project)
     waits = {}   # (slice ID, command) → [[at, seconds waited for the lock, matched]]
@@ -7840,8 +7907,8 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
             s["first"] = d["first"] if s["first"] is None else min(s["first"], d["first"])
             s["last"] = d["last"] if s["last"] is None else max(s["last"], d["last"])
             s["sessions"] += 1
-            for key in ("prompts", "questions", "compactions", "limit", "suite"):
-                s[key] += d[key]
+            for key in ("prompts", "questions", "compactions", "limit", "suite", "tool_requests", "lone"):
+                s[key] += d.get(key, 0)
             s["slowest"] = sorted(s["slowest"] + d["slowest"], reverse=True)[:5]
             s["log_gates"] += d["gates"]
             pace_add(s["tokens"], d.get("tokens") or {})
@@ -7871,6 +7938,9 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
             s = slices[by_branch[branch]]
             s["agents"] += 1
             pace_add(s["sub_tokens"], more[0] if more else {})
+            if more and len(more) > 2:
+                phase = (data.get("agent_phases") or {}).get(more[2], "other")
+                pace_add(s["sub_phase_tokens"].setdefault(phase, {}), more[0])
             cell = s["subs"].setdefault(more[1] if len(more) > 1 else "review" if review else "other",
                                         {"n": 0, "seconds": 0, "tokens": {}})
             cell["n"] += 1
@@ -8117,6 +8187,10 @@ def pace_flags(project: Project, s: dict) -> list:
                    + " — the machine was loaded, or a test is flaky")
     if s.get("limit"):
         out.append(f"{s['limit']} call{'s' if s['limit'] != 1 else ''} ran to the agent's 10-minute limit — a wait that belonged in the background, or a hung test")
+    asked = s.get("tool_requests", 0)
+    if asked >= PACE_LONE_MIN and s.get("lone", 0) / asked > conf["lone_share"]:
+        out.append(f"{pace_share(s['lone'], asked)} of {asked} requests that called a tool called one — each re-reads "
+                   "the whole session: independent reads and commands go in one call (slicing.md *While building*)")
     session = s["kinds"].get("session", 0)
     if session / active > conf["session_share"]:
         out.append(f"waiting on another session took {pace_share(session, active)} ({pace_time(session)})")
@@ -8341,10 +8415,16 @@ def pace_check_lines(s: dict, conf: dict) -> list:
         if t["per100"] is not None:
             row += f"; {pace_tokens(t['per100'])} per 100 lines"
         rows.append(row)
-        phases = [(p, pace_spend(s["phase_tokens"][p], conf["weights"])) for p in PACE_PHASES if (s.get("phase_tokens") or {}).get(p)]
-        if t["main"] and len(phases) > 1:
-            rows.append("- main session's spend by phase: " + ", ".join(
-                f"{p} {pace_tokens(v)} ({pace_share(v, t['main'])})" for p, v in phases if v))
+        main_by, sub_by = s.get("phase_tokens") or {}, s.get("sub_phase_tokens") or {}
+        phases = [(p, pace_spend(main_by.get(p), conf["weights"]), pace_spend(sub_by.get(p), conf["weights"]))
+                  for p in PACE_PHASES if main_by.get(p) or sub_by.get(p)]
+        if len(phases) > 1:
+            rows.append("- spend by phase: " + ", ".join(
+                f"{p} {pace_tokens(m + u)} ({pace_share(m + u, t['spend'])}" + (f"; subagents {pace_tokens(u)}" if u else "") + ")"
+                for p, m, u in phases if m + u))
+        if s.get("tool_requests"):
+            rows.append(f"- requests that called a tool: {s['tool_requests']}, {pace_share(s.get('lone', 0), s['tool_requests'])} "
+                        "of them called one")
     if s.get("lines"):
         rows.append(f"- size: {pace_bucket(s['lines'], conf['buckets'])} lines; {pace_time(pace_active(s) / s['lines'] * 100)} active per 100 lines")
     subs = pace_subs(s, conf["weights"])
@@ -10356,6 +10436,9 @@ def main(argv=None) -> int:
     p.add_argument("--all", action="store_true", help="every level, however long")
     p = sub.add_parser("coverage", help="defined vs done for the whole plan, and what is built but not proven")
     p = sub.add_parser("backlog", help="what is being built, what to build next, and what stands in the way")
+    p.add_argument("--section", action="append", metavar="NAME", help="only this section, by its first words (`ready`, `in progress`, `blocked`…); repeatable")
+    p.add_argument("--rows", type=int, metavar="N", help="at most N rows of each table")
+    p.add_argument("--plain", action="store_true", help="links as their text alone, without the paths — for an agent choosing a slice")
     p = sub.add_parser("done", help="finished stories, tasks and bugs, newest first, with the day each closed")
     p = sub.add_parser("work", help="what one person built in a date range: their closed slices under each story, task or bug")
     p.add_argument("owner", help="a slice owner: a team.members name or GitHub login")
@@ -10622,7 +10705,12 @@ def main(argv=None) -> int:
         print(coverage_block(project, os.path.join(project.spry, "COVERAGE.md")))
         return 0
     if args.command == "backlog":
-        print(backlog_block(project, os.path.join(project.spry, "BACKLOG.md")))
+        page = backlog_block(project, os.path.join(project.spry, "BACKLOG.md"))
+        if args.section or args.rows is not None or args.plain:
+            page = page_trim(page, args.section, args.rows, args.plain)
+            if not page.strip():
+                raise SystemExit("no such section — the backlog's: In progress, Ready to build, Needs slicing, Blocked, Needs planning")
+        print(page)
         return 0
     if args.command == "done":
         print(done_block(project, os.path.join(project.spry, "DONE.md")))

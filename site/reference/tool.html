@@ -175,7 +175,11 @@ bugs — and what is built but not proven. Prints the coverage page on any branc
 <p>What is being built, what to build next, and what stands in the way: <em>In progress</em>,
 <em>Ready to build</em>, <em>Needs slicing</em>, <em>Blocked</em> and <em>Needs planning</em>, in plan
 order.</p>
-<pre><code>spry backlog</code></pre>
+<pre><code>spry backlog [--section NAME]… [--rows N] [--plain]</code></pre>
+<p><code>--section NAME</code> — only that section, named by its first words (<code>ready</code>,
+<code>blocked</code>); repeat it for more. <code>--rows N</code> — at most N rows of each table.
+<code>--plain</code> — each link as its text alone. Most of a row is its links' paths: in a large plan the
+whole backlog runs to tens of thousands of tokens, and <code>/spry:slice-open</code> needs four rows.</p>
 
 <h3 id="done">done</h3>
 <p>Finished stories, tasks and bugs, newest first, with the day each closed (from the slices'
@@ -240,7 +244,7 @@ search is <code>find</code>; the <a href="#pace">pace</a> page is at <code>/-/pa
   <li>flags</li>
   <li>a row per slice, with its lines changed — and, apart from them, the lines in <code>checks.generated</code> files</li>
   <li>by size: the medians of active time and spend for slices of each size, each per 100 changed lines as p25 / median / p75, and the bugs filed later</li>
-  <li>tokens per slice: the spend in input-token equivalents, the subagents' share, the main session's spend by phase, the largest context, and the context when the close started</li>
+  <li>tokens per slice: the spend in input-token equivalents, the subagents' share, the spend by phase (subagents in the phase they started in), the share of requests that called one tool, the largest context, and the context when the close started</li>
   <li>subagents, by what each was started for (build, design review, review, fix, tests, other): how many, their own working time and their spend</li>
   <li>findings per slice, from the slice file: the design review's Blockers, Shoulds and asks; the close review's Blockers, Shoulds, Nits and fixes (<em>Review</em>); the questions the agent asked; the bullets under <em>Choices taken</em>, where a project keeps that section; and the bugs filed later against the slice — each bug whose <code>introduced_by</code> names it</li>
   <li>red checks: how often each fast check failed a gate, and the rules its output named — an oxlint or eslint rule, a <code>TS</code> number, a ruff, flake8 or mypy code, a biome rule. Rules are recorded from 0.50.0 on</li>

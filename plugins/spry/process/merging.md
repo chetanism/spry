@@ -20,6 +20,7 @@ from the argument (`SL-n` or a PR number), or from the current branch's `open` /
   **Checks still pending** → `merge-ready <n> --wait`, run in the background: it waits on this
   machine (up to 30 minutes; `--wait <min>`) and reports once — never `gh pr checks`, `sleep` or a
   wake-up loop, each look of which re-reads the whole session.
+  **A `… this session carries` line** → stop before the ask: `[Run] /clear`, then `/spry:merge <n>`.
 - Step 6 is the agent's: the ask, with every `!` line as something the person accepts.
 - `python3 spry/tool/spry.py merge-finish <n>` — on the yes, steps 7–8, with `--ci-local "<reason>"`
   exactly as `merge-ready` printed it. It re-checks the checks and `merge-check` first and refuses

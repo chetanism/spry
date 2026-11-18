@@ -10,9 +10,12 @@ argument-hint: "[slice ID]"
   *While building* — print only those: `python3 spry/tool/spry.py proc slicing "When to stop" "What a slice" Open
   "While building"`, adding `Steps` for a slice with `### Steps`. Read `conflicts.md`, `chat.md` and
   `writing.md` beside it.
-- **Slice:** `$ARGUMENTS`; without one, run `python3 spry/tool/spry.py backlog` and ask which row
+- **Slice:** `$ARGUMENTS`; without one, run `python3 spry/tool/spry.py backlog --section ready --rows 4 --plain` and ask which row
   of *Ready to build* to open — the first recommended and the next two as alternatives, or, with
   `slices.pick: ask`, the first four with none recommended (`slicing.md` → *Open*).
+- **Brief:** `spry.py brief SL-<n>` is the first read. When it says this session's context is past
+  `slices.fresh_context`, stop and tell the person to `/clear` and run `/spry:slice-open SL-<n>`
+  (`slicing.md` → *Open* step 1).
 - **Claim first:** `spry.py claim SL-<n>` makes the branch — and with `mint: main` takes the slice
   on the main branch, or names who holds it (`slicing.md` → *IDs and claims*).
 - **A slice with `### Steps`** gets each step's plan under its heading, and is built one step at a

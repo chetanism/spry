@@ -44,7 +44,9 @@ together. With no argument, the current branch's PR.
   in parallel.
 - **Its prompt holds only:**
   - the target and its kind;
-  - this file;
+  - the command that prints its part of this file — `spry.py proc reviewing "1. What" "<check>"
+    "4. Findings" "6. How"`, where `<check>` is `a. Slice`, `b. Plan` or `c. Other` (§3) — about
+    half the file; the rest is for the session that runs the review;
   - the output shape in §4.
 - **Leave out why the work was written as it was.** That reasoning is what the review is testing.
 - **A slice's reviewer starts with `spry.py brief SL-<n> --diff`:** the work order, the criteria in
