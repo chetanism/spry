@@ -17,14 +17,17 @@ from the argument (`SL-n` or a PR number), or from the current branch's `open` /
 - `python3 spry/tool/spry.py merge-ready <n>` — steps 1–5 on the PR's branch: one `✓`, `!` or `✗` line
   each, a stale PR body refreshed, and — when CI never ran — the gate on the PR's head. It ends with
   the ask for step 6 and the command for step 7. `✗` → stop and say what it says; never work round it.
+  **Checks still pending** → `merge-ready <n> --wait`, run in the background: it waits on this
+  machine (up to 30 minutes; `--wait <min>`) and reports once — never `gh pr checks`, `sleep` or a
+  wake-up loop, each look of which re-reads the whole session.
 - Step 6 is the agent's: the ask, with every `!` line as something the person accepts.
 - `python3 spry/tool/spry.py merge-finish <n>` — on the yes, steps 7–8, with `--ci-local "<reason>"`
   exactly as `merge-ready` printed it. It re-checks the checks and `merge-check` first and refuses
   what `merge-ready` would. Report from its output; a `✗` line there is said at once.
 - A PR no slice names (a plan PR), or no `gh`: the steps below by hand.
 
-1. **Checks are green:** `gh pr checks <n>`. Red → stop and say which. Pending → wait, or stop and
-   say so. **Never merge a red or pending PR.** Nothing on the platform may stop it, so this step is
+1. **Checks are green:** `gh pr checks <n>`. Red → stop and say which. Pending → wait (`gh pr checks
+   <n> --watch`, one call), or stop and say so. **Never merge a red or pending PR.** Nothing on the platform may stop it, so this step is
    the only guard.
    - **A check that never ran is not green, and not red.** CI could not start — a billing lock, used-up
      minutes, an outage: its jobs failed with no step run

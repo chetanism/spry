@@ -33,7 +33,8 @@
     python3 spry/tool/spry.py draw <seed> <n> --pick < choices   # the same choice for ever, per (seed, n)
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
     python3 spry/tool/spry.py publish <slice> open|review|ready   # a slice's PR: draft opened, body refreshed, marked ready — with the commits and pushes
-    python3 spry/tool/spry.py merge-ready [<pr>|<slice>]   # merging.md steps 1–5 in one report, then the ask
+    python3 spry/tool/spry.py brief <slice> [--diff]   # one call: work order, criteria in words, files changed (--diff: the diff, for a reviewer); warns when this session's context is past slices.fresh_context
+    python3 spry/tool/spry.py merge-ready [<pr>|<slice>] [--wait [MIN]]   # merging.md steps 1–5 in one report, then the ask; --wait waits for pending checks here
     python3 spry/tool/spry.py merge-finish [<pr>|<slice>] [--ci-local REASON]   # on the yes: squash, main, CI there, tables, issues, unblocked
     python3 spry/tool/spry.py link <slice> [--branch B] [--pr N] [--owner [NAME]]   # set them in the slice's front-matter
     python3 spry/tool/spry.py link <item> --issue N   # the GitHub issue a plan item came from, added to its `issues:`
@@ -90,7 +91,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.64.0"
+VERSION = "0.65.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -964,6 +965,10 @@ def check(project: Project):
                              or not isinstance(conf.get("exempt", []), list)):
         project.problem(os.path.join(project.spry, "spry.config.json"), 1,
                         "`team.approval` is `{\"missing\": \"block\" or \"warn\", \"exempt\": [GitHub logins]}`")
+    fresh = (project.config.get("slices") or {}).get("fresh_context")
+    if fresh is not None and (isinstance(fresh, bool) or not isinstance(fresh, int) or fresh < 0):
+        project.problem(os.path.join(project.spry, "spry.config.json"), 1,
+                        f"`slices.fresh_context` is `{fresh}` — tokens of context, a whole number; 0 turns the check off")
     review = (project.config.get("slices") or {}).get("design_review")
     if review not in (None, True, False):
         project.problem(os.path.join(project.spry, "spry.config.json"), 1,
@@ -2553,6 +2558,55 @@ def pr_body(project: Project, slice_id: str, base: str | None = None) -> str:
     parent = f" · {item.parent.label}" if item.parent else ""
     review = reviewer_page(project, item, base)
     return f"**{item.label}**{parent} — `{project.rel(item.doc)}`\n\n{review}{body}\n"
+
+
+FRESH_CONTEXT = 150_000   # `slices.fresh_context`: tokens of context above which a close starts in a fresh session
+
+
+def fresh_context(project: Project) -> int:
+    value = (project.config.get("slices") or {}).get("fresh_context", FRESH_CONTEXT)
+    return int(value) if isinstance(value, (int, float)) and not isinstance(value, bool) and value > 0 else 0
+
+
+def session_context(project: Project) -> int | None:
+    """Tokens of context this checkout's agent session carries, from its newest log — the session that
+    made this call spoke last. None when no log is found."""
+    try:
+        transcript = watch_session({"path": tree_top(project.root)}, project, time.time())
+    except (OSError, ValueError):
+        return None
+    return transcript.context if transcript and transcript.context else None
+
+
+def brief(project: Project, slice_id: str, diff: bool = False) -> str:
+    """What a session or a reviewer needs of a slice, in one call: its work order with the criteria in
+    words, and what the branch changed — the whole diff with `diff`. Without it, a session about to close
+    is told when its context is better left behind (`slices.fresh_context`)."""
+    item = project.items.get(slice_id)
+    if item is None or item.type != "slice":
+        raise SystemExit(f"no slice {slice_id}")
+    base = f"{REMOTE}/{main_branch(project)}"
+    branch = str(item.fm.get("branch") or "")
+    head = "HEAD" if not branch or current_branch(project) == branch else f"{REMOTE}/{branch}"
+    known = git(project.root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode == 0
+    out = []
+    limit = fresh_context(project)
+    if not diff and limit:
+        context = session_context(project)
+        if context and context > limit:
+            out.append(f"! this session carries {pace_tokens(context)} tokens of context, over `slices.fresh_context` "
+                       f"({pace_tokens(limit)}), and every request reads all of it again — stop here: [Run] `/clear`, "
+                       f"then `/spry:slice-close {item.id}`; the slice file holds everything the close needs\n")
+    out.append(pr_body(project, item.id, base if known else None))
+    if known:
+        stat = git(project.root, "diff", "--stat", f"{base}...{head}").stdout.rstrip()
+        out.append(f"## Changed since {base}\n\n" + (f"```\n{stat}\n```" if stat else "nothing yet") + "\n")
+        if diff and stat:
+            text = git(project.root, "diff", f"{base}...{head}").stdout.rstrip()
+            out.append(f"## Diff\n\n```diff\n{text}\n```\n")
+    else:
+        out.append(f"## Changed\n\n{base} is not known here — `git fetch`\n")
+    return "\n".join(out)
 
 
 # ---------------------------------------------------------------- GitHub issues: requests from outside the repository
@@ -5636,9 +5690,28 @@ def base_check_errors(root: str, base: str) -> list:
     return [str(p) for p in check(project) if p.level == "error"]
 
 
-def merge_ready(project: Project, given: str | None, say=print) -> int:
+MERGE_WAIT_POLL = 20   # seconds between two looks at a PR's pending checks, under `merge-ready --wait`
+
+
+def ci_wait(project: Project, pr: str, minutes: float, say=print) -> tuple:
+    """`ci_state`, after waiting up to `minutes` for pending checks to finish — on this machine, so the
+    wait costs the agent one call, not a call a look."""
+    start = time.monotonic()
+    state, said = ci_state(project, pr)
+    if state != "pending":
+        return state, said
+    say(f"… checks {said} — waiting up to {minutes:g} min")
+    while state == "pending" and time.monotonic() - start < minutes * 60:
+        time.sleep(MERGE_WAIT_POLL)
+        state, said = ci_state(project, pr)
+    say(f"… waited {pace_time(time.monotonic() - start)} for the checks")
+    return state, said
+
+
+def merge_ready(project: Project, given: str | None, say=print, wait: float | None = None) -> int:
     """merging.md → Merge, steps 1–5: every check the merge needs, then the one ask and the command
-    that merges. Changes nothing but a stale PR body. Exit 0 ready, 1 not."""
+    that merges. Changes nothing but a stale PR body. Exit 0 ready, 1 not. With `wait`, pending checks
+    are waited for, up to that many minutes."""
     item, pr = merge_slice_pr(project, given)
     main = main_branch(project)
     base = f"{REMOTE}/{main}"
@@ -5661,12 +5734,12 @@ def merge_ready(project: Project, given: str | None, say=print) -> int:
         lines.append(("block", f"PR #{pr} is a draft — /spry:slice-close marks it ready"))
 
     # 1. checks
-    state, said = ci_state(project, pr)
+    state, said = ci_wait(project, pr, wait, say) if wait else ci_state(project, pr)
     ci_local = None
     if state == "green":
         lines.append(("ok", f"checks: {said}"))
     elif state == "pending":
-        lines.append(("block", f"checks {said} — wait (`gh pr checks {pr} --watch`), then run this again"))
+        lines.append(("block", f"checks {said} — `spry.py merge-ready {pr} --wait` waits for them, in the background"))
     elif state in ("red", "unknown"):
         lines.append(("block", f"checks {said} — never merge a red PR"))
     else:
@@ -7360,7 +7433,7 @@ def pace_records(path: str):
 def pace_branch_entry() -> dict:
     return {"kinds": {}, "phases": {}, "first": None, "last": None, "prompts": 0, "questions": 0,
             "compactions": 0, "gates": [], "limit": 0, "slowest": [], "suite": 0,
-            "tokens": {}, "requests": 0, "peak": 0, "close": None}
+            "tokens": {}, "phase_tokens": {}, "requests": 0, "peak": 0, "close": None}
 
 
 def pace_usage(record: dict, seen: set) -> dict | None:
@@ -7486,6 +7559,7 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
             used = pace_usage(record, requests)
             if used:
                 pace_add(spot["tokens"], used)
+                pace_add(spot["phase_tokens"].setdefault(phase, {}), used)
                 spot["requests"] += 1
                 spot["peak"] = max(spot["peak"], pace_context(used))
                 if phase == "close" and spot["close"] is None:
@@ -7743,7 +7817,7 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
         return slices.setdefault(slice_id, {"id": slice_id, "kinds": {}, "phases": {}, "first": None, "last": None,
                                             "sessions": 0, "prompts": 0, "questions": 0, "compactions": 0,
                                             "reviews": [], "limit": 0, "slowest": [], "suite": 0, "gates": [],
-                                            "log_gates": [], "tokens": {}, "sub_tokens": {}, "requests": 0,
+                                            "log_gates": [], "tokens": {}, "phase_tokens": {}, "sub_tokens": {}, "requests": 0,
                                             "peak": 0, "close": None, "agents": 0, "falsify": [], "subs": {}})
     steps = pace_steps(project)
     waits = {}   # (slice ID, command) → [[at, seconds waited for the lock, matched]]
@@ -7771,6 +7845,8 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
             s["slowest"] = sorted(s["slowest"] + d["slowest"], reverse=True)[:5]
             s["log_gates"] += d["gates"]
             pace_add(s["tokens"], d.get("tokens") or {})
+            for phase, used in (d.get("phase_tokens") or {}).items():
+                pace_add(s["phase_tokens"].setdefault(phase, {}), used)
             s["requests"] += d.get("requests", 0)
             s["peak"] = max(s["peak"], d.get("peak", 0))
             if d.get("close") and (s["close"] is None or d["close"][0] < s["close"][0]):
@@ -8265,6 +8341,10 @@ def pace_check_lines(s: dict, conf: dict) -> list:
         if t["per100"] is not None:
             row += f"; {pace_tokens(t['per100'])} per 100 lines"
         rows.append(row)
+        phases = [(p, pace_spend(s["phase_tokens"][p], conf["weights"])) for p in PACE_PHASES if (s.get("phase_tokens") or {}).get(p)]
+        if t["main"] and len(phases) > 1:
+            rows.append("- main session's spend by phase: " + ", ".join(
+                f"{p} {pace_tokens(v)} ({pace_share(v, t['main'])})" for p, v in phases if v))
     if s.get("lines"):
         rows.append(f"- size: {pace_bucket(s['lines'], conf['buckets'])} lines; {pace_time(pace_active(s) / s['lines'] * 100)} active per 100 lines")
     subs = pace_subs(s, conf["weights"])
@@ -10330,6 +10410,9 @@ def main(argv=None) -> int:
     p.add_argument("--json", action="store_true")
     p.add_argument("--legacy", action="store_true", help="issues made per slice before CH-52 that are still open")
     p.add_argument("--close", action="store_true", help="with --legacy: close them, each with a comment")
+    p = sub.add_parser("brief", help="a slice in one call: work order, criteria in words, files changed — and the diff, for a reviewer")
+    p.add_argument("slice")
+    p.add_argument("--diff", action="store_true", help="add the branch's whole diff, and leave out the context check (a reviewer is a fresh agent)")
     p = sub.add_parser("pr-body", help="a slice's work order and close summary, for its pull request")
     p.add_argument("slice")
     p.add_argument("--base", help="git ref the PR merges into, to show criteria the branch changed")
@@ -10377,6 +10460,8 @@ def main(argv=None) -> int:
     p.add_argument("--owner", help="open: who builds it, a team.members name or login (default: the slice's, else you)")
     p = sub.add_parser("merge-ready", help="merging.md steps 1–5: checks, merge-check, PR body, approval, base — then the ask")
     p.add_argument("target", nargs="?", help="PR number or slice ID (default: the current branch's slice)")
+    p.add_argument("--wait", nargs="?", type=float, const=30.0, metavar="MINUTES",
+                   help="wait for pending checks on this machine, up to MINUTES (default 30), instead of stopping")
     p = sub.add_parser("merge-finish", help="on the person's yes: squash, the main branch, CI there, tables, issues, unblocked")
     p.add_argument("target", nargs="?", help="PR number or slice ID (default: the current branch's slice)")
     p.add_argument("--ci-local", metavar="REASON", help="CI never ran, for this reason; merge-ready's gate stood in")
@@ -10713,7 +10798,7 @@ def main(argv=None) -> int:
     if args.command == "publish":
         return publish(project, args.slice, args.stage, args.owner)
     if args.command == "merge-ready":
-        return merge_ready(project, args.target)
+        return merge_ready(project, args.target, wait=args.wait)
     if args.command == "merge-finish":
         return merge_finish(project, args.target, args.ci_local)
     if args.command == "merge-message":
@@ -10779,6 +10864,9 @@ def main(argv=None) -> int:
         return 1 if hits else 0
     if args.command == "pr-body":
         print(pr_body(project, args.slice, args.base), end="")
+        return 0
+    if args.command == "brief":
+        print(brief(project, args.slice, args.diff), end="")
         return 0
     return 2
 

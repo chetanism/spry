@@ -621,7 +621,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 ## 17. Pace — where a slice's time goes
 
-> **Status:** built in CH-44 (0.33.0); the `/spry:pace` skill in CH-47 (0.36.0); `/spry:retro`, which joins it with memory-check, in CH-48 (0.37.0); tokens, falsify outcomes and gate reruns in CH-57 (0.46.0); red checks by rule, subagents by kind, review findings and a comparison within one size in CH-61 (0.50.0); bugs filed later, by the slice that introduced them, in CH-62 (0.51.0). Prototype: `docs/spikes/pace.py`.
+> **Status:** built in CH-44 (0.33.0); the `/spry:pace` skill in CH-47 (0.36.0); `/spry:retro`, which joins it with memory-check, in CH-48 (0.37.0); tokens, falsify outcomes and gate reruns in CH-57 (0.46.0); red checks by rule, subagents by kind, review findings and a comparison within one size in CH-61 (0.50.0); bugs filed later, by the slice that introduced them, in CH-62 (0.51.0); spend by phase in CH-76 (0.65.0). Prototype: `docs/spikes/pace.py`.
 
 Purpose: show where each slice's time and tokens went — the agent, the checks, waiting on a person —
 so that person can judge what to change: the process, the config, the tests, or spry. Report only;
@@ -708,6 +708,8 @@ it never changes anything.
   - **Context** is everything one request sent, cached or not. A slice keeps its peak, and the
     context of the first request after `slice-close` started — what every turn of the close then
     carries.
+  - **By phase:** the main session's spend is also split by the phase each request fell in (open,
+    build, close, review, fixes, merge, other), so a change aimed at one phase shows there (CH-76).
   - **Size:** spend and active time are also shown per 100 changed lines, and each slice falls in
     a size bucket (`pace.buckets`: 300, 700, 1300, 2500 lines) so that it is set against slices
     of its own size.
@@ -888,6 +890,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it, with its `owner` — and cut its branch; give it back |
 | `link <slice> [--branch] [--pr] [--owner [name]]` · `link <item> --issue <n>` | set them in the slice's front-matter; a bare `--owner` is the person at this clone. On a plan item, add an issue to its `issues:` |
 | `issues [--sync [--dry-run]] [--offline] [--json]` · `issues --legacy [--close]` | each issue plan items name, its stage (§14) and whether its label shows it; `--sync` sets the label and comments when the stage changes, never closing one; `--legacy` the per-slice issues from before CH-52 still open, `--close` closes them with a comment |
+| `brief <slice> [--diff]` | a slice in one call: `pr-body`'s page, then the files the branch changed (`--stat`); `--diff` adds the whole diff, for a reviewer. Without `--diff`, a `!` first when this checkout's session carries more context than `slices.fresh_context` (150k; 0 turns it off) — the close starts in a fresh session |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean; with `slices.design_review`, a warning when the work order has no design review or a Blocker went unasked |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
@@ -896,7 +899,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
 | `publish <slice> open\|review\|ready [--owner]` | a slice's pull request, filed: `open` — `state: open`, branch, owner, refused when `check` refuses; the work order committed first, pushed, a draft PR opened and linked; `review` — close notes committed, pushed with `--force-with-lease`, body refreshed; `ready` — closed today, the gate, the commit with `Slice:`, pushed, body refreshed, PR marked ready. Commits only `spry/`; refuses uncommitted code |
-| `merge-ready [<pr>\|<slice>]` | `merging.md` steps 1–5 in one report: checks (a run that started no step never ran, and the gate on the PR's head stands in), `merge-check`, the PR body refreshed when stale, approval with a team, the base not moved under the PR's files, `check --base`; then the ask and the `merge-finish` command |
+| `merge-ready [<pr>\|<slice>] [--wait [min]]` | with `--wait`, pending checks are waited for on this machine (default 30 min), not polled by the agent. `merging.md` steps 1–5 in one report: checks (a run that started no step never ran, and the gate on the PR's head stands in), `merge-check`, the PR body refreshed when stale, approval with a team, the base not moved under the PR's files, `check --base`; then the ask and the `merge-finish` command |
 | `merge-finish [<pr>\|<slice>] [--ci-local]` | on the yes, steps 7–8: CI and `merge-check` again, the squash with `merge-message` at the PR's head, this tree to the main branch, CI there when the main branch moved under the PR, the progress tables when CI left them stale, `issues --sync`, what is unblocked |
 | `vendor` | copy `process/` and the tool into a project (plugin's copy only); `--diff` lists what differs |
 | `scrub <file>` | private words (product, people, glossary terms, emails, URLs) left in text about to leave the project |
@@ -1370,6 +1373,17 @@ in `spry/history/writ.md`, then retires `canon/`.
   who approves everyone's PRs had no one to approve theirs, and `merge-ready` blocked them. Exempting
   the author, not whoever runs the merge: a lead merging a developer's PR can approve it. Changes
   requested still blocks.
+- 2026-11-18 — fewer, smaller requests to the model (CH-76, 0.65.0). Read from two projects' logs:
+  78% of spend was cache reads — the whole context read again on every request — at a median
+  context of 155k; 96% of requests that called a tool called one; 2,400 calls polled CI or slept.
+  The cost of a step is its requests times the session's size, so the change cuts both, by doing
+  locally what the agent did in turns: `merge-ready --wait` waits for checks on the machine;
+  `brief` gives a session or a reviewer the slice in one call; a close whose session is past
+  `slices.fresh_context` starts over after `/clear`, with the slice file as the hand-off; and
+  `slicing.md` asks for independent reads in one call. `pace` splits the main session's spend by
+  phase to show whether it worked. Rejected: pasting the brief into a reviewer's prompt — the main
+  session would pay output rates to write it; and a hook that clears the session, which an agent
+  cannot do.
 
 ## 24. Worktrees and progress
 

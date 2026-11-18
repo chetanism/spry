@@ -3868,6 +3868,24 @@ class Pace(Base):
         self.assertIn("- tokens: 24k spend, in input-token equivalents — the main session 19k over 3 requests, "
                       "1 subagent 5k (21%); peak context 61k, 52k entering close; 6k per 100 lines", lines)
         self.assertIn("- size: 300–699 lines; ", lines)
+        self.assertIn("- main session's spend by phase: close 18k (92%), other 2k (8%)", lines,
+                      "CH-76: each request counted in the phase it fell in")
+
+    def test_brief_says_when_the_session_is_too_big_to_close_in(self):
+        """CH-76: past `slices.fresh_context`, the close starts after /clear; a reviewer's --diff never asks."""
+        t = self.tree()
+        self.log(t, "a", [said(0, "go"), used(reply(10), "r1", input_tokens=10, cache_read_input_tokens=200_000)])
+        p = t.project()
+        out = spry.brief(p, "SL-1")
+        self.assertIn("! this session carries 200k tokens of context, over `slices.fresh_context` (150k)", out)
+        self.assertIn("`/spry:slice-close SL-1`", out)
+        self.assertNotIn("this session carries", spry.brief(p, "SL-1", diff=True))
+        p.config.setdefault("slices", {})["fresh_context"] = 0
+        self.assertNotIn("this session carries", spry.brief(p, "SL-1"), "0 turns the check off")
+        p.config["slices"]["fresh_context"] = 300_000
+        self.assertNotIn("this session carries", spry.brief(p, "SL-1"))
+        p.config["slices"]["fresh_context"] = "big"
+        self.assertTrue(any("slices.fresh_context" in str(e) for e in spry.check(p)))
 
     def test_a_slice_shows_its_design_review(self):
         text = slice_("SL-1") + "\n### Design review\n\n- 1 Blocker, 4 Should — 1 asked\n"
@@ -5210,7 +5228,43 @@ class MergeFlow(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn("✗ checks red: test — never merge a red PR", out)
         self.checks[0]["bucket"] = "pending"
-        self.assertIn("✗ checks pending: test — wait", self.run_tool("merge-ready", "1")[1])
+        self.assertIn("✗ checks pending: test — `spry.py merge-ready 1 --wait`", self.run_tool("merge-ready", "1")[1])
+
+    def test_wait_waits_for_pending_checks_on_this_machine(self):
+        """CH-76: one call waits for CI, rather than a look by the agent each time."""
+        self.checks[0]["bucket"] = "pending"
+        looks = []
+
+        def nap(_seconds):
+            looks.append(1)
+            if len(looks) == 2:
+                self.checks[0]["bucket"] = "pass"
+        with unittest.mock.patch.object(spry.time, "sleep", nap):
+            code, out = self.run_tool("merge-ready", "1", "--wait", "5")
+        self.assertEqual((code, len(looks)), (0, 2), out)
+        self.assertIn("… checks pending: test — waiting up to 5 min", out)
+        self.assertIn("✓ checks: 1 check green", out)
+        self.checks[0]["bucket"] = "pending"
+        with unittest.mock.patch.object(spry.time, "sleep", lambda _s: None), \
+                unittest.mock.patch.object(spry.time, "monotonic", side_effect=[0, 0, 400, 400]):
+            code, out = self.run_tool("merge-ready", "1", "--wait", "5")
+        self.assertEqual(code, 1, "still pending when the wait runs out: blocked, as without --wait")
+        self.assertIn("✗ checks pending: test", out)
+
+    def test_brief_gives_the_slice_and_its_changes_in_one_call(self):
+        """CH-76: the work order, the criteria in words and the files changed; --diff adds the diff."""
+        with open(os.path.join(self.root, "lend.py"), "w") as handle:
+            handle.write("def lend():\n    return 1\n")
+        self.git("add", "lend.py")
+        self.git("commit", "-qm", "lend")
+        code, out = self.run_tool("brief", "SL-1")
+        self.assertEqual(code, 0)
+        self.assertIn("**SL-1", out)
+        self.assertIn("## Work order", out)
+        self.assertIn("## Changed since origin/main", out)
+        self.assertIn("lend.py", out)
+        self.assertNotIn("## Diff", out)
+        self.assertIn("+    return 1", self.run_tool("brief", "SL-1", "--diff")[1])
 
     def test_ci_that_never_started_is_stood_in_for_by_the_gate(self):
         self.checks[0]["bucket"], self.jobs[0]["steps"] = "fail", []
