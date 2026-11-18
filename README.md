@@ -44,7 +44,7 @@ Start at its [`spry/README.md`](docs/example/spry/README.md) and click down.
 |---|---|
 | `/spry:init`, `/spry:adopt` | Set up: interview → plan, knowledge, `AGENTS.md`, CI |
 | `/spry:milestone`, `epic`, `feature`, `story` | Define one level, in plain words, checked for conflicts |
-| `/spry:slice`, `slice-open`, `slice-close` | Split a story; open a slice with its work order; close it with falsified tests |
+| `/spry:slice`, `slice-open`, `slice-plan`, `slice-build`, `slice-close` | Split a story; open a slice with its work order — or plan and build it in separate sessions; close it with falsified tests |
 | `/spry:review`, `/spry:merge` | A fresh pair of eyes on a slice, a plan or any PR, posted line by line with suggested changes; merge only when green, ready and current — then check the main branch |
 | `/spry:bug`, `/spry:task` | Record a bug against what it breaks; plan technical work no story asks for |
 | `/spry:test-scenarios` | The steps QA follows by hand for each acceptance criterion |

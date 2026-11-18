@@ -92,7 +92,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.66.0"
+VERSION = "0.67.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -2621,10 +2621,14 @@ def context_stop(project: Project, then: str) -> str | None:
             f"then `{then}`; the slice file holds everything it needs")
 
 
-def brief(project: Project, slice_id: str, diff: bool = False) -> str:
+BRIEF_SKILLS = ("slice-open", "slice-plan", "slice-build", "slice-close")
+
+
+def brief(project: Project, slice_id: str, diff: bool = False, skill: str | None = None) -> str:
     """What a session or a reviewer needs of a slice, in one call: its work order with the criteria in
-    words, and what the branch changed — the whole diff with `diff`. Without it, a session about to close
-    is told when its context is better left behind (`slices.fresh_context`)."""
+    words, and what the branch changed — the whole diff with `diff`. Without it, a session about to start
+    `skill` is told when its context is better left behind (`slices.fresh_context`); with no skill named,
+    the one the slice's state calls for."""
     item = project.items.get(slice_id)
     if item is None or item.type != "slice":
         raise SystemExit(f"no slice {slice_id}")
@@ -2634,7 +2638,7 @@ def brief(project: Project, slice_id: str, diff: bool = False) -> str:
     known = git(project.root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode == 0
     out = []
     if not diff:
-        skill = "slice-close" if item.state in ("open", "closed") else "slice-open"
+        skill = skill or ("slice-close" if item.state in ("open", "closed") else "slice-open")
         stop = context_stop(project, f"/spry:{skill} {item.id}")
         if stop:
             out.append(f"! {stop}\n")
@@ -7441,7 +7445,8 @@ def pace_agent_kind(said: str) -> str:
 
 def pace_phase_of(skill: str) -> str | None:
     name = skill.split(":")[-1].lstrip("/").strip()
-    return {"slice-open": "open", "slice-close": "close", "merge": "merge"}.get(name)
+    return {"slice-open": "open", "slice-plan": "open", "slice-build": "build", "slice-close": "close",
+            "merge": "merge"}.get(name)
 
 
 def pace_text(content) -> str:
@@ -10496,6 +10501,7 @@ def main(argv=None) -> int:
     p = sub.add_parser("brief", help="a slice in one call: work order, criteria in words, files changed — and the diff, for a reviewer")
     p.add_argument("slice")
     p.add_argument("--diff", action="store_true", help="add the branch's whole diff, and leave out the context check (a reviewer is a fresh agent)")
+    p.add_argument("--as", dest="skill", choices=BRIEF_SKILLS, help="the skill this session runs — the one the context check names; default: by the slice's state")
     p = sub.add_parser("pr-body", help="a slice's work order and close summary, for its pull request")
     p.add_argument("slice")
     p.add_argument("--base", help="git ref the PR merges into, to show criteria the branch changed")
@@ -10954,7 +10960,7 @@ def main(argv=None) -> int:
         print(pr_body(project, args.slice, args.base), end="")
         return 0
     if args.command == "brief":
-        print(brief(project, args.slice, args.diff), end="")
+        print(brief(project, args.slice, args.diff, args.skill), end="")
         return 0
     return 2
 

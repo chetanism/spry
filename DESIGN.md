@@ -506,8 +506,8 @@ asks "is this what the work order said", so a wrong data model or API shape is f
 code exists, or not at all. And the agent decides alone what counts as hard to undo (§22, the
 three decisions): nothing checked that a choice it took without asking really was easy to undo.
 
-- **Where:** `slice-open`, after the work order and the conflict check, before the summary is
-  shown and before any code (`slicing.md` *Open* step 4).
+- **Where:** `slice-plan` always, and `slice-open` with the switch on, after the work order and the
+  conflict check, before the summary is shown and before any code (`slicing.md` *Plan* step 4).
 - **Who:** one new agent, as in every review (`reviewing.md` §2): never the session that wrote the
   work order, and told nothing of why it reads as it does. It gets the slice file, its parent and
   the parent's feature, `AGENTS.md`, and the decisions and conventions indexes. It edits nothing.
@@ -661,8 +661,8 @@ it never changes anything.
 
   | Phase | Starts at |
   |---|---|
-  | open | `slice-open` starting |
-  | build | `link --pr`: the draft PR exists |
+  | open | `slice-open` or `slice-plan` starting |
+  | build | `link --pr`: the draft PR exists, or `slice-build` starting |
   | close | `slice-close` starting |
   | review | a review agent starting (an `Agent` call whose description or prompt says review) |
   | fixes | that agent's report — the last one's, when several review at once |
@@ -930,7 +930,9 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `feature` | 3 | Interview → feature spec (not its stories); conflict check |
 | `story` | 3 | Interview → stories with acceptance criteria; conflict check |
 | `slice` | 8 | Split a ready story / task / bug into `planned` slices: one slice is reviewable in one sitting and demos one visible change |
-| `slice-open` | 8 | Work order (opening with a brief summary of what will be done), conflict check, with `slices.design_review` a review of the work order by a new agent, branch, draft PR with the work order as its body; then builds — asking first only for something hard to undo |
+| `slice-open` | 8 | `slice-plan` then `slice-build` in one session — the design review only with `slices.design_review` — then stops for a fresh `slice-close` |
+| `slice-plan` | 8 | Work order (opening with a brief summary of what will be done), conflict check, a review of the work order by a new agent and its accepted fixes, branch, draft PR with the work order as its body; then stops before any code — asking first only for something hard to undo |
+| `slice-build` | 8 | Builds a published work order on its branch, on whichever model the person chose; stops to ask when the plan is wrong or short; commits, nothing pushed, then stops for a fresh `slice-close` |
 | `slice-close` | 8 | Rebase, then the close summary from the diff, AC proof, done list; review and its fixes on the draft PR; then falsify and the gate, once; PR body refreshed with both parts |
 | `review` | 8 | Fresh eyes — a new agent, never the author's session — on a slice PR (against its work order), a plan PR or item (against its parent, the code and the glossary), or any other PR; verified findings as blocker / should / nit, posted only on a yes as one inline comment per line with a suggested change for wording; `COMMENT` only on your own PR; on your own PR one answer can be *post, fix, then merge*, done by this session, never the reviewing agent (`process/reviewing.md`) |
 | `merge` | 8 | `merge-ready`, the ask, then `merge-finish` — checks green — or, when CI never started, the gate on the PR's head, accepted at the ask and named in a `CI:` trailer —, `merge-check`, PR body current, approval, base not moved → squash with trailers → waits for CI on main if main moved under the PR → progress tables written when CI left them stale → what is unblocked |
@@ -1123,6 +1125,18 @@ in `spry/history/writ.md`, then retires `canon/`.
   slices ran from 200 to 7,000 lines, and spend per 100 lines fell fivefold across that range, so
   a change that moved the sizes moved every median. Ten slices before make the bucket's row;
   after the change even one slice is shown, as a reading against them and named as such.
+- 2026-11-18 — **plan and build are skills of their own, and the close always starts fresh**
+  (CH-78). The person picks the model per session, so a split that lets the cheaper model build
+  has to be a split into sessions. `slice-plan` always runs the design review, unlike
+  `slice-open`: a plan another session builds from loses its author's reasons, so its second
+  reading is now or never. `slice-build` asks when the plan is short instead of filling the gap —
+  the opposite of an open session, which knows why it planned what it did. `slice-open` stays,
+  for one model throughout, but stops after the build like `slice-build`: the close re-reads the
+  diff anyway, and carrying the build cost every close request its size, below
+  `slices.fresh_context` as above it. Rejected: `model:` pinned in each skill — it overrides the
+  person's choice in every project, and a pinned model may not be one they have; a config key
+  for it, before anyone asked; and `slice-open` keeping its close, which left the saving to a
+  threshold.
 
 ## 23. Built
 
@@ -1395,6 +1409,9 @@ in `spry/history/writ.md`, then retires `canon/`.
   of `reviewing.md` through `proc`; the context check runs at the open and the merge as well as the
   close; and pace splits subagents' spend by phase and counts requests that called one tool.
   Rejected: shortening test output — 12 overflows in two projects, against 42 for `backlog` alone.
+- 2026-11-18 — `slice-plan` and `slice-build`, and every close in a fresh session (CH-78, 0.67.0):
+  plan and close on a larger model, build and merge on a smaller one, each after `/clear`.
+  `brief --as` names the skill a context stop restarts; pace counts the new skills' phases.
 
 ## 24. Worktrees and progress
 

@@ -39,7 +39,7 @@ your project. This page lists all 30, grouped by when you reach for them.</p>
   <tbody>
     <tr><td>Set up</td><td><a href="#spryinit"><code>init</code></a>, <a href="#spryadopt"><code>adopt</code></a></td></tr>
     <tr><td>Plan</td><td><a href="#sprymilestone"><code>milestone</code></a>, <a href="#spryepic"><code>epic</code></a>, <a href="#spryfeature"><code>feature</code></a>, <a href="#sprystory"><code>story</code></a>, <a href="#sprybug"><code>bug</code></a>, <a href="#sprytask"><code>task</code></a></td></tr>
-    <tr><td>Build</td><td><a href="#spryslice"><code>slice</code></a>, <a href="#spryslice-open"><code>slice-open</code></a>, <a href="#spryslice-close"><code>slice-close</code></a>, <a href="#spryworktree"><code>worktree</code></a></td></tr>
+    <tr><td>Build</td><td><a href="#spryslice"><code>slice</code></a>, <a href="#spryslice-open"><code>slice-open</code></a>, <a href="#spryslice-plan"><code>slice-plan</code></a>, <a href="#spryslice-build"><code>slice-build</code></a>, <a href="#spryslice-close"><code>slice-close</code></a>, <a href="#spryworktree"><code>worktree</code></a></td></tr>
     <tr><td>Review and merge</td><td><a href="#spryreview"><code>review</code></a>, <a href="#sprymerge"><code>merge</code></a></td></tr>
     <tr><td>QA and testing</td><td><a href="#sprytest-scenarios"><code>test-scenarios</code></a>, <a href="#sprytest-all"><code>test-all</code></a>, <a href="#spryexplore"><code>explore</code></a>, <a href="#sprysecurity-audit"><code>security-audit</code></a>, <a href="#spryprelaunch"><code>prelaunch</code></a></td></tr>
     <tr><td>Knowledge</td><td><a href="#spryrecord"><code>record</code></a>, <a href="#sprycompact"><code>compact</code></a>, <a href="#sprymemory-check"><code>memory-check</code></a>, <a href="#sprypace"><code>pace</code></a>, <a href="#spryretro"><code>retro</code></a></td></tr>
@@ -175,13 +175,37 @@ on your approval.</p>
 <p>Opens a slice and builds it. It claims the slice, writes the work order (summary, plan per
 file, must-not rules, tests, demo), runs the conflict check against open slices and the project's
 rules, creates the branch and a draft pull request, and then builds — asking first only when the
-plan does something hard to undo or departs from the story.</p>
+plan does something hard to undo or departs from the story. Once the code is built and committed it
+stops, for <code>/spry:slice-close</code> in a fresh session.</p>
 <ul>
   <li><strong>Arguments:</strong> a slice ID. Without one, it reads <em>Ready to build</em> on the backlog and offers the first row (or lists four, with <code>slices.pick: ask</code>).</li>
   <li><strong>Audience:</strong> 8 — except the work order's summary, which anyone can read.</li>
   <li><strong>With <code>slices.design_review</code> on:</strong> a new agent reads the work order before any code, and a hard-to-undo choice it finds is asked first. See <a href="../guides/building.html#the-design-review">The design review</a>.</li>
   <li><strong>Writes:</strong> the slice file's <em>Work order</em>, the branch <code>sl-n-&lt;slug&gt;</code>, and a draft PR whose body comes from the slice file. Then the code and tests.</li>
   <li><strong>Guide:</strong> <a href="../guides/building.html">Build a slice</a>.</li>
+</ul>
+
+<h3 id="spryslice-plan">/spry:slice-plan</h3>
+<p>The first half of <code>slice-open</code>: claims the slice, writes the work order, runs the
+conflict check, has a new agent review the work order and fixes what is accepted, then creates the
+branch and the draft pull request — and stops before any code. The design review always runs here.</p>
+<ul>
+  <li><strong>Arguments:</strong> as <code>slice-open</code>.</li>
+  <li><strong>Audience:</strong> 8 — except the work order's summary, which anyone can read.</li>
+  <li><strong>Writes:</strong> the slice file's <em>Work order</em> with its <em>Design review</em>, the branch, and the draft PR. No code.</li>
+  <li><strong>Guide:</strong> <a href="../guides/building.html#plan-and-build-apart">Plan and build in separate sessions</a>.</li>
+</ul>
+
+<h3 id="spryslice-build">/spry:slice-build</h3>
+<p>The second half: builds a slice whose work order is published, on its branch, to the plan. It
+stops and asks when the plan turns out wrong or short, and never guesses. When the code is built and
+committed (nothing is pushed), it stops, for <code>/spry:slice-close</code> in a fresh session. Run it
+on whichever model you like — a smaller one is the point.</p>
+<ul>
+  <li><strong>Arguments:</strong> a slice ID; without one, the open slice on the current branch.</li>
+  <li><strong>Audience:</strong> 8.</li>
+  <li><strong>Writes:</strong> the code and tests, committed on the slice's branch.</li>
+  <li><strong>Guide:</strong> <a href="../guides/building.html#plan-and-build-apart">Plan and build in separate sessions</a>.</li>
 </ul>
 
 <h3 id="spryslice-close">/spry:slice-close</h3>

@@ -3909,6 +3909,18 @@ class Pace(Base):
         p.config["slices"]["fresh_context"] = "big"
         self.assertTrue(any("slices.fresh_context" in str(e) for e in spry.check(p)))
 
+    def test_plan_and_build_are_sessions_of_their_own(self):
+        """CH-78: the context stop restarts the skill that is running; pace counts plan as open, build as build."""
+        t = self.tree()
+        self.log(t, "a", [said(0, "go"), used(reply(10), "r1", input_tokens=10, cache_read_input_tokens=200_000)])
+        p = t.project()
+        self.assertIn("`/spry:slice-build SL-1`", spry.brief(p, "SL-1", skill="slice-build"))
+        p.items["SL-1"].fm["state"] = "planned"
+        self.assertIn("`/spry:slice-plan SL-1`", spry.brief(p, "SL-1", skill="slice-plan"))
+        self.assertIn("`/spry:slice-open SL-1`", spry.brief(p, "SL-1"), "no skill named: by the slice's state")
+        self.assertEqual([spry.pace_phase_of(s) for s in ("spry:slice-plan", "/spry:slice-build", "slice-open")],
+                         ["open", "build", "open"])
+
     def test_a_session_of_one_call_a_request_is_flagged(self):
         """CH-77: nearly every request that called a tool called one — each re-read the whole session."""
         t = self.tree()

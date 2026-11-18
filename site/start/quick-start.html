@@ -128,8 +128,12 @@ which slices need an earlier one and which could be built side by side.</p>
   <li><strong>Writes the work order</strong> — a short summary anyone can read, the plan file by file, the rules it must not break, the tests (each named after a criterion, like <code>"S-2/AC-1 refuses a member with 3 books on loan"</code>), and a copy-paste demo.</li>
   <li><strong>Runs the conflict check</strong> — against the story, the project's rules and decisions, and open slices touching the same files.</li>
   <li><strong>Opens a draft pull request</strong> (one marked not yet ready to merge) with the work order as its body.</li>
-  <li><strong>Builds it</strong>, running quick checks after each change — then goes straight on to close it (step 5), unless you asked it to open only.</li>
+  <li><strong>Builds it</strong>, running quick checks after each change, and commits — then stops and asks you to <code>/clear</code> and close it (step 5), unless you asked it to open only.</li>
 </ol>
+
+<p>Want the plan written on one model and the code on a cheaper one? Run <code>/spry:slice-plan</code>,
+then <code>/clear</code> and <code>/spry:slice-build</code> instead.
+<a href="../guides/building.html#plan-and-build-apart">Plan and build apart →</a></p>
 
 <div class="callout warn">
   <span class="callout-title">When it will stop and ask</span>
@@ -143,8 +147,8 @@ which slices need an earlier one and which could be built side by side.</p>
 
 <pre data-label="Claude Code"><code>/spry:slice-close</code></pre>
 
-<p>slice-open does this for you; type <code>/spry:slice-close</code> yourself only for a slice you opened
-only, or picked up in a new session. Closing is where the slice earns its merge:</p>
+<p>Run it after <code>/clear</code>, once slice-open or slice-build says the code is built — a fresh
+session doesn't re-read the whole build on every request. Closing is where the slice earns its merge:</p>
 
 <ol class="steps">
   <li><strong>Rebase</strong> — bring the branch up to date with the latest main branch.</li>
