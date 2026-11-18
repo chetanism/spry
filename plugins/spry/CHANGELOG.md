@@ -1659,3 +1659,26 @@ Entry format:
     merge — to show where it went, and whether this helped.
 - **Adapt:** `slices.fresh_context` — tokens; `0` turns the check off.
 - **Migrate:** nothing.
+
+## CH-77 · The rest of the token reading: backlog rows, the reviewer's half, a check at every start
+
+- **Date:** 2026-11-18 · **Version:** 0.66.0
+- **Touches:** `tool/spry.py` (`backlog`, `brief`, `merge-ready`, `pace`), `process/slicing.md`
+  (*Open*), `process/reviewing.md` §2, `process/merging.md`, `skills/slice-open`, `skills/merge`,
+  `skills/review`, `skills/status`, `skills/worktree`, `process/templates/spry.config.json`
+  (`pace.flags.lone_share`)
+- **Why:** CH-76 left part of the same reading undone. The largest outputs in two projects' logs,
+  the ones over the agent's tool-result limit, were spry's own: `backlog` 42 times — 141KB in one
+  project, read whole to pick one row — and whole process files read by each reviewer.
+  - `backlog --section <name> --rows <n> --plain` — only the sections named, at most n rows each,
+    links as their text. `slice-open` with no ID reads four rows of *Ready to build*: 4KB in place
+    of 141KB in that project.
+  - A reviewer reads its part of `reviewing.md` through `proc` — about half the file.
+  - The context check (`slices.fresh_context`) also runs at the start of `slice-open`, through
+    `brief`, and in `merge-ready` before the ask. A session that built and merged one slice no
+    longer carries it into the next.
+  - `brief` works on a planned slice: the slice as written, with its criteria in words.
+  - `spry pace` puts a subagent's spend in the phase it started in, and shows the share of requests
+    that called a tool and called only one — flagged over `pace.flags.lone_share` (0.9).
+- **Adapt:** `pace.flags.lone_share` — a fraction.
+- **Migrate:** nothing.

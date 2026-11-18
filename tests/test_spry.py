@@ -611,6 +611,25 @@ class Backlog(Base):
         self.assertIn("| [S-1 Title of S-1](plan/M-1-m/E-1-e/F-1-f/S-1-s/README.md) · ready to build (A); "
                       "[SL-1 Slice SL-1](plan/M-1-m/E-1-e/F-1-f/S-1-s/SL-1-a.md) · ready to build (A) | A |", page)
 
+    def test_an_agent_reads_only_the_rows_it_needs(self):
+        """CH-77: `backlog --section --rows --plain` — the sections named, a few rows, links as text."""
+        waits = slice_("SL-2", state="planned", covers="[]").replace("pr: 1\n", "pr: 1\nblocked_by: [SL-1]\n")
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): slice_("SL-1", state="planned"),
+                         self.key(f"{S}/SL-3-c.md"): slice_("SL-3", state="planned"),
+                         self.key(f"{self.T}/README.md"): item("T-1", extra="blocked_by: [S-1]\n"),
+                         self.key(f"{self.T}/SL-2-b.md"): waits})
+        page = spry.backlog_block(t.project(), os.path.join(t.root, "spry/BACKLOG.md"))
+        cut = spry.page_trim(page, ["ready"], 1, True)
+        self.assertTrue(cut.startswith("### Ready to build"), cut)
+        self.assertNotIn("### Blocked", cut)
+        self.assertIn("| 1 | SL-1 Slice SL-1 |", cut)
+        self.assertNotIn("| 2 |", cut)
+        self.assertIn("… and 1 more", cut)
+        self.assertNotIn("](plan/", cut)
+        self.assertIn("](plan/", spry.page_trim(page, ["ready", "blocked"], None, False))
+        self.assertIn("### Blocked", spry.page_trim(page, ["ready", "blocked"], None, False))
+        self.assertEqual(spry.page_trim(page, ["nothing"]), "")
+
     def test_check_refuses_a_dropped_blocker(self):
         blocked = slice_("SL-1", state="planned").replace("pr: 1\n", "pr: 1\nblocked_by: [T-1]\n")
         t = self.tree(**{self.key(f"{S}/SL-1-a.md"): blocked, self.key(f"{self.T}/README.md"): item("T-1", state="dropped")})
@@ -3868,8 +3887,9 @@ class Pace(Base):
         self.assertIn("- tokens: 24k spend, in input-token equivalents — the main session 19k over 3 requests, "
                       "1 subagent 5k (21%); peak context 61k, 52k entering close; 6k per 100 lines", lines)
         self.assertIn("- size: 300–699 lines; ", lines)
-        self.assertIn("- main session's spend by phase: close 18k (92%), other 2k (8%)", lines,
-                      "CH-76: each request counted in the phase it fell in")
+        self.assertIn("- spend by phase: close 23k (94%; subagents 5k), other 2k (6%)", lines,
+                      "CH-76: each request counted in the phase it fell in; CH-77: a subagent in the phase it started in")
+        self.assertIn("- requests that called a tool: 1, 0% of them called one", lines, "r2 made two calls in one request")
 
     def test_brief_says_when_the_session_is_too_big_to_close_in(self):
         """CH-76: past `slices.fresh_context`, the close starts after /clear; a reviewer's --diff never asks."""
@@ -3879,6 +3899,8 @@ class Pace(Base):
         out = spry.brief(p, "SL-1")
         self.assertIn("! this session carries 200k tokens of context, over `slices.fresh_context` (150k)", out)
         self.assertIn("`/spry:slice-close SL-1`", out)
+        p.items["SL-1"].fm["state"] = "planned"
+        self.assertIn("`/spry:slice-open SL-1`", spry.brief(p, "SL-1"), "CH-77: the open checks too")
         self.assertNotIn("this session carries", spry.brief(p, "SL-1", diff=True))
         p.config.setdefault("slices", {})["fresh_context"] = 0
         self.assertNotIn("this session carries", spry.brief(p, "SL-1"), "0 turns the check off")
@@ -3886,6 +3908,21 @@ class Pace(Base):
         self.assertNotIn("this session carries", spry.brief(p, "SL-1"))
         p.config["slices"]["fresh_context"] = "big"
         self.assertTrue(any("slices.fresh_context" in str(e) for e in spry.check(p)))
+
+    def test_a_session_of_one_call_a_request_is_flagged(self):
+        """CH-77: nearly every request that called a tool called one — each re-read the whole session."""
+        t = self.tree()
+        records = [said(0, "<command-name>/spry:slice-open</command-name>")]
+        for n in range(25):
+            records += [used(tool(10 + 2 * n, f"c{n}", command="sed -n 1,5p a"), f"r{n}", input_tokens=10),
+                        result(11 + 2 * n, f"c{n}")]
+        self.log(t, "a", records + [reply(80)])
+        p = t.project()
+        s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
+        self.assertEqual((s["tool_requests"], s["lone"]), (25, 25))
+        self.assertTrue(any(f.startswith("100% of 25 requests that called a tool called one") for f in spry.pace_flags(p, s)))
+        s["lone"] = 20
+        self.assertFalse(any("called one" in f for f in spry.pace_flags(p, s)), "80% is under lone_share")
 
     def test_a_slice_shows_its_design_review(self):
         text = slice_("SL-1") + "\n### Design review\n\n- 1 Blocker, 4 Should — 1 asked\n"
@@ -5250,6 +5287,14 @@ class MergeFlow(unittest.TestCase):
             code, out = self.run_tool("merge-ready", "1", "--wait", "5")
         self.assertEqual(code, 1, "still pending when the wait runs out: blocked, as without --wait")
         self.assertIn("✗ checks pending: test", out)
+
+    def test_a_session_too_big_is_told_to_clear_before_the_ask(self):
+        """CH-77: the context check before a merge's ask."""
+        with unittest.mock.patch.object(spry, "session_context", lambda _p: 400_000):
+            out = self.run_tool("merge-ready", "1")[1]
+        self.assertIn("… this session carries 400k tokens of context", out)
+        self.assertIn("then `/spry:merge 1`", out)
+        self.assertNotIn("this session carries", self.run_tool("merge-ready", "1")[1])
 
     def test_brief_gives_the_slice_and_its_changes_in_one_call(self):
         """CH-76: the work order, the criteria in words and the files changed; --diff adds the diff."""

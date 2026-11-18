@@ -57,7 +57,9 @@ missing. So open, build, test and close run as one piece of work.
 
 ## Open — `/spry:slice-open [SL-n]`
 
-No argument → read *Ready to build* in `spry.py backlog`, and ask which slice to open:
+No argument → read *Ready to build* with `spry.py backlog --section ready --rows 4 --plain` — the
+rows to choose from, without the rest of the backlog or its links' paths — and ask which slice to
+open:
 
 - `slices.pick: offer` (default) — the first row, recommended, and the next two as alternatives.
 - `slices.pick: ask` — the first four rows, none recommended: the order is the plan's and the
@@ -69,7 +71,10 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
    the main branch and pushes; refused when someone
    holds it, naming the branch — then offer the next ready row. Either way it makes the branch
    `sl-<n>-<slug>` and switches to it. Not opened after all → `spry.py release SL-<n>`.
-1. **Read:** the parent and its feature, every knowledge file the change could touch (conventions,
+1. **Read:** `spry.py brief SL-<n>` first — the slice and the criteria it covers in one call. When it
+   says the session's context is past `slices.fresh_context`, stop: `[Run] /clear`, then
+   `/spry:slice-open SL-<n>` — a session that built and merged the last slice would carry it into
+   every request of this one. Then the parent and its feature, every knowledge file the change could touch (conventions,
    decisions, external behaviour, security, performance), and the code.
 2. **Write the work order** — every `###` under `## Work order`:
    - `Summary` first: 2–4 bullets, readable by anyone — what will be done and what a person will see.
@@ -119,7 +124,7 @@ No argument → read *Ready to build* in `spry.py backlog`, and ask which slice 
   - Read only the part of a file or an output you need (`sed -n`, `grep -n`), never a whole log.
   - Let the tool wait (`gate` in the background, `merge-ready --wait`), never a polling loop.
   - `spry.py brief SL-<n>` gives the work order, the criteria in words and the files changed in
-    one call.
+    one call; `backlog --section … --rows … --plain` only the rows needed.
 - **A slice built in steps** is built one step at a time and never committed by hand — *Steps* →
   *Build*.
 - **Check each change with `spry.py gate --fast`:** `spry check`, then the fast checks

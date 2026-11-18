@@ -165,6 +165,7 @@ squashes and does everything after it.</p>
 <ol class="steps">
   <li><strong>Checks are green.</strong>
     <p>Red → stop. Pending → <code>merge-ready --wait</code> waits for them on this machine, in the background.
+    A session past <code>slices.fresh_context</code> is asked to <code>/clear</code> before the ask, as at the open and the close.
     Nothing on the platform may stop a bad merge, so this step is the only guard.</p></li>
   <li><strong>The slice is ready.</strong>
     <p><code>spry.py merge-check</code> blocks when a control the diff adds has no falsify row, when a

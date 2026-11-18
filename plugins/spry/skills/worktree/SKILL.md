@@ -26,7 +26,7 @@ argument-hint: "[index | name | new]"
    - Where the session cannot move, print the path and tell the person to start a session in it
      (`cd <path> && claude`), then `release` the claim here: the new session claims it itself.
 4. **Report** in two lines: the worktree, its index and branch; what the next slice is
-   (`spry.py backlog`, *Ready to build*) or the open slice its branch builds.
+   (`spry.py backlog --section ready --rows 1 --plain`) or the open slice its branch builds.
 
 - **Never** enter a worktree another session claimed, run `worktree release --force` without the
   person's yes, or delete a worktree: `worktree prune` removes only falsify's scratch trees and the

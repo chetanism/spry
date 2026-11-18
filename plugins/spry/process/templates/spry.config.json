@@ -1,6 +1,6 @@
 {
-  "spry": "0.65.0",
-  "spry_baseline": "CH-76",
+  "spry": "0.66.0",
+  "spry_baseline": "CH-77",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -71,7 +71,7 @@
   "pace": {
     "away": 30,
     "logs": [],
-    "flags": {"falsify_share": 0.2, "session_share": 0.2, "lock_share": 0.15, "merge_wait_share": 0.5, "review_agents": 3},
+    "flags": {"falsify_share": 0.2, "session_share": 0.2, "lock_share": 0.15, "merge_wait_share": 0.5, "review_agents": 3, "lone_share": 0.9},
     "token_weights": {"input": 1, "cache_read": 0.1, "cache_write_5m": 1.25, "cache_write_1h": 2, "output": 5},
     "buckets": [300, 700, 1300, 2500]
   },

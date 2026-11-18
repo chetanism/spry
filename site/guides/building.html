@@ -29,7 +29,8 @@ undo.</p>
 <span class="c"># or, with no ID, pick from the backlog's "Ready to build"</span>
 <span class="p">&gt; </span>/spry:slice-open</code></pre>
 
-<p>With no ID, the agent reads <em>Ready to build</em> from the backlog and asks which to open. By default
+<p>With no ID, the agent reads the first rows of <em>Ready to build</em>
+(<code>spry.py backlog --section ready --rows 4 --plain</code>) and asks which to open. By default
 it recommends the first row and offers the next two. A project can set <code>slices.pick: ask</code> in its config instead:
 then it lists the first four and recommends none, because what else bears on the choice — a design
 not settled, an outside team's date — is the person's call. See <a href="team.html">Work as a team</a>.</p>
@@ -43,7 +44,10 @@ not settled, an outside team's date — is the person's call. See <a href="team.
     <code>mint: main</code> set (IDs and claims taken on the main branch), the claim is pushed to the main branch, and refused if someone already
     holds the slice. Not going ahead after all? <code>spry.py release SL-2</code> gives it back.</p></li>
   <li><strong>Read.</strong>
-    <p>The story and its feature, every knowledge file the change could touch — conventions,
+    <p><code>spry.py brief SL-2</code> first: the slice and the criteria it covers, in one call. If the
+    session is already past <code>slices.fresh_context</code> — it built and merged the last slice, say — it
+    stops and asks you to <code>/clear</code> and run <code>/spry:slice-open SL-2</code> again. Then the story
+    and its feature, every knowledge file the change could touch — conventions,
     decisions, how external services behave, security and performance rules — and the code.</p></li>
   <li><strong>Write the work order.</strong>
     <p>Every section of the slice file's <em>Work order</em>, before any code. What goes in each is below.</p></li>

@@ -621,7 +621,7 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 
 ## 17. Pace — where a slice's time goes
 
-> **Status:** built in CH-44 (0.33.0); the `/spry:pace` skill in CH-47 (0.36.0); `/spry:retro`, which joins it with memory-check, in CH-48 (0.37.0); tokens, falsify outcomes and gate reruns in CH-57 (0.46.0); red checks by rule, subagents by kind, review findings and a comparison within one size in CH-61 (0.50.0); bugs filed later, by the slice that introduced them, in CH-62 (0.51.0); spend by phase in CH-76 (0.65.0). Prototype: `docs/spikes/pace.py`.
+> **Status:** built in CH-44 (0.33.0); the `/spry:pace` skill in CH-47 (0.36.0); `/spry:retro`, which joins it with memory-check, in CH-48 (0.37.0); tokens, falsify outcomes and gate reruns in CH-57 (0.46.0); red checks by rule, subagents by kind, review findings and a comparison within one size in CH-61 (0.50.0); bugs filed later, by the slice that introduced them, in CH-62 (0.51.0); spend by phase in CH-76 (0.65.0), with subagents and one-call requests in CH-77 (0.66.0). Prototype: `docs/spikes/pace.py`.
 
 Purpose: show where each slice's time and tokens went — the agent, the checks, waiting on a person —
 so that person can judge what to change: the process, the config, the tests, or spry. Report only;
@@ -708,8 +708,12 @@ it never changes anything.
   - **Context** is everything one request sent, cached or not. A slice keeps its peak, and the
     context of the first request after `slice-close` started — what every turn of the close then
     carries.
-  - **By phase:** the main session's spend is also split by the phase each request fell in (open,
-    build, close, review, fixes, merge, other), so a change aimed at one phase shows there (CH-76).
+  - **By phase:** spend is also split by the phase each request fell in (open, build, close,
+    review, fixes, merge, other), so a change aimed at one phase shows there (CH-76). A subagent's
+    spend goes to the phase the session was in when it started (CH-77).
+  - **One call a request:** of the requests that called a tool, the share that called one. Each
+    request reads the whole session again, so a share over `pace.flags.lone_share` (0.9, from 20
+    such requests) is flagged (CH-77).
   - **Size:** spend and active time are also shown per 100 changed lines, and each slice falls in
     a size bucket (`pace.buckets`: 300, 700, 1300, 2500 lines) so that it is set against slices
     of its own size.
@@ -877,7 +881,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `status [--level]` | roll-up from §6 |
 | `index` | regenerate marker blocks and `INDEX.md` files (CI on `main`) |
 | `coverage` | the coverage page (§13): defined vs done, built but not proven |
-| `backlog` | the backlog page (§13): in progress, ready to build, needs slicing, blocked, needs planning |
+| `backlog [--section]… [--rows] [--plain]` | the backlog page (§13): in progress, ready to build, needs slicing, blocked, needs planning; or only the sections named, at most `--rows` rows of each, and with `--plain` links as their text — what an agent choosing a slice reads |
 | `done` | the done page (§13): finished stories, tasks and bugs, newest first |
 | `work <owner> --since [--until] [--json]` | what one person built: their slices closed in the range under each story, task or bug, newest first; their slices being built now; closed slices with no owner or no date, named |
 | `owners --from-prs <file>` | once, for slices from before CH-40: fill a missing slice `owner` from its pull request's author (`gh pr list --json number,author`), a member's name by login |
@@ -890,7 +894,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it, with its `owner` — and cut its branch; give it back |
 | `link <slice> [--branch] [--pr] [--owner [name]]` · `link <item> --issue <n>` | set them in the slice's front-matter; a bare `--owner` is the person at this clone. On a plan item, add an issue to its `issues:` |
 | `issues [--sync [--dry-run]] [--offline] [--json]` · `issues --legacy [--close]` | each issue plan items name, its stage (§14) and whether its label shows it; `--sync` sets the label and comments when the stage changes, never closing one; `--legacy` the per-slice issues from before CH-52 still open, `--close` closes them with a comment |
-| `brief <slice> [--diff]` | a slice in one call: `pr-body`'s page, then the files the branch changed (`--stat`); `--diff` adds the whole diff, for a reviewer. Without `--diff`, a `!` first when this checkout's session carries more context than `slices.fresh_context` (150k; 0 turns it off) — the close starts in a fresh session |
+| `brief <slice> [--diff]` | a slice in one call: `pr-body`'s page (a planned slice: the slice as written, with its criteria in words), then the files the branch changed (`--stat`); `--diff` adds the whole diff, for a reviewer. Without `--diff`, a `!` first when this checkout's session carries more context than `slices.fresh_context` (150k; 0 turns it off) — the open or the close starts in a fresh session; `merge-ready` says the same before its ask |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean; with `slices.design_review`, a warning when the work order has no design review or a Blocker went unasked |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
@@ -1384,6 +1388,13 @@ in `spry/history/writ.md`, then retires `canon/`.
   phase to show whether it worked. Rejected: pasting the brief into a reviewer's prompt — the main
   session would pay output rates to write it; and a hook that clears the session, which an agent
   cannot do.
+- 2026-11-18 — the rest of the same reading (CH-77, 0.66.0). The largest outputs that overflowed
+  the agent's tool-result limit were not test runs, as guessed, but spry's own `backlog` — 141KB in
+  one project, read whole to pick one row of *Ready to build* — and whole process files read by
+  each reviewer. So `backlog` takes `--section`, `--rows` and `--plain`; a reviewer reads its part
+  of `reviewing.md` through `proc`; the context check runs at the open and the merge as well as the
+  close; and pace splits subagents' spend by phase and counts requests that called one tool.
+  Rejected: shortening test output — 12 overflows in two projects, against 42 for `backlog` alone.
 
 ## 24. Worktrees and progress
 

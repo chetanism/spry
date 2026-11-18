@@ -11,7 +11,9 @@ argument-hint: "[PR number or slice ID]"
 - **Pull request:** `$ARGUMENTS`, or the current branch's. Never guess between two.
 - **The tool runs the steps:** `spry.py merge-ready <n>` (steps 1–5, then the ask and the command),
   and on the yes `spry.py merge-finish <n>` (steps 7–8). By hand only for a PR no slice names.
-  Checks pending → `merge-ready <n> --wait` in the background, never a polling loop.
+  Checks pending → `merge-ready <n> --wait` in the background, never a polling loop. A
+  `… this session carries` line → stop before the ask and tell the person to `/clear` and run
+  `/spry:merge <n>` again.
 - **Never merge** a red or pending PR, without a yes for this PR in this conversation, or with
   `--admin`. A review's *fix, then merge* answer is that yes, unless the merge finds something the
   review did not report.
