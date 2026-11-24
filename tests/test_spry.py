@@ -3392,6 +3392,13 @@ class Merge(Base):
         t = self.tree(**{"spry__spry.config.json": json.dumps({**CONFIG, "slices": {"design_review": "yes"}})})
         self.assertProblem(t.problems(), "`slices.design_review` is `yes`")
 
+    def test_planning_review_is_always_or_offer(self):
+        t = self.tree(**{"spry__spry.config.json": json.dumps({**CONFIG, "planning": {"review": "never"}})})
+        self.assertProblem(t.problems(), "`planning.review` is `never`")
+        for value in ("always", "offer"):
+            t = self.tree(**{"spry__spry.config.json": json.dumps({**CONFIG, "planning": {"review": value}})})
+            self.assertFalse([p for p in t.problems() if "planning.review" in str(p)])
+
     def test_open_slice_blocks(self):
         t = self.tree(**{f"{S}/SL-1-a.md".replace("/", "__"): slice_("SL-1", state="open")})
         self.assertIn("state is `open`", " ".join(self.blocks(spry.merge_check(t.project(), "SL-1"))))

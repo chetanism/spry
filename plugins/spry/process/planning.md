@@ -67,7 +67,7 @@ instead: read it, then interview only for its empty sections.
 
 ## 5. Finish
 
-`interview.md` → *Finishing*: conflict check, summary, `ready`, `spry check`, commit. Then offer the
+`interview.md` → *Finishing*: conflict check, a review by fresh eyes, summary, `ready`, `spry check`, commit. Then offer the
 next step in one line: the level below (`/spry:epic`, `/spry:feature`, `/spry:story`), or for a
 ready story, `/spry:slice`.
 
@@ -89,6 +89,11 @@ Run by `bug` and `task`. Same interview rules; neither counts toward its parent'
   changed the faulty lines. Never fill it on a guess: empty is allowed, and a wrong slice
   spoils the count `spry pace` keeps of what got past review.
 - **Severity:** `blocker` (stops a release), `major` (a criterion or rule fails), `minor` (anything else).
+- **Replayable evidence** skips the review at *Finishing*: the bug's `## Evidence` names a run the
+  agent made and saw fail, in a form anyone can run again — an explore seed and its step
+  (`.spry/explore/<seed>/`), a failing test by path and name, or a command with the output it gave.
+  Steps a person wrote down, even ones the agent then followed, are not evidence: that bug is
+  reviewed like any other item.
 - **Finish** as `interview.md` → *Finishing*, then offer `/spry:slice <ID>`.
 
 ## From a GitHub issue

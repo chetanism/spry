@@ -107,6 +107,7 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
     "session_end": true
   },
   "memory": { "index_lines": 60, "index_bytes": 8000, "line_chars": 200, "stale_days": 30 },
+  "planning": { "review": "always" },
   "slices": { "pick": "offer", "mode": "split", "design_review": false, "fresh_context": 150000, "steps": { "max": 5, "max_lines": 800, "step_lines": 0, "tests": false, "tests_skip": [] } },
   "worktrees": { "dir": ".claude/worktrees", "home_branch": "alt{index}", "max": 4, "setup": "", "share": [], "stale_after": 12 },
   "progress": { "transcripts": false, "quiet": 15, "keep": 400 },
@@ -132,6 +133,7 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
     <tr><td><code>product</code></td><td>The product's name. <code>scrub</code> treats it as a private word.</td><td>—</td></tr>
     <tr><td><code>levels</code></td><td>The planning levels, biggest first. A small project may drop <code>epic</code>; features then sit straight under milestones.</td><td><code>["milestone", "epic", "feature", "story"]</code></td></tr>
     <tr><td><code>ids</code></td><td>The prefix for each type's IDs. IDs are flat counters per type — <code>S-12</code>, never <code>M2.E3.S12</code> — so moving an item never renumbers it.</td><td><code>M</code> <code>E</code> <code>F</code> <code>S</code> <code>SL</code> <code>T</code> <code>B</code> <code>D</code></td></tr>
+    <tr><td><code>planning.review</code></td><td><code>"always"</code>: every new milestone, epic, feature, story, task and bug is read by a new agent before it goes <code>ready</code>, and you choose which findings to apply. <code>"offer"</code>: you are asked once instead. A bug with replayable evidence skips it either way. See <a href="../guides/planning.html">Planning</a>.</td><td><code>"always"</code></td></tr>
   </tbody>
 </table>
 

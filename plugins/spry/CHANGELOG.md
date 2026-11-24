@@ -1704,3 +1704,23 @@ Entry format:
   - Which model runs each skill is the person's choice (`/model`); nothing is pinned.
 - **Adapt:** nothing.
 - **Migrate:** nothing.
+
+## CH-79 · A new plan item is reviewed before it is ready
+
+- **Date:** 2026-11-19 · **Version:** 0.68.0
+- **Touches:** `process/interview.md` (*Finishing*), `process/planning.md` (§5, *Bugs and tasks*),
+  `process/reviewing.md` (§1, §5), `process/templates/bug.md` (`## Evidence`),
+  `process/templates/spry.config.json` (`planning.review`), `tool/spry.py` (`check`)
+- **Why:** a milestone, epic, feature, story, task or bug was marked `ready` and committed first;
+  `/spry:review` was only offered afterwards, in one line, and was easy to skip. What it found
+  meant reopening an item that the backlog already showed as ready.
+  - At *Finishing*, a new agent now reviews the draft from the working tree after the conflict
+    check and before the `ready` ask. The accepted fixes go into the item's own commit. Several
+    items finished in one run are reviewed together, one agent each.
+  - `planning.review: "offer"` brings back the one-line offer; `"always"` is the default.
+  - A bug whose `## Evidence` names a run the agent made and saw fail, that anyone can run again
+    (an explore seed, a failing test, a command and its output), skips the review. A bug from a
+    person's steps is reviewed like any other item.
+  - `spry check` refuses a `planning.review` other than `always` or `offer`.
+- **Adapt:** `planning.review` — `always` (default) or `offer`.
+- **Migrate:** nothing. Items already `ready` are not re-reviewed.

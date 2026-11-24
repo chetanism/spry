@@ -32,6 +32,10 @@ related: []
 
 <!-- guide: who is affected and how often. -->
 
+## Evidence
+
+<!-- guide: optional. Only a run the agent made and saw fail, that anyone can run again: an explore seed and step, a failing test by path and name, or a command and the output it gave. With it, the bug skips the fresh review before ready. Delete the section when there is none. -->
+
 ## Slices
 
 <!-- spry:children -->

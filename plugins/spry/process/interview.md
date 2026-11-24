@@ -48,9 +48,15 @@ fill optional sections for the sake of it — delete them.
 
 1. Remove every guide comment and placeholder; delete empty optional sections.
 2. Run the conflict check — `conflicts.md`.
-3. Show the person a short summary at their tone; ask to mark it `ready`.
-4. On yes: set `state: ready`; run `python3 spry/tool/spry.py check`; fix what it reports.
-5. Commit (`docs(plan): <ID> <title>`). With a team configured and the path under a `review` rule,
-   open a pull request for the reviewers instead of committing to the main branch.
-6. Offer `/spry:review <ID>` in one line — a fresh pair of eyes on what was just written
-   (`reviewing.md` §2). Solo, it is the only one.
+3. **The review, before `ready`.** A plan item gets `/spry:review <ID>` — a new agent reads the
+   draft as it stands in the working tree (`reviewing.md` §1–§4). Solo, it is the only second pair of
+   eyes. Show its findings; on the person's yes, apply the accepted ones to the draft. Several items
+   finished in one run are reviewed together, one agent each, in parallel.
+   - `planning.review: "offer"` → offer it in one line instead, and go on at a no.
+   - **A bug with replayable evidence** (`planning.md` → *Bugs and tasks*) skips it, and says so in
+     one line.
+4. Show the person a short summary at their tone; ask to mark it `ready`.
+5. On yes: set `state: ready`; run `python3 spry/tool/spry.py check`; fix what it reports.
+6. Commit (`docs(plan): <ID> <title>`) — the review's fixes are part of it. With a team configured
+   and the path under a `review` rule, open a pull request for the reviewers instead of committing
+   to the main branch; the agent's review came first, so they read a draft already checked.
