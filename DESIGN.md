@@ -276,7 +276,8 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
   Standard library only: `http.server` and a small Markdown renderer covering what spry's documents
   use, escaping all HTML but the tags GitHub allows. A page is a document under the project root at
   its own path, so relative links work as on GitHub; its generated blocks are built for the working
-  tree as it is shown (the same makers `index` uses); a sidebar holds the plan tree with done/total;
+  tree as it is shown (the same makers `index` uses); a sidebar holds the plan tree with done/total, a dropped item green and struck through (settled,
+  not left to do);
   an item gets its breadcrumbs and front-matter as badges (PR, issue, `covers`, `blocked_by`,
   `related` as links); search is `find`. Dot-folders and `SKIP_DIRS` are never served.
   **Never a second way to write:** edits go through the skills, which run the conflict check and
