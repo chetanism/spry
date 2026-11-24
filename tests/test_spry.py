@@ -391,6 +391,23 @@ class Status(Base):
         t = self.tree(**{f"{S}/checks.md".replace("/", "__"): log + "| 2026-10-03 | AC-1 | y | Q | fail | |\n"})
         self.assertFalse(self.done(t, "S-1"), "a failed manual check outranks a test")
 
+    def test_each_scenario_keeps_its_own_latest_run(self):
+        head = ("---\ntitle: c\naudience: 4\n---\n# c\n\n## Scenarios\n\n### AC-1 · At the desk\n\n1. a → b\n\n"
+                "### AC-1 · By post\n\n1. a → b\n\n## Check log\n\n"
+                "| Date | AC | Scenario | Build | By | Result | Notes |\n|---|---|---|---|---|---|---|\n"
+                "| 2026-10-01 | AC-1 | at the  desk | x | Q | fail | B-9 |\n"
+                "| 2026-10-02 | AC-1 | By post | x | Q | pass | |\n")
+        key = f"{S}/checks.md".replace("/", "__")
+        t = self.tree(**{"src/a.test.ts": "nothing\n", key: head})
+        self.assertFalse(self.done(t, "S-1"), "a pass of one scenario does not hide a failure of another")
+        self.assertEqual(t.project().manual["S-1"]["AC-1"][:4], ("2026-10-01", "x", "Q", "fail"))
+        t = self.tree(**{"src/a.test.ts": "nothing\n", key: head + "| 2026-10-03 | AC-1 | At the desk | y | Q | pass | |\n"})
+        self.assertTrue(self.done(t, "S-1"))
+        t = self.tree(**{"src/a.test.ts": "nothing\n", key: head + "| 2026-10-03 | AC-1 | | y | Q | pass | |\n"})
+        self.assertTrue(self.done(t, "S-1"), "a row naming no scenario is a run of the whole criterion")
+        t = self.tree(**{key: head + "| 2026-10-03 | AC-1 | By bus | y | Q | pass | |\n"})
+        self.assertTrue(any("scenario `By bus`, and no scenario for AC-1" in p for p in t.problems()))
+
     def test_dropped_children_are_not_counted(self):
         t = self.tree(**{f"{F}/S-2-x/README.md".replace("/", "__"): story("S-2", state="dropped")})
         self.assertTrue(self.done(t, "F-1"))
@@ -5122,6 +5139,34 @@ class Serve(Base):
         self.assertRegex(page, r'<a href="[^"]*S-2-x/README.md" class="dropped"[^>]*><i class="mark dropped">')
         self.assertIn(".mark.dropped{background:var(--accent)", page)
         self.assertIn("aside a.dropped span", page)
+
+    def test_the_qa_page_says_what_to_test_next(self):
+        checks = ("---\ntitle: c\naudience: 4\n---\n# c\n\n## Scenarios\n\n"
+                  "### AC-1 · One\n\n**Type** happy path · **Where** desk · **Ready** yes\n\n1. a → b\n\n"
+                  "### AC-2 · Two\n\n**Type** negative · **Where** desk · **Ready** yes\n\n1. a → b\n\n"
+                  "### AC-3 · Three\n\n**Type** negative · **Where** desk · **Ready** yes\n\n1. a → b\n\n"
+                  "### AC-5 · Later\n\n**Type** boundary · **Where** desk · **Ready** no — waits for S-1\n\n1. a → b\n\n"
+                  "## Check log\n\n| Date | AC | Scenario | Build | By | Result | Notes |\n|---|---|---|---|---|---|---|\n"
+                  "| 2026-09-20 | AC-2 | Two | b1 | Q | pass | |\n"
+                  "| 2026-10-05 | AC-3 | Three | b2 | Q | fail | see S-1 |\n")
+        t = self.tree(**{self.key(f"{S}/README.md"): story("S-1", acs=("AC-1", "AC-2", "AC-3", "AC-4", "AC-5")),
+                         self.key(f"{S}/SL-1-a.md"): slice_("SL-1", covers="[AC-1, AC-2, AC-3, AC-4]"),
+                         self.key(f"{S}/checks.md"): checks, "src/a.test.ts": "nothing\n"})
+        page = self.get(t, "/-/qa")[2].decode()
+        self.assertIn('<a href="/-/qa">QA</a>', page)
+        lists = {h: page.split(f"<h2>{h}</h2>")[1].split("<h2>")[0]
+                 for h in ("Ready to test", "Failing", "Run again", "Needs scenarios", "Waiting")}
+        self.assertIn("AC-1</td>", lists["Ready to test"])
+        self.assertIn("AC-2</td>", lists["Run again"], "passed 2026-09-20, built again 2026-10-01")
+        self.assertIn("AC-3</td>", lists["Failing"])
+        self.assertIn('title="Title of S-1">S-1</a>', lists["Failing"].split("<td>")[4], "IDs in the notes link")
+        self.assertIn("AC-4</td>", lists["Needs scenarios"])
+        self.assertIn("Later", lists["Waiting"])
+        for h, body in lists.items():
+            self.assertEqual(body.count("<tr>") - 1, 1, h)
+
+    def key(self, rel):
+        return rel.replace("/", "__")
 
     def test_item_page_has_fresh_blocks_and_links(self):
         t = self.tree()

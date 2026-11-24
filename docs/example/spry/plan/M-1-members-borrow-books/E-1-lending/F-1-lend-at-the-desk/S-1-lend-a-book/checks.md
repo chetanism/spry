@@ -50,9 +50,9 @@ order — once each per seed. AC-2 runs after 18:30.
 
 ## Check log
 
-| Date | AC | Build | By | Result | Notes |
-|---|---|---|---|---|---|
-| 2026-10-04 | AC-1 | `a1c9e02` | Meera | pass | |
-| 2026-10-04 | AC-2 | `a1c9e02` | Meera | pass | printed at 11:20 |
-| 2026-10-04 | AC-3 | `a1c9e02` | Meera | pass | |
-| 2026-10-06 | AC-2 | `a1c9e02` | Meera | fail | printed at 19:05, due date one day early → B-1 |
+| Date | AC | Scenario | Build | By | Result | Notes |
+|---|---|---|---|---|---|---|
+| 2026-10-04 | AC-1 | Lend to a member under the limit | `a1c9e02` | Meera | pass | |
+| 2026-10-04 | AC-2 | Receipt shows the due date | `a1c9e02` | Meera | pass | printed at 11:20 |
+| 2026-10-04 | AC-3 | Book already on loan | `a1c9e02` | Meera | pass | |
+| 2026-10-06 | AC-2 | Receipt shows the due date | `a1c9e02` | Meera | fail | printed at 19:05, due date one day early → B-1 |

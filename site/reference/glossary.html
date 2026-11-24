@@ -83,8 +83,8 @@ and spry checks you stick to it.</p>
 
   <dt>Check log</dt>
   <dd>The table at the bottom of a story's <code>checks.md</code> where QA appends one row per
-  criterion per run: date, criterion, build, who, pass or fail. The latest row for a criterion decides
-  it. <a href="../guides/qa.html">Checks for QA</a>.</dd>
+  scenario run: date, criterion, scenario, build, who, pass or fail. The latest run of each scenario
+  decides; one failing un-proves the criterion. The QA page of <code>spry serve</code> reads it. <a href="../guides/qa.html">Checks for QA</a>.</dd>
 
   <dt>Checks file</dt>
   <dd>A story's <code>checks.md</code>: the scenarios QA follows by hand, and the check log.
@@ -305,7 +305,7 @@ and spry checks you stick to it.</p>
 
   <dt>Proven</dt>
   <dd>A criterion is proven by a test whose name contains its citation (<code>S-1/AC-2</code>), or by a
-  <code>pass</code> as the latest row for it in the check log. A skipped test proves nothing, and a later
+  <code>pass</code> in the check log, with no scenario's latest run failed. A skipped test proves nothing, and a later
   <code>fail</code> row un-proves it, test or not. <a href="../design/status.html">Status is derived</a>.</dd>
 
   <dt>Pull request (PR)</dt>

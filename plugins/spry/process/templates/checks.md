@@ -28,7 +28,7 @@ audience: 4
 
 ## Check log
 
-<!-- guide: append only; never edit a past row. `build` is the version, commit or deploy that was tested. A `fail` names the scenario in Notes. -->
+<!-- guide: append only; never edit a past row. One row per scenario run: `Scenario` is the scenario's name, the words after `AC-n ·` in its heading; left empty, the row is a run of the whole criterion. `build` is the version, commit or deploy that was tested. A `fail` says what happened in Notes, with its bug's ID. -->
 
-| Date | AC | Build | By | Result | Notes |
-|---|---|---|---|---|---|
+| Date | AC | Scenario | Build | By | Result | Notes |
+|---|---|---|---|---|---|---|

@@ -147,7 +147,10 @@ spry/
 - **Slice** done = `closed`. `slice-close` sets it in the PR's last commit, so on `main` it means merged.
 - **Acceptance criterion** proven = a test whose name contains `S-1/AC-1` — inside a string on the
   line (a title, a docstring, a parametrize id), never a comment or code, which `check` warns about
-  — or a `pass` as the latest row for it in the story's `checks.md`. A line that skips the test or leaves it to do
+  — or a `pass` as the latest row for it in the story's `checks.md`, read per scenario: the log's
+  optional `Scenario` column names which one ran, and the criterion fails while the latest run of
+  any of its scenarios failed (an empty cell is a run of the whole criterion, resetting them all).
+  A line that skips the test or leaves it to do
   (`it.skip`, `test.todo`, `xit`, `@pytest.mark.skip`) proves nothing. A later `fail` row un-proves it, test or not — a person
   saw it broken.
 - **Story** done = all its slices done **and** every AC proven.
@@ -280,6 +283,11 @@ Run by `milestone`, `epic`, `feature`, `story`, `task` and `slice-open` before a
   not left to do);
   an item gets its breadcrumbs and front-matter as badges (PR, issue, `covers`, `blocked_by`,
   `related` as links); search is `find`. Dot-folders and `SKIP_DIRS` are never served.
+  **The QA page** (`/-/qa`) answers what to test next, per ready story's criterion: *ready to
+  test* (a closed slice built it, a scenario is ready, no run yet), *failing*, *run again* (a slice
+  covering it, or of a bug that breaks it, closed after its last pass), *needs scenarios* (no
+  scenario, no test), *waiting* (`Ready no`), then each story criterion by criterion. Built from the
+  plan on each request; a run is still a row in `checks.md`.
   **Never a second way to write:** edits go through the skills, which run the conflict check and
   `check`. **The files stay the only source** — no database holds a document; SQLite is the
   `find` cache only, deletable at any time. Reading a big plan takes seconds on a slow disk (5 s for
@@ -1421,6 +1429,12 @@ in `spry/history/writ.md`, then retires `canon/`.
   type up a person's vague report just as well, and what makes a review redundant is a reproduction
   already run. Rejected: a `reviewed:` field that `check` requires, because the plan skills are the
   only path to `ready`, and the field would mean a migration for every existing item.
+- 2026-11-24 — `serve` has a QA page, and the check log has an optional `Scenario` column (CH-81,
+  0.70.0). A criterion fails while the latest run of any of its scenarios failed. Rejected: letting
+  the latest row across all scenarios decide, because a pass of one scenario would then hide a
+  failure of another. Rejected: a form in `serve` for logging a run, because serve never writes.
+  Rejected: a generated `QA.md`, because the page's lists depend on what has closed, which the main
+  branch's blocks show only after CI runs.
 
 ## 24. Worktrees and progress
 

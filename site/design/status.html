@@ -35,7 +35,7 @@ and counts.</p>
 <thead><tr><th>Level</th><th>Done when</th></tr></thead>
 <tbody>
 <tr><td><strong>Slice</strong></td><td><code>state: closed</code>. <code>/spry:slice-close</code> sets it in the pull request's last commit, so on the main branch "closed" means merged.</td></tr>
-<tr><td><strong>Acceptance criterion</strong></td><td><em>Proven</em>: a test whose name contains <code>S-1/AC-1</code>, or a <code>pass</code> as the latest row for it in the story's <code>checks.md</code>.</td></tr>
+<tr><td><strong>Acceptance criterion</strong></td><td><em>Proven</em>: a test whose name contains <code>S-1/AC-1</code>, or a <code>pass</code> in the story's <code>checks.md</code>, with no scenario's latest run for it failed.</td></tr>
 <tr><td><strong>Story</strong></td><td>All its slices are done <strong>and</strong> every criterion is proven.</td></tr>
 <tr><td><strong>Feature, epic, milestone</strong></td><td>All counted children are done. Dropped ones are left out; bugs and tasks never count.</td></tr>
 </tbody></table></div>

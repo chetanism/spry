@@ -101,21 +101,25 @@ can't set up goes under <em>Before you start</em>, addressed to whoever prepares
 
 <h2>Logging a check</h2>
 
-<p>Each time a tester runs a criterion, they append one row to the <em>Check log</em> — the table at the end
+<p>Each time a tester runs a scenario, they append one row to the <em>Check log</em> — the table at the end
 of the story's <code>checks.md</code> — and commit it (or ask the agent to add the row for them). Rows are never
 edited.</p>
 
-<pre data-label="checks.md — Check log (excerpt: two of S-1's four rows)"><code>| Date       | AC   | Build   | By    | Result | Notes                                        |
-|------------|------|---------|-------|--------|----------------------------------------------|
-| 2026-10-04 | AC-2 | a1c9e02 | Meera | pass   | printed at 11:20                             |
-| 2026-10-06 | AC-2 | a1c9e02 | Meera | fail   | printed at 19:05, due date one day early → B-1 |</code></pre>
+<pre data-label="checks.md — Check log (excerpt: two of S-1's four rows)"><code>| Date       | AC   | Scenario                   | Build   | By    | Result | Notes                                          |
+|------------|------|----------------------------|---------|-------|--------|------------------------------------------------|
+| 2026-10-04 | AC-2 | Receipt shows the due date | a1c9e02 | Meera | pass   | printed at 11:20                               |
+| 2026-10-06 | AC-2 | Receipt shows the due date | a1c9e02 | Meera | fail   | printed at 19:05, due date one day early → B-1 |</code></pre>
 
 <ul>
+  <li><strong>Scenario</strong> is the scenario's name, the words after <code>AC-n ·</code> in its heading, so a
+  criterion with three scenarios shows which of them ran. Left empty, the row is a run of the whole
+  criterion. A log without the column, written before spry 0.70, still works.</li>
   <li><strong>Build</strong> is what was tested — a version, a commit, a deploy.</li>
-  <li><strong>A fail names the scenario and what happened.</strong> A result nobody can act on is not a run.</li>
-  <li><strong>The latest row decides.</strong> A <code>pass</code> proves the criterion when no test does. A
-  <code>fail</code> un-proves it even if a test passes — a person saw it broken. Record a bug with
-  <a href="bugs-and-tasks.html">/spry:bug</a> and put its ID in the notes.</li>
+  <li><strong>A fail says what happened.</strong> A result nobody can act on is not a run.</li>
+  <li><strong>The latest run of each scenario decides.</strong> A criterion is proven by hand when no
+  scenario's latest run failed; a <code>pass</code> proves it when no test does. A <code>fail</code>
+  un-proves it even if a test passes — a person saw it broken — until that scenario passes again. Record
+  a bug with <a href="bugs-and-tasks.html">/spry:bug</a> and put its ID in the notes.</li>
 </ul>
 
 <div class="callout tip">
@@ -124,6 +128,25 @@ edited.</p>
   merged and its tests pass. Bug B-1 names the criterion it breaks. When B-1 is fixed and AC-2 passes
   again, S-1 is done. See <a href="../start/example.html">A worked example</a>.</p>
 </div>
+
+<h2>The QA page</h2>
+
+<p><code>spry serve</code> has a <strong>QA</strong> page (<code>/-/qa</code>) that answers "what do I test
+next?" from the stories, their slices and every <code>checks.md</code>. It only reads: a run is still a
+row in the check log.</p>
+
+<ul>
+  <li><strong>Ready to test</strong> — built (a slice covering the criterion has closed), with a scenario that
+  is ready, and never checked by hand. Newest first, so a story that just landed is at the top.</li>
+  <li><strong>Failing</strong> — the latest run of one of its scenarios failed, with the notes and the bug they
+  name, and a hint to run it again once a fix has closed.</li>
+  <li><strong>Run again</strong> — passed by hand, then built again: a slice covering it, or a slice of a bug
+  that breaks it, closed after the last run.</li>
+  <li><strong>Needs scenarios</strong> — no scenario and no test: nothing checks it.</li>
+  <li><strong>Waiting</strong> — scenarios marked <code>Ready no</code>, and what each waits for.</li>
+  <li><strong>By story</strong> — every ready story, criterion by criterion: what built it, whether a test
+  cites it, its scenarios, its last run and result.</li>
+</ul>
 
 <h2>When a criterion is reworded</h2>
 

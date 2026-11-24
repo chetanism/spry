@@ -60,8 +60,8 @@ sit in a `tasks/` folder and bugs in a `bugs/` folder under their parent. The pa
 
 **Status is derived, never typed** (DESIGN.md §6). A slice is done when `closed`. A story is done
 when every slice is done and every acceptance criterion is proven — by a test whose source line
-contains `S-1/AC-1`, or by the latest row for that criterion in the story's `checks.md` reading
-`pass`; a later `fail` row un-proves it, test or not. Anything above a story is done when every
+contains `S-1/AC-1`, or by the story's `checks.md` check log reading `pass` for it — no scenario's
+latest run failed; a later `fail` row un-proves it, test or not. Anything above a story is done when every
 counted child is.
 """
 
@@ -92,7 +92,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.69.0"
+VERSION = "0.70.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -139,6 +139,11 @@ COMMENT_LINE = re.compile(r"^\s*(#|//|/\*|\*|--|;|<!--)")
 
 
 # ---------------------------------------------------------------- text helpers
+
+def scenario_key(name: str) -> str:
+    """A scenario's name as a check-log row matches it: case and spacing do not matter."""
+    return " ".join(name.lower().split())
+
 
 def natural_key(name: str):
     return [int(p) if p.isdigit() else p.lower() for p in re.split(r"(\d+)", name)]
@@ -444,6 +449,8 @@ class Project:
         self.top: list[Item] = []
         self.decisions: dict[str, str] = {}
         self._memo: dict = {}
+        self.scenarios: dict = {}   # story ID → [scenario in its checks.md], for the QA page
+        self.runs: dict = {}        # story ID → [check-log row]
         if not load:
             self.tests, self.manual = {}, {}
             return
@@ -678,32 +685,67 @@ class Project:
         return found
 
     def _manual_checks(self, story: Item):
-        """{"AC-1": (date, build, by, result, line)} — the latest row per criterion."""
+        """{"AC-1": (date, build, by, result, line)} — the row that decides each criterion. A run is
+        kept per scenario (`Scenario` column), a row naming none being a run of the whole criterion:
+        `fail` while the latest run of any scenario failed, and that row; else the latest row. Fills
+        `self.scenarios` and `self.runs` for the QA page."""
+        self.scenarios[story.id], self.runs[story.id] = [], []
         path = os.path.join(story.folder, "checks.md")
         if not os.path.isfile(native(path)):
             return {}
         text = read(path)
-        for _level, title, at, _end in sections(text):
+        lines, names = text.split("\n"), {}
+        for _level, title, at, end in sections(text):
             m = SCENARIO_ACS.match(title)
             for ac in re.findall(r"AC-\d+", m.group(1)) if m else []:
                 if ac not in story.acs:
                     self.problem(path, at + 1, f"scenario for {ac}, which {story.id} does not have")
-        latest = {}
-        for i, cells in table_rows(section_lines(text, "Check log") or []):
-            if len(cells) < 5 or not DATE.match(cells[0]):
+            if not m:
                 continue
-            ac = cells[1]
+            name = title[m.end():].strip(" ·-—")
+            meta = dict(re.findall(r"\*\*(Type|Where|Ready)\*\*\s*([^·]*)",
+                                   next((lines[i] for i in range(at + 1, end) if "**Ready**" in lines[i]), "")))
+            ready = meta.get("Ready", "yes").strip()
+            acs = re.findall(r"AC-\d+", m.group(1))
+            self.scenarios[story.id].append({"acs": acs, "name": name, "type": meta.get("Type", "").strip(),
+                                             "where": meta.get("Where", "").strip(), "line": at + 1,
+                                             "ready": ready.lower().startswith("yes"),
+                                             "waits": ready[2:].strip(" —-–:,") if ready.lower().startswith("no") else ""})
+            for ac in acs:
+                names.setdefault(ac, set()).add(scenario_key(name))
+        cols = {"date": 0, "ac": 1, "build": 2, "by": 3, "result": 4, "notes": 5}
+        for i, cells in table_rows(section_lines(text, "Check log") or []):
+            if cells and cells[0].lower() == "date":
+                cols = {c.lower(): n for n, c in enumerate(cells)}
+                continue
+            if len(cells) <= max(cols.get("result", 4), cols.get("ac", 1)) or not DATE.match(cells[cols.get("date", 0)]):
+                continue
+            cell = lambda key: cells[cols[key]] if key in cols and cols[key] < len(cells) else ""  # noqa: E731
+            ac = cell("ac")
             if not re.fullmatch(r"AC-\d+", ac):
                 self.problem(path, i + 1, f"check log row names `{ac}`, not an AC")
                 continue
             if ac not in story.acs:
                 self.problem(path, i + 1, f"{story.id} has no {ac}")
-            result = cells[4].lower()
+            result, scenario = cell("result").lower(), cell("scenario")
             if result not in ("pass", "fail"):
-                self.problem(path, i + 1, f"result `{cells[4]}` is not pass or fail")
-            if ac not in latest or cells[0] >= latest[ac][0]:
-                latest[ac] = (cells[0], cells[2], cells[3], result, i + 1)
-        return latest
+                self.problem(path, i + 1, f"result `{cell('result')}` is not pass or fail")
+            if scenario and scenario_key(scenario) not in names.get(ac, set()):
+                self.problem(path, i + 1, f"check log row names scenario `{scenario}`, and no scenario for {ac} has that name")
+            self.runs[story.id].append({"date": cell("date"), "ac": ac, "scenario": scenario, "build": cell("build"),
+                                        "by": cell("by"), "result": result, "notes": cell("notes"), "line": i + 1})
+        decided = {}
+        for ac in dict.fromkeys(r["ac"] for r in self.runs[story.id]):
+            rows = sorted((r for r in self.runs[story.id] if r["ac"] == ac), key=lambda r: (r["date"], r["line"]))
+            latest = {}
+            for r in rows:
+                if not r["scenario"]:
+                    latest = {}
+                latest[scenario_key(r["scenario"])] = r
+            failed = [r for r in latest.values() if r["result"] == "fail"]
+            r = max(failed, key=lambda r: (r["date"], r["line"])) if failed else rows[-1]
+            decided[ac] = (r["date"], r["build"], r["by"], "fail" if failed else r["result"], r["line"])
+        return decided
 
     # -- derived status
 
@@ -5236,6 +5278,7 @@ aside details[open]>summary>a::before{content:"▾"}aside li>a{padding-left:20px
 .mark.done{background:var(--accent);border-color:var(--accent)}.mark.open,.mark.closed{background:var(--warn);border-color:var(--warn)}
 .mark.draft{border-style:dashed}.mark.dropped{background:var(--accent);border-color:var(--accent)}
 aside a.dropped b,aside a.dropped span,.badge.dropped{text-decoration:line-through}.badge.dropped{background:var(--accent-soft);color:var(--accent)}
+main details{margin:8px 0}main summary{cursor:pointer}main summary small{color:var(--dim);margin-left:6px}
 main{padding:24px 40px 80px;max-width:1200px}.path{font-family:var(--mono);font-size:12px;color:var(--dim)}
 .crumbs{font-size:13px;color:var(--dim)}.crumbs a{color:var(--dim)}.badges{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
 .badge{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--muted);color:var(--text);text-decoration:none}
@@ -5262,6 +5305,157 @@ border-bottom:1px solid var(--line)}main{padding:16px}header input{width:100%}he
 """
 
 
+def qa_built(project: Project, story: Item) -> dict:
+    """{"AC-1": (closed date, slice)} — the last closed slice that built each criterion: a slice of
+    the story covering it, or any slice of a bug that `breaks` it, so a fix asks for a new run."""
+    out = {}
+
+    def note(ac: str, s: Item):
+        when = str(s.fm.get("closed") or "")
+        if s.state == "closed" and when and (ac not in out or when > out[ac][0]):
+            out[ac] = (when, s)
+
+    for s in story.kids("slice"):
+        for ac in s.fm.get("covers") or []:
+            note(ac, s)
+    for b in project.of_type("bug"):
+        for ref in b.fm.get("breaks") or []:
+            if isinstance(ref, str) and ref.startswith(story.id + "/") and not gone(b):
+                for s in b.kids("slice"):
+                    note(ref.split("/", 1)[1], s)
+    return out
+
+
+def qa_rows(project: Project) -> list:
+    """One dict per live criterion of a ready story: what built it, what proves it, its scenarios,
+    its runs, and the one list of the QA page it belongs on (`ready`, `failing`, `retest`, `needs`),
+    or `""` when nothing is due."""
+    out = []
+    stories = sorted((s for s in project.of_type("story") if s.state == "ready" and not gone(s)),
+                     key=lambda s: natural_key(s.id))
+    for story in stories:
+        built, scenarios, runs = qa_built(project, story), project.scenarios.get(story.id, []), project.runs.get(story.id, [])
+        for ac, v in story.acs.items():
+            if v["dropped"]:
+                continue
+            mine = [sc for sc in scenarios if ac in sc["acs"]]
+            row = {"story": story, "ac": ac, "built": built.get(ac), "tests": project.tests.get(f"{story.id}/{ac}", []),
+                   "scenarios": mine, "runs": [r for r in runs if r["ac"] == ac],
+                   "decided": project.manual.get(story.id, {}).get(ac), "list": ""}
+            decided, when = row["decided"], row["built"][0] if row["built"] else ""
+            if decided and decided[3] == "fail":
+                row["list"] = "failing"
+            elif decided and when > decided[0]:
+                row["list"] = "retest"
+            elif not mine and not row["tests"]:
+                row["list"] = "needs"
+            elif when and not decided and any(sc["ready"] for sc in mine):
+                row["list"] = "ready"
+            out.append(row)
+    return out
+
+
+def qa_html(project: Project) -> str:
+    """The QA page: what to test next, what failed, what to run again, what needs scenarios, what
+    waits, then every ready story criterion by criterion — read from the stories, their slices and
+    `checks.md`. Read-only: a run is logged in `checks.md` (`spry/process/qa.md`)."""
+    import html
+    esc = html.escape
+    rows = qa_rows(project)
+    href = lambda item: serve_href(project, item.doc)  # noqa: E731
+
+    def checks(story: Item, text: str) -> str:
+        path = os.path.join(story.folder, "checks.md")
+        if not os.path.isfile(native(path)):
+            return esc(text)
+        return f'<a href="{serve_href(project, path)}">{esc(text)}</a>'
+
+    def ids(text: str) -> str:
+        """Plan IDs in a note as links — the bug a `fail` names."""
+        parts = re.split(r"\b([A-Z]+-\d+)\b", text)
+        return "".join(f'<a href="{href(project.items[p])}" title="{esc(project.items[p].title)}">{esc(p)}</a>'
+                       if n % 2 and p in project.items else esc(p) for n, p in enumerate(parts))
+
+    def ref(r: dict) -> str:
+        story = r["story"]
+        return f'<a href="{href(story)}" title="{esc(story.title)}">{esc(story.id)}</a>/{esc(r["ac"])}'
+
+    def built(r: dict) -> str:
+        if not r["built"]:
+            return "not yet"
+        when, s = r["built"]
+        return f'<a href="{href(s)}" title="{esc(s.title)}">{esc(s.id)}</a> {esc(when)}'
+
+    def run(d) -> str:
+        return f"{esc(d[0])} · <code>{esc(d[1].strip('`'))}</code> · {esc(d[2])}" if d else "—"
+
+    def table(head: list, body: list) -> str:
+        if not body:
+            return "<p>Nothing.</p>"
+        th = "".join(f"<th>{h}</th>" for h in head)
+        return (f'<div class="table"><table><thead><tr>{th}</tr></thead><tbody>'
+                + "".join("<tr>" + "".join(f"<td>{c}</td>" for c in cells) + "</tr>" for cells in body)
+                + "</tbody></table></div>")
+
+    def of(name: str) -> list:
+        return [r for r in rows if r["list"] == name]
+
+    def names(r: dict, ready_only: bool = False) -> str:
+        return "<br>".join(checks(r["story"], sc["name"] or r["ac"]) for sc in r["scenarios"]
+                           if sc["ready"] or not ready_only) or "—"
+
+    ready = sorted(of("ready"), key=lambda r: r["built"][0], reverse=True)
+    failing, retest, needs = of("failing"), of("retest"), of("needs")
+    waiting = [(story, sc) for story in dict.fromkeys(r["story"] for r in rows)
+               for sc in project.scenarios.get(story.id, []) if not sc["ready"]]
+    out = ["<h1>QA</h1>",
+           "<p>Manual testing, from each ready story's <code>checks.md</code>, its slices and the tests that cite "
+           "its criteria. Log a run in the story's <code>checks.md</code>; this page reads it. "
+           f"<strong>{len(ready)}</strong> to test · <strong>{len(failing)}</strong> failing · "
+           f"<strong>{len(retest)}</strong> to run again · <strong>{len(needs)}</strong> need scenarios · "
+           f"<strong>{len(waiting)}</strong> waiting.</p>"]
+    out += ["<h2>Ready to test</h2><p>Built, with a scenario that is ready, and never checked by hand. Newest first.</p>",
+            table(["Criterion", "Story", "Built", "Scenarios", "Test"],
+                  [[ref(r), esc(r["story"].title), built(r), names(r, True), "yes" if r["tests"] else "—"] for r in ready])]
+    out += ["<h2>Failing</h2><p>The latest run of one of its scenarios failed. The criterion is not proven until it passes.</p>",
+            table(["Criterion", "Story", "Failed", "Notes", "Built since"],
+                  [[ref(r), esc(r["story"].title), run(r["decided"]),
+                    ids(next((x["notes"] for x in r["runs"] if x["line"] == r["decided"][4]), "")),
+                    built(r) + " — run it again" if r["built"] and r["built"][0] > r["decided"][0] else "—"]
+                   for r in failing])]
+    out += ["<h2>Run again</h2><p>Passed by hand, then built again: a slice covering it, or a fix for a bug that "
+            "breaks it, closed after the last run.</p>",
+            table(["Criterion", "Story", "Last pass", "Built since"],
+                  [[ref(r), esc(r["story"].title), run(r["decided"]), built(r)] for r in retest])]
+    out += ["<h2>Needs scenarios</h2><p>No scenario in <code>checks.md</code> and no test cites it: nothing checks it. "
+            "<code>/spry:test-scenarios</code> writes them.</p>",
+            table(["Criterion", "Story", "Built"], [[ref(r), esc(r["story"].title), built(r)] for r in needs])]
+    out += ["<h2>Waiting</h2><p>Scenarios written but not ready to run, and what each waits for.</p>",
+            table(["Story", "Scenario", "Criteria", "Waits for"],
+                  [[f'<a href="{href(story)}">{esc(story.label)}</a>', checks(story, sc["name"]),
+                    esc(", ".join(sc["acs"])), ids(sc["waits"]) or "—"] for story, sc in waiting])]
+    out.append("<h2>By story</h2>")
+    words = {"ready": "to test", "failing": "failing", "retest": "run again", "needs": "needs scenarios"}
+    for story in dict.fromkeys(r["story"] for r in rows):
+        mine = [r for r in rows if r["story"] is story]
+        due = sum(1 for r in mine if r["list"])
+        body = []
+        for r in mine:
+            d = r["decided"]
+            result = "—" if not d else (f'<span class="badge {"done" if d[3] == "pass" else "open"}">{esc(d[3])}</span>')
+            body.append([esc(r["ac"]), built(r), "yes" if r["tests"] else "—", names(r),
+                         run(d) + (f" · {len(r['runs'])} run{'s' if len(r['runs']) != 1 else ''}" if r["runs"] else ""),
+                         result, esc(words.get(r["list"], ""))])
+        open_ = " open" if due else ""
+        out.append(f"<details{open_}><summary><b>{esc(story.id)}</b> {esc(story.title)} "
+                   f"<small>{due} due · {checks(story, 'checks.md') if project.scenarios.get(story.id) else 'no checks.md'}"
+                   f"</small></summary>"
+                   + table(["AC", "Built", "Test", "Scenarios", "Last run", "Result", "Due"], body) + "</details>")
+    if not rows:
+        out.append("<p>No ready stories yet.</p>")
+    return "".join(out)
+
+
 def serve_page(project: Project, title: str, main: str, current: Item | None = None) -> bytes:
     import html
     s = project.spry
@@ -5272,6 +5466,8 @@ def serve_page(project: Project, title: str, main: str, current: Item | None = N
            ("AGENTS.md", os.path.join(project.root, "AGENTS.md"))]
     links = "".join(f'<a href="{serve_href(project, p)}{"/" if os.path.isdir(native(p)) else ""}">{label}</a>'
                     for label, p in nav if os.path.exists(native(p)))
+    if project.of_type("story"):
+        links += '<a href="/-/qa">QA</a>'
     if os.path.isfile(native(os.path.join(project.root, ".spry", "view", "pace.md"))):
         links += '<a href="/-/pace">Pace</a>'
     product = html.escape(project.config.get("product") or "spry")
@@ -5340,6 +5536,8 @@ def serve_response(project: Project, path: str, repo: str | None = None, makers:
         page = os.path.join(project.root, ".spry", "view", "pace.md")
         text = read(page) if os.path.isfile(native(page)) else "# Pace\n\nNo page yet: run `spry pace` to write it.\n"
         return 200, "text/html; charset=utf-8", serve_page(project, "Pace", md_html(text)), {}
+    if url.path == "/-/qa":
+        return 200, "text/html; charset=utf-8", serve_page(project, "QA", qa_html(project)), {}
     if url.path.startswith("/-/item/"):
         item = project.items.get(url.path[len("/-/item/"):])
         return redirect("/" + project.rel(item.doc)) if item else (404, "text/plain", b"no such item", {})

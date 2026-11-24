@@ -46,12 +46,19 @@ addressed to whoever prepares the environment — never into a scenario.
 
 ## Log a check
 
-- One row per criterion per run in `## Check log`, appended, never edited:
-  `| date | AC-n | build | who | pass / fail | notes |`.
+- One row per scenario run in `## Check log`, appended, never edited:
+  `| date | AC-n | scenario | build | who | pass / fail | notes |`. `scenario` is the name after
+  `AC-n ·` in its heading (case and spacing do not matter); `spry check` fails on a name no scenario
+  of that AC has. Empty, the row is a run of the whole criterion. A log without the column still
+  reads as before.
 - `build` is what was tested: a version, a commit, a deploy.
 - A `fail` names the scenario and what happened in its notes; a result nobody can act on is no run.
-- **The latest row for a criterion decides it.** A `fail` un-proves the criterion even where a test
-  passes; record a bug (`/spry:bug`) and put its ID in the notes.
+- **The latest run of each scenario decides.** A criterion fails while the latest run of any of its
+  scenarios failed — a whole-criterion row resets them all — and a `fail` un-proves it even where a
+  test passes; record a bug (`/spry:bug`) and put its ID in the notes.
+- **What to test next** is the QA page of `spry serve` (`/-/qa`): ready to test, failing, run
+  again (built again since its last pass), needs scenarios, waiting, then every ready story by
+  criterion. It reads; the log is where a run is recorded.
 - **A criterion reworded under its scenarios:** `check --base` names each scenario and check-log row
   that relied on the old wording and is as it was where the branch started. Re-read them in the
   same PR: a scenario changed to fit is off the list, and a run of the criterion logged since the
