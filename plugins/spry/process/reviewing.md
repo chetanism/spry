@@ -28,7 +28,8 @@ together. With no argument, the current branch's PR.
 | Other | anything else | §3c |
 
 - A plan item with no open PR — solo, the plan is committed straight to the main branch — is read as
-  it stands there.
+  it stands there. A draft still being finished (`interview.md` → *Finishing*) is read from the
+  working tree: it is not committed yet.
 - **The PR:** `gh pr view <n> --json number,headRefName,headRefOid,author,files,body`, and
   `gh pr diff <n>`.
 - **Its files:** `git fetch origin <branch>`, then `git show origin/<branch>:<path>`. **Never check
@@ -235,6 +236,8 @@ For a milestone, epic, feature, story, bug, task or `checks.md`.
 - On a yes — to all of them, or to the ones the person names — apply exactly those, on the main
   branch.
 - Run `spry.py check`, then commit `docs(plan): <ID> review fixes`. Change nothing else.
+- A draft reviewed at *Finishing*: the fixes stay in the working tree, and go out in the item's own
+  commit.
 
 ## 5a. Fix, then merge — on answer *a* or *b*
 

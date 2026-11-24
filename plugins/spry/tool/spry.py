@@ -92,7 +92,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.67.0"
+VERSION = "0.68.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -974,6 +974,10 @@ def check(project: Project):
     if review not in (None, True, False):
         project.problem(os.path.join(project.spry, "spry.config.json"), 1,
                         f"`slices.design_review` is `{review}` — `true` or `false`")
+    plan_review = (project.config.get("planning") or {}).get("review")
+    if plan_review not in (None, "always", "offer"):
+        project.problem(os.path.join(project.spry, "spry.config.json"), 1,
+                        f"`planning.review` is `{plan_review}` — `always` or `offer`")
     known = set(project.items) | set(project.decisions)
     for item in project.items.values():
         for key in ("blocked_by", "related"):

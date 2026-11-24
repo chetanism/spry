@@ -956,7 +956,9 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `adopt` | 5 | Put spry around an existing codebase: survey, seed knowledge from what exists, plan from the next work; a writ project is planned from its mapping file (`process/from-writ.md`) — built with `init` |
 
 `milestone` / `epic` / `feature` / `story` share one procedure (`process/planning.md`); each skill
-only names its template and level. Each of them, `bug` and `task` take a GitHub issue, `#42`, to plan
+only names its template and level. Every plan item, with `bug` and `task`, finishes with a
+`/spry:review` by a new agent before it goes `ready` (`planning.review`, default `always`; a bug
+with replayable evidence skips it). Each of them, `bug` and `task` take a GitHub issue, `#42`, to plan
 from (§14).
 
 ## 21. From writ
@@ -1412,6 +1414,12 @@ in `spry/history/writ.md`, then retires `canon/`.
 - 2026-11-18 — `slice-plan` and `slice-build`, and every close in a fresh session (CH-78, 0.67.0):
   plan and close on a larger model, build and merge on a smaller one, each after `/clear`.
   `brief --as` names the skill a context stop restarts; pace counts the new skills' phases.
+- 2026-11-19 — a new plan item is reviewed by fresh eyes before `ready`, not offered a review after
+  its commit (CH-79, 0.68.0). `planning.review: "offer"` turns it back into an offer. A bug skips it
+  only with replayable evidence in its `## Evidence`, never because an agent filed it: an agent can
+  type up a person's vague report just as well, and what makes a review redundant is a reproduction
+  already run. Rejected: a `reviewed:` field that `check` requires, because the plan skills are the
+  only path to `ready`, and the field would mean a migration for every existing item.
 
 ## 24. Worktrees and progress
 
