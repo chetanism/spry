@@ -1724,3 +1724,14 @@ Entry format:
   - `spry check` refuses a `planning.review` other than `always` or `offer`.
 - **Adapt:** `planning.review` — `always` (default) or `offer`.
 - **Migrate:** nothing. Items already `ready` are not re-reviewed.
+
+## CH-80 · A dropped item reads as settled in `serve`
+
+- **Date:** 2026-11-24 · **Version:** 0.69.0
+- **Touches:** `tool/spry.py` (`serve`)
+- **Why:** in the `serve` tree a dropped item was a faint empty circle, the same shape as work not
+  yet started, so a reader looking for what is left counted it. It is now a green dot with its ID
+  and title struck through, and its state badge on its own page is struck the same way. It still
+  counts as neither done nor to do.
+- **Adapt:** nothing.
+- **Migrate:** nothing.

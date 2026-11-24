@@ -5116,6 +5116,13 @@ class Serve(Base):
     def get(self, t, path):
         return spry.serve_response(t.project(), path, "https://github.com/o/r")
 
+    def test_a_dropped_item_is_green_and_struck_in_the_tree(self):
+        t = self.tree(**{f"{F}/S-2-x/README.md".replace("/", "__"): story("S-2", state="dropped")})
+        page = self.get(t, f"/{F}/README.md")[2].decode()
+        self.assertRegex(page, r'<a href="[^"]*S-2-x/README.md" class="dropped"[^>]*><i class="mark dropped">')
+        self.assertIn(".mark.dropped{background:var(--accent)", page)
+        self.assertIn("aside a.dropped span", page)
+
     def test_item_page_has_fresh_blocks_and_links(self):
         t = self.tree()
         self.assertEqual(self.get(t, "/")[3], {"Location": "/spry/plan/README.md"})

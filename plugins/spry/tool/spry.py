@@ -92,7 +92,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.68.0"
+VERSION = "0.69.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -5124,8 +5124,10 @@ def serve_tree(project: Project, current: Item | None) -> str:
 
     def node(item: Item) -> str:
         here = ' aria-current="page"' if current is item else ""
-        row = (f'<a href="{serve_href(project, item.doc)}"{here} title="{html.escape(project.progress(item))}">'
-               f'<i class="mark {serve_mark(project, item)}"></i><b>{html.escape(item.id)}</b> '
+        mark = serve_mark(project, item)
+        struck = ' class="dropped"' if mark == "dropped" else ""
+        row = (f'<a href="{serve_href(project, item.doc)}"{here}{struck} title="{html.escape(project.progress(item))}">'
+               f'<i class="mark {mark}"></i><b>{html.escape(item.id)}</b> '
                f'<span>{html.escape(item.title)}</span><small>{html.escape(serve_short(project, item))}</small></a>')
         kids = sorted(item.children, key=lambda c: order.get(c.type, 0))
         if not kids:
@@ -5232,7 +5234,8 @@ aside summary::-webkit-details-marker{display:none}aside summary>a::before{conte
 aside details[open]>summary>a::before{content:"▾"}aside li>a{padding-left:20px}
 .mark{flex:none;width:8px;height:8px;border-radius:50%;border:1.5px solid var(--dim);align-self:center}
 .mark.done{background:var(--accent);border-color:var(--accent)}.mark.open,.mark.closed{background:var(--warn);border-color:var(--warn)}
-.mark.draft{border-style:dashed}.mark.dropped{opacity:.35}
+.mark.draft{border-style:dashed}.mark.dropped{background:var(--accent);border-color:var(--accent)}
+aside a.dropped b,aside a.dropped span,.badge.dropped{text-decoration:line-through}.badge.dropped{background:var(--accent-soft);color:var(--accent)}
 main{padding:24px 40px 80px;max-width:1200px}.path{font-family:var(--mono);font-size:12px;color:var(--dim)}
 .crumbs{font-size:13px;color:var(--dim)}.crumbs a{color:var(--dim)}.badges{display:flex;gap:6px;flex-wrap:wrap;margin:8px 0}
 .badge{font-size:12px;padding:2px 8px;border-radius:999px;background:var(--muted);color:var(--text);text-decoration:none}
