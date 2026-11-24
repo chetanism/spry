@@ -1735,3 +1735,28 @@ Entry format:
   counts as neither done nor to do.
 - **Adapt:** nothing.
 - **Migrate:** nothing.
+
+## CH-81 · A QA page in `serve`, and a check log per scenario
+
+- **Date:** 2026-11-24 · **Version:** 0.70.0
+- **Touches:** `tool/spry.py` (`serve`, `check`, proof), `process/qa.md` (*Log a check*),
+  `process/templates/checks.md` (`## Check log`)
+- **Why:** QA had no view of what to test next. Finding a story that had just been built, a
+  criterion to run again after a fix, or one nothing checked meant opening every `checks.md`. The
+  log also recorded one row per criterion, so it could not say which of several scenarios had run.
+  - `spry serve` has a **QA** page (`/-/qa`), built from the stories, their slices and every
+    `checks.md`. It lists, for each ready story's criteria:
+    - *ready to test*: a closed slice built it, a scenario is ready, and no run is logged yet;
+    - *failing*;
+    - *run again*: a slice covering it, or a slice of a bug that breaks it, closed after its last pass;
+    - *needs scenarios*: it has no scenario and no test cites it;
+    - *waiting*: its scenarios are marked `Ready no`, with what each waits for;
+    - then each story, criterion by criterion.
+  - The page only reads: a run is still logged in `checks.md`.
+  - The check log takes an optional `Scenario` column, holding the scenario's name, the words
+    after `AC-n ·` in its heading. A criterion fails while the latest run of any of its scenarios
+    failed. A row with an empty scenario is a run of the whole criterion and resets them all.
+    `spry check` fails on a scenario name that the criterion has no scenario for.
+- **Adapt:** nothing.
+- **Migrate:** nothing. A log without the column reads exactly as before. To log per scenario,
+  add `Scenario` after `AC` in the header; past rows may leave it empty.
