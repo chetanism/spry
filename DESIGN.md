@@ -1490,3 +1490,97 @@ what each is doing, without a token spent on telling it.
   starts a new log, or since it started (CH-64). Off by default; other agents get the tool's lines only. A
   permission prompt reads as a long-running command; the log does not say otherwise.
 
+
+## 25. Rigor — how hard the agent works on one item
+
+> **Status:** draft for review, not built. Costs estimated 2026-11-24 from `pace --last 15` on two
+> projects (connect, pulse-v2), both with `slices.design_review` on.
+
+Purpose: let the owner of an item ask the agent to dig deeper on that item, using the same model
+and effort: research before designing, ask better questions about scope and about the technical
+shape, weigh alternatives, and be challenged by more readers. Level 1 is spry as it is today.
+Level 5 is not five times better. It means the agent has done everything it reasonably could for
+an item where a mistake costs the most.
+
+- **Each level adds steps, never stronger wording.** Telling an agent "be more critical" mostly
+  makes its text longer, and an agent reviewing its own work tends to approve it. What does
+  change the result for a fixed model is: a reader who did not write the work (`reviewing.md` §2),
+  alternatives it is made to write down, research that has to cite a source, a fixed list of
+  questions, and something that can be checked afterwards. Every step below is one of these, and
+  each one leaves a line in the item's file (§1, *checked or not written*).
+- **It belongs to the item, not to a person.** Tone (§7) is personal because it only changes how
+  things read. Rigor changes what is produced, so it is recorded in the plan:
+  - `rigor: <1-5>` in the config is the project's default. Without it, the default is 1.
+  - `rigor:` in an item's front-matter sets the level for that item and everything under it. The
+    nearest value wins: a payments feature at 4 has all its stories and slices at 4, while a
+    copy-change story beside it stays at the default.
+  - A bug takes its level from the feature or story it breaks, like any other child, and can
+    set its own `rigor:` to change it: a bug in a risky area touches the same risky code.
+  - A slice writes down the level it resolved to when it opens (`rigor:` in its front-matter), so
+    a later change higher up does not rewrite what it was planned at, and `pace` reads it directly.
+- **A level is a floor on the existing switches.** Level 2 and above turn `slices.design_review`
+  on for that slice and `planning.review` to `always` for that item, whatever the config says.
+  The switches still turn steps on at level 1. They cannot turn off a step that the level asks for.
+- **The same number of questions at a time.** The limit of three asks per reply (`interview.md`)
+  holds at every level. A higher level makes better drafts and harder questions, not more of them
+  at once. Anything that is left unanswered goes under `## Open questions`.
+- **A counterweight at every level from 2 up.** Every reviewer started because of the level is
+  also asked for "a simpler option that still meets the criteria". Without this, the top levels
+  gold-plate.
+
+### The ladder
+
+Each level includes everything below it.
+
+| Level | Scope: `milestone` … `story`, `task`, `bug` | Technical: `slice-plan`, `slice-open`, `slice-close` |
+|---|---|---|
+| 1 | Today. | Today. |
+| 2 | **Assumptions.** The draft lists every assumption, each with its source (a parent, a knowledge file, the code, the person) or marked `assumed`. One pre-mortem ask: "what would make this the wrong thing to build?" | **Alternatives.** Design review on. Every choice made without asking (`slicing.md` *When to stop and ask*) names the option it rejected and why. |
+| 3 | **Edge cases.** A feature or story gets a grid of roles × states × failures (empty, concurrent, no permission, partial failure, slow or failed external service). Each cell is either a criterion, a line in *Not in this story*, or an open question. *Out of scope* is required. | **Research.** Before the plan, a new agent writes a `### Research` section: similar code already in the repo, the docs of each library at its pinned version, the external-service notes in the knowledge files. Every claim is cited (`path:line`, or a URL with a version). It runs as a subagent so its reading stays out of the build's context. |
+| 4 | **A scope challenger.** A second review agent at *Finishing*, whose only questions are: what is missing, what is over-built, and what conflicts with sibling items. | **Two readers.** The design review gets a second agent that looks at operations, security and performance against `always_check`. The close review gets one more reviewer with the same focus. |
+| 5 | **Nothing left open.** `check` refuses `ready` while `## Open questions` has an entry. | **Competing designs and a spike.** Two new agents each draft the plan without seeing the other's, and a third chooses between them, recording why. A spike on a throwaway branch proves the riskiest assumption before any code; its result goes in `### Spike`. `/spry:explore` runs on the slice's area before close. |
+
+### The record and the tool
+
+- Each step writes a named section or a count line in the item's file, as the design review does
+  (§15, *Design review*): `### Assumptions`, `### Edge cases`, `### Research`, `### Spike`, and the
+  reviewers' Blocker / Should counts.
+- `merge-check` warns when a slice's level asks for a section that is missing. It never blocks:
+  the steps are readings, and their proof is in the file. `check` refuses only the level 5
+  `ready` rule, because that one is a fact about the file itself.
+- `pace` gains a table by level: slices, median spend, spend per 100 lines, Blockers found at
+  design review and at close, and bugs filed later (§17). This is what tells us whether a level is
+  worth what it costs. A step that does not pay for itself is removed, as any step is.
+
+### Cost, estimated
+
+Measured: one design-review agent costs ~320k input-token equivalents on connect and ~380k on
+pulse-v2. One close reviewer costs ~260k and ~190k. The median slice costs 7.6M and 3.0M.
+
+| Level | Extra per slice, connect | Extra per slice, pulse-v2 | Basis |
+|---|---:|---:|---|
+| 2 | < 2% | < 2% | design review is already on; the alternatives are a few lines of the work order |
+| 3 | ~+5% | ~+12% | one research agent, assumed to cost about one design review |
+| 4 | ~+12% | ~+30% | plus one design reviewer and one close reviewer, at the measured cost |
+| 5 | ~+40–60% | ~+100–150% | plus two drafts and a judge (~1M), and a spike (a guess of 1–2M). Explore is not included. |
+
+- Most of these costs are the same per slice whatever its size, so small slices pay much more in
+  relative terms. That is the reason rigor is set per item and not per project.
+- Level 5 is the weakest estimate. Neither the spike nor explore has been measured inside a slice.
+- On the same 30 slices, the design review found 13 Blockers and the close review found 4
+  afterwards. The technical side already catches most design-shape problems, while the scope side
+  has never been measured. So levels 2–3 put most of their weight on scope, where steps are cheap.
+
+### Rejected
+
+- **A personal setting, like tone.** Two people would plan the same item at different levels, and
+  the plan would not say which.
+- **A per-run argument** (`/spry:slice-plan SL-3 --rigor 4`). The same problem: the level would be
+  lost once the session ends.
+- **Stricter wording per level, with no added steps.** It cannot be checked, and it mostly makes
+  the text longer.
+
+### Open questions
+
+- Whether level 5's competing designs are worth their cost compared with level 4 plus a spike.
+  This should be decided once there are slices at level 4.
