@@ -31,8 +31,12 @@ missing. So open, build, test and close run as one piece of work.
 - **Its `owner` is who builds it** — set at open, from the person git says is at this clone (their
   `team.members` name; solo, git's `user.name`), whoever planned it. `--owner <name>` names someone
   else. `merge-check` blocks a slice without one; `/spry:work-report` counts work by it.
-- **Built in steps** with `slices.mode: steps`: one slice for as much of a story as fits the cap,
-  each step its own commit and its own review — *Steps* below. A slice without steps is one step.
+- **Built in steps:** a slice holds one or more steps — each one visible change, its own commit
+  and its own review. As much of a story as fits `slices.steps` goes in one slice, so the work
+  order, falsify, the full gate, CI and the merge are paid once. The tool, not this file, keeps
+  the agent to one step at a time (DESIGN.md §15).
+- A work order with `### Plan` and no `### Steps` is from before steps were the rule (CH-88): one
+  step, committed by hand, read by one reviewer. Everything else here holds for it.
 - Lives as `SL-<n>-<slug>.md` in its parent's folder. States: `planned` → `open` → `closed`
   (or `dropped`). `closed` is set in the pull request's last commit, so on the main branch it
   means merged.
@@ -42,15 +46,19 @@ missing. So open, build, test and close run as one piece of work.
 1. The parent must be `ready`. Unfinished `blocked_by` → say which, and ask whether to plan anyway.
 2. Read the parent, its feature's rules, `spry/knowledge/conventions/INDEX.md`, decisions, and the
    code the change will touch.
-3. Propose the slices in one reply: title, the criteria each covers, one line on the visible
-   change. With `slices.mode: steps`, propose the same list as **steps**, then the slices that hold
-   them (*Steps* → *Split*). Order them so each builds on the last, and say which **need** an earlier one — its code,
-   its data, its screen — and which could be built at the same time.
+3. Propose the **steps** in one reply — a title, the criteria each covers, one line on the visible
+   change, in build order; `—` for a step that only prepares. Then the slices that hold them:
+   consecutive steps packed into the **fewest slices** within `slices.steps.max` (5 steps) and, by
+   your estimate, `slices.steps.max_lines` (800 changed lines; documents and `checks.generated`
+   files not counted; `0` is no cap). With `slices.steps.step_lines` set, split a step you expect
+   to be over it. Steps two people could build at the same time go into different slices; say
+   which slices **need** an earlier one — its code, its data, its screen. A story that fits is one
+   slice; with `slices.steps.max: 1` every step is a slice.
 4. On approval, all at once: `spry.py new slice --parent <ID> --title "…" --title "…"` — numbered in
    the order given; with `mint: main` it takes the numbers on the main branch in one push (*IDs and
    claims*), so the parent must be there. In each, fill only `Summary`, `covers`, and `blocked_by`
-   with the earlier slices it needs — none when it only comes after one. A steps slice also gets its
-   `### Steps` heading and each step's `#### Step <k> · <title>` with its `Covers:` line.
+   with the earlier slices it needs — none when it only comes after one — and, under `### Steps`,
+   each step's `#### Step <k> · <title>` with its `Covers:` line.
    The backlog lists a slice as ready only when those are closed, so two people never pick up a
    pair that cannot be built side by side. Everything else waits for `slice-plan` or `slice-open`.
 5. `spry.py check`; commit `docs(plan): slices for <ID>`.
@@ -88,13 +96,25 @@ open:
    security, performance) and the code — the files you already know you need in one call.
 2. **Write the work order** — every `###` under `## Work order`:
    - `Summary` first: 2–4 bullets, readable by anyone — what will be done and what a person will see.
-   - `Plan`: one bullet per file, concrete enough to build without this session — what changes in
-     it, the names and shapes it adds — since the build may run in another session, on a smaller
-     model. `Must not`: the rules this could break, linked. A steps slice has
-     no `Plan`: each step under `### Steps` gets its plan bullets (*Steps* → *Work order*).
+   - `Steps`: under each `#### Step <k> · <title>`, its `Covers:` line and one bullet per file,
+     concrete enough to build without this session — what changes in it, the names and shapes it
+     adds — since the build may run in another session, on a smaller model:
+
+     ```markdown
+     #### Step 1 · Refuse a fifth book
+
+     Covers: AC-1
+
+     - `src/lend.ts` — `lend` returns `AtLimit` at the limit
+     ```
+
+     `check` refuses steps not numbered from 1, more than `slices.steps.max`, a step without
+     `Covers:`, a criterion a step names that the slice's `covers` does not, and one the slice
+     covers that no step does.
+   - `Must not`: the rules this could break, linked.
    - `Tests`: one per criterion at least, each name containing `<story>/AC-<n>`.
    - `Demo`: copy-pasteable; no value to fill in by hand.
-3. **Conflict check** — `conflicts.md`, from the brief's *Related*; once the `Plan` names its
+3. **Conflict check** — `conflicts.md`, from the brief's *Related*; once the steps name their
    files, `spry.py related <slice file>` again for open slices on the same ones.
 4. **Design review** — always under `slice-plan`; under `slice-open` only with
    `slices.design_review` on; **never for a light slice** — one whose brief has a *Rigor* section
@@ -111,7 +131,7 @@ open:
         happens on failure;
      2. what the plan assumes that no story, feature or decision says;
      3. for each such choice, an option harder to build and better for the product;
-     4. in a steps slice, what each step needs from an earlier one, and whether the plan names it.
+     4. what each step needs from an earlier one, and whether the plan names it.
    - It reports **Blocker** (hard to undo, and not asked), **Should** or **Nit**, each with the
      line of the work order it rests on.
    - **Verify each finding** against the plan and the code; drop what does not hold. A Blocker
@@ -144,19 +164,32 @@ Run on whichever model the person chose; the work order holds what this session 
    `/spry:slice-plan SL-<n>` comes first.
 1. **Branch:** on the slice's `branch:` — `git fetch`, then `git switch <branch>`. Checked out in
    another worktree → build there (`/spry:worktree`). Never a new branch.
-2. **Read** what the work order names: the files in `Plan` (or the step's plan), the rules linked
+2. **Read** what the work order names: the files in the steps still to build, the rules linked
    under `Must not`, the `### Design review` answers — in one call. The brief's *Rules that failed
    the checks most* are the lint and type rules this project's code keeps breaking: write to them. Not the planning again: the parent, the
    feature and the knowledge indexes were read when the plan was written.
-3. **Build** to the plan, as *While building* says; a steps slice one step at a time (*Steps* →
-   *Build*).
+3. **Build one step at a time.** `spry.py step SL-<n>` names the next step and its plan, from the
+   commits already made — so a new session, or one after a compaction, starts there. Build that
+   step only, as *While building* says, then `spry.py step SL-<n> --commit`:
+   - it runs every `fix` in `checks.fast` (the formatter) on the step's files and says which
+     changed — never format by hand — then `gate --fast`, and with `slices.steps.tests` on, the
+     test files the step added or changed (not those in `slices.steps.tests_skip`). Red → fix it
+     in this step and run it again;
+   - then one commit, `SL-<n> step <k>: <title>`, with the trailer `Step: SL-<n>/<k>`. **Never
+     `git commit` code by hand** — the `step_commit` hook refuses it. Documents (the work order,
+     the close summary) are committed as usual;
+   - a `!` that the session is past `slices.fresh_context` → stop there: `[Run] /clear`, then
+     `/spry:slice-build SL-<n>`, which starts at the next step — every request of the steps left
+     would read the steps built again;
+   - a `!` that the step is over `slices.steps.step_lines` → split it now (`git reset --soft
+     HEAD^`, then commit its parts as steps) or leave it for the person to accept at the merge.
 4. **The work order turns out wrong or short** — a file it names does not fit, a test cannot be
    written as planned, the change needs a shape or a file the plan does not name → stop and ask,
    with what the plan says and what the code needs. The session that wrote the plan, and its
    reasons, are gone, so a gap is never filled by guessing. A detail no reviewer would weigh — a
    helper, a local name — is noted for `What changed` and built.
-5. **Stop** when the plan is built: `spry.py gate --fast` passes and every change is committed —
-   not pushed (*While building*). Then `[Run] /clear`, then `/spry:slice-close SL-<n>` — `/model`
+5. **Stop** when `spry.py step SL-<n>` says every step is committed — not pushed (*While
+   building*). Then `[Run] /clear`, then `/spry:slice-close SL-<n>` — `/model`
    first to close on a larger one. The slice file and the commits are the hand-off; a close that
    carried the build would read it again on every request (*Close* step 0).
 
@@ -171,8 +204,8 @@ Run on whichever model the person chose; the work order holds what this session 
   - `spry.py brief SL-<n> --as <skill>` gives the slice, what its skill reads first and this
     procedure in one call; `proc --for <skill>` the procedure alone; `backlog --section … --rows …
     --plain` only the rows needed.
-- **A slice built in steps** is built one step at a time and never committed by hand — *Steps* →
-  *Build*.
+- **Code is committed by `spry.py step SL-<n> --commit`,** one step at a time, never by hand
+  (*Build* step 3).
 - **Check each change with `spry.py gate --fast`:** `spry check`, then the fast checks
   (`checks.fast`: format, lint, types — cheapest first), no tests. `spry.py gate` adds the affected
   tests — run it when a test's answer is what you need, not on every change: it costs minutes on a
@@ -214,8 +247,8 @@ that merges.
    `/spry:slice-close SL-<n>`.
 1. **Rebase:** working tree committed; when the brief says `origin/<main>` has moved, rebase onto
    it — a rebase after the gate means a second gate. `spry.py gate --fast` passes.
-2. **What changed:** compare the diff (`git diff <main>...HEAD`) with `Plan` (a steps slice: each
-   step's plan under `### Steps`); write only the
+2. **What changed:** compare the diff (`git diff <main>...HEAD`) with each step's plan under
+   `### Steps`; write only the
    differences and why. Delete the section if none.
 3. **Proof:** every criterion in `covers` has a citing test, or tell QA which need a manual check
    (`[Test]` under `NEXT`).
@@ -226,14 +259,17 @@ that merges.
    (`--force-with-lease`, so step 1's rebase goes up), and replaces the PR body with
    `pr-body --base origin/<main>`; the PR stays a draft. Code is committed first, as it was built.
    `/spry:review SL-<n>`, and the fixes accepted applied (`reviewing.md` §5a)
-   — before falsify and the gate, so a fix costs neither a second time. A steps slice gets one
-   reviewer per step and one for the seams — a light one (the brief's *Rigor*) a single reviewer
-   for the whole diff; each fix is a fixup of its step (*Steps* → *Close*). The review reads no
+   — before falsify and the gate, so a fix costs neither a second time. It starts one reviewer
+   per step and one for the seams (`reviewing.md` §3a; `spry.py step SL-<n> --ranges` gives each
+   its diff, from any branch) — a single reviewer for a slice of one step, or a light one (the
+   brief's *Rigor*). **Each fix, and each test falsify adds, is `git commit --fixup=<its step's
+   commit>`** — the step the code belongs to; never `--squash`, whose message would bury the
+   step's trailer. The review reads no
    Falsify rows yet; `merge-check` and the merge's ask cover them. The close waits for the review's
    Ask 1; on *c* or *d* it goes on to *Falsify* with nothing fixed.
    - **Record it** under `### Review` in the close summary: `- <n> Blocker, <n> Should, <n> Nit —
-     <n> fixed` — the findings that stood once verified, every reviewer of a steps slice counted
-     together, and how many were fixed. Another review after the fixes adds its own line.
+     <n> fixed` — the findings that stood once verified, every reviewer counted together, and
+     how many were fixed. Another review after the fixes adds its own line.
      `spry pace` reads the counts; `merge-check` shows them.
 6. **Falsify** — prove the tests notice each safeguard the slice added. The tool says what each
    other case needs as it meets it — a control to write by hand, one no test names, a wide one,
@@ -255,8 +291,11 @@ that merges.
      it`). A bare `survived` blocks the merge.
    - Falsify comes after the review and before the gate, and needs no gate first: it runs its own
      baseline.
-7. **Gate:** working tree committed, falsify's new tests included — in a steps slice, as fixups,
-   folded in first with `spry.py step SL-<n> --squash`; `spry.py gate` passes. Otherwise
+7. **Gate:** commit the Falsify table, then `spry.py step SL-<n> --squash` folds the fixups into
+   their steps — every step one clean commit again, for a person who reads the PR commit by
+   commit. (With `mint: main` the main branch may have been merged in at step 4: when `--squash`
+   stops on that merge, rebase onto `origin/<main>` and run it again.) Then `spry.py gate`
+   passes. Otherwise
    fix what fails and run it again — it repeats only what the fix could change. A branch that
    changed only test files runs just those, then `tests.always`, and says so on its first line;
    it stamps green like any pass. A changed integration test runs too, so start its services first.
@@ -267,72 +306,12 @@ that merges.
    with `pr-body --base origin/<main>`; and marks the PR ready for review.
    A slice gets no GitHub issue: the request issues its story, bug or task came from follow the
    plan through `spry.py issues --sync` (`planning.md` → *From a GitHub issue*).
+   `merge-check` blocks a step with no commit, one committed twice or out of order, code committed
+   without a trailer, and a fixup not folded in. A slice over `slices.steps.max_lines`, or a step
+   over `slices.steps.step_lines`, is a `!` the person accepts at the merge.
 9. **Merge only through `/spry:merge`.** The review is done (step 5): on its answer *a*, run
    `/spry:merge` now; otherwise tell the person the PR is ready for it. A teammate may still review
    the ready PR.
-
-## Steps — `slices.mode: steps`
-
-For a project that wants a story's fixed costs — the work order, the review set-up, falsify, the
-full gate, CI, the merge — paid once rather than once per slice, with no less review or proof. The
-agent still builds one thing at a time and each reviewer still reads one thing; the tool, not this
-file, keeps that so (DESIGN.md §15 *Steps mode*).
-
-- **Split.** Plan the story as steps exactly as you would plan slices — a title, the criteria each
-  covers, one visible change each, in build order, `—` for a step that only prepares. Then pack
-  consecutive steps into the **fewest slices** that keep to `slices.steps.max` (default 5 steps)
-  and, by your estimate, `slices.steps.max_lines` (default 800 changed lines, documents and
-  `checks.generated` files not counted; `0` is no slice cap). With `slices.steps.step_lines` set
-  (default `0`, off), also estimate each step against it, and split a step you expect to be over.
-  Steps that two people could build at the same time go into different slices. A story that fits
-  is one slice.
-- **Work order.** `### Steps` replaces `### Plan`:
-
-  ```markdown
-  ### Steps
-
-  #### Step 1 · Refuse a fifth book
-
-  Covers: AC-1
-
-  - `src/lend.ts` — `lend` returns `AtLimit` at the limit
-  ```
-
-  `check` refuses steps not numbered from 1, more than `slices.steps.max`, a step without `Covers:`,
-  a criterion a step names that the slice's `covers` does not, and one the slice covers that no
-  step does. `Tests` and `Demo` stay whole-slice.
-- **Build.** `spry.py step SL-<n>` names the next step and its plan, from the commits already made
-  — so a new session, or one after a compaction, starts there. Build that step only, then
-  `spry.py step SL-<n> --commit`: `gate --fast`, then one commit, `SL-<n> step <k>: <title>`, with
-  the trailer `Step: SL-<n>/<k>`. A `!` after the commit saying the session is past
-  `slices.fresh_context` → stop there: `[Run] /clear`, then `/spry:slice-build SL-<n>`, which
-  starts at the next step — every request of the steps left would read the steps built again. A step over `slices.steps.step_lines` is a `!` after the commit:
-  split it now (`git reset --soft HEAD^`, then commit its parts as steps) or leave it for the person
-  to accept at the merge. It runs every `fix` in `checks.fast` (the
-  formatter) on the step's files first and says which changed, so never format by hand. Red fast
-  checks → fix and run it again. With `slices.steps.tests`
-  on, it also runs the test files the step added or changed (not those in
-  `slices.steps.tests_skip`), and a red one refuses the commit and names the file: fix it in this
-  step, not at close. **Never `git commit` code
-  by hand** on a steps branch; the `step_commit` hook refuses it. Documents — the work order, the
-  close summary — are committed as usual. The affected tests run only when their answer is needed
-  (`spry.py gate`), as in any slice.
-- **Close.** As *Close* above, with three differences:
-  - **Review** (step 5): `/spry:review SL-<n>` starts one reviewer per step and one for the seams
-    (`reviewing.md` §3a). `spry.py step SL-<n> --ranges` gives each one its diff, from any branch
-    — for a light slice, one line and one reviewer.
-  - **Fixes and falsify's new tests** are `git commit --fixup=<the step's commit>` — the step the
-    code belongs to; never `--squash`, whose message would bury the step's trailer. Nothing but
-    documents is committed until the gate.
-  - **Before the gate** (step 7): commit the Falsify table, then `spry.py step SL-<n> --squash`
-    folds the fixups into their steps. Every step is one clean commit again, for a person who reads
-    the PR commit by commit. Step 8's push is `git push --force-with-lease`, so CI still runs twice.
-    With `mint: main` the main branch may have been merged in at step 4; when `--squash` stops on
-    that merge, rebase onto `origin/<main>` and run it again.
-- **Merge.** `merge-check` blocks a step with no commit, one committed twice or out of order, code
-  committed without a trailer, and a fixup not folded in. A slice over `slices.steps.max_lines`,
-  and each step over `slices.steps.step_lines`, is a `!` the person accepts; generated lines (`checks.generated`) are printed beside the size,
-  not counted in it. The squash keeps the step titles in its body.
 
 ## Light — `rigor: 0`
 

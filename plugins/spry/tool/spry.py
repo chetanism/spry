@@ -93,7 +93,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.76.0"
+VERSION = "0.77.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -1001,9 +1001,12 @@ def check(project: Project):
                         "`slices.issue` is gone (CH-52): a slice no longer gets a GitHub issue — remove the key; "
                         "issues now link to the plan items they asked for (`link <item> --issue N`)", "warning")
     mode = (project.config.get("slices") or {}).get("mode")
-    if mode not in (None, "split", "steps"):
+    if mode is not None:
+        steps_max = ((project.config.get("slices") or {}).get("steps") or {}).get("max")
         project.problem(os.path.join(project.spry, "spry.config.json"), 1,
-                        f"`slices.mode` is `{mode}` — `split` or `steps`")
+                        "`slices.mode` is gone (CH-88): every slice is built in steps — remove the key"
+                        + ("; to keep one change a slice, as `split` did, set `slices.steps.max` to 1 "
+                           "(until then the tool reads it as 1)" if mode != "steps" and steps_max is None else ""), "warning")
     conf = (project.config.get("team") or {}).get("approval")
     if conf is not None and (not isinstance(conf, dict) or conf.get("missing", "block") not in ("block", "warn")
                              or not isinstance(conf.get("exempt", []), list)):
@@ -4517,7 +4520,7 @@ def proc(project: Project, name: str, sections: list, listing: bool = False) -> 
 
 
 # What each skill reads before it starts — `proc --for <skill>` prints it in one call, and
-# `brief <slice> --as <skill>` ends with it. `Steps` joins the slicing sections for a steps slice.
+# `brief <slice> --as <skill>` ends with it.
 PROC_FOR = {
     "slice-open": [("slicing", ["When to stop", "What a slice", "Open", "Plan", "Build", "While building"]),
                    ("conflicts", []), ("writing", []), ("chat", [])],
@@ -4534,11 +4537,11 @@ PROC_FOR = {
 
 def proc_for(project: Project, skill: str, item: Item | None = None) -> str:
     """Everything `skill` reads before it starts, in one call: the sections of its process file, then
-    the files it reads beside it, whole. A steps slice — `slices.mode: steps`, or `item` with
-    `### Steps` — adds *Steps*."""
+    the files it reads beside it, whole. A project whose `slicing.md` is from before CH-88 still has
+    a *Steps* section apart: it is added, as it was."""
     if skill not in PROC_FOR:
         raise SystemExit(f"no skill `{skill}` — proc --for takes: " + ", ".join(PROC_FOR))
-    steps = (project.config.get("slices") or {}).get("mode") == "steps" or bool(item and slice_steps(item.text))
+    steps = any(line.startswith("Steps · ") for line in proc(project, "slicing", [], listing=True).split("\n"))
     out = []
     for name, wanted in PROC_FOR[skill]:
         wanted = wanted + ["Steps"] if name == "slicing" and steps else wanted
@@ -6631,10 +6634,13 @@ FIXUP_SUBJECT = ("fixup! ",)
 def steps_config(project: Project) -> dict:
     """`slices.steps`, each value an integer, over the defaults. `max` is at least 1; a line cap of 0
     is off — `max_lines` for the whole slice, `step_lines` (off by default) for each step's commit."""
-    given = (project.config.get("slices") or {}).get("steps")
+    slices = project.config.get("slices") or {}
+    given = slices.get("steps")
+    # A config from before CH-88 that still says `mode: split` keeps one change a slice until it is migrated.
+    defaults = {**STEP_DEFAULTS, "max": 1} if slices.get("mode", "steps") != "steps" else dict(STEP_DEFAULTS)
     if not isinstance(given, dict):
-        return dict(STEP_DEFAULTS)
-    return {**STEP_DEFAULTS, **{k: v for k, v in given.items() if k in STEP_DEFAULTS and isinstance(v, int)
+        return defaults
+    return {**defaults, **{k: v for k, v in given.items() if k in STEP_DEFAULTS and isinstance(v, int)
                                 and not isinstance(v, bool) and v >= (1 if k == "max" else 0)}}
 
 
@@ -7022,7 +7028,8 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
         return 1
     head = head or "HEAD"
     if not slice_steps(item.text):
-        say(f"{item.id} has no `### Steps` — it is one step: commit as usual")
+        say(f"{item.id} has no `### Steps` — a work order from before CH-88: it is one step, committed by hand "
+            "and read by one reviewer")
         return 1
     base = step_base(project, base)
     try:
@@ -7034,6 +7041,9 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
     if ranges:
         fork = git(project.root, "merge-base", base, head).stdout.strip() or base
         tip = git(project.root, "rev-parse", "--short=12", head).stdout.strip() or head
+        if total == 1 and state["done"]:
+            say(f"one step · one reviewer reads the whole diff · git diff {fork[:12]} {tip} · {state['steps'][0]['title']}")
+            return 0
         lit = light(project, item, base, head)
         if lit is not None and lit[0]:
             say(f"light · one reviewer reads the whole diff · git diff {fork[:12]} {tip} · {lit[1]}")
@@ -10704,7 +10714,7 @@ def hook_session(project: Project, payload: dict) -> dict | None:
             if steps:
                 lines.append(f"{ident} is built in {len(steps)} steps, one commit each: `python3 spry/tool/spry.py "
                              f"step {ident}` names the next one, and `step {ident} --commit` commits it "
-                             f"(slicing.md *Steps*).")
+                             f"(slicing.md *Build* step 3).")
         else:
             lines.append(f"This branch, `{branch}`, is no slice's branch.")
     elif branch and branch != "HEAD":

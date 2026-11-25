@@ -410,10 +410,11 @@ first so a slow one never runs only to be thrown away by a lint error.
   services (`stack`) only when they are down and stopping only what it started. Report only.
 - Fewer conflicts come from §4 (one file per item) and §13 (no generated files on branches).
 
-### Steps mode — one slice for a story, built in steps
+### Steps — one slice for a story, built in steps
 
-> **Status:** built in CH-51 (0.40.0). From connect's "catch-up mode", which was an instruction the
-> agent sometimes did not follow.
+> **Status:** built in CH-51 (0.40.0) as a mode a project turned on; the only way a slice is built
+> since CH-88 (0.77.0), which removed `slices.mode`. From connect's "catch-up mode", which was an
+> instruction the agent sometimes did not follow.
 
 Purpose: pay a slice's fixed costs once per story, not once per slice, while keeping one task in
 the agent's hands and in each reviewer's scope at a time. A slice pays the same costs whatever its
@@ -422,18 +423,28 @@ merge wait. In the pilots, checks took 19–26% of active time, review agents 17
 the person took up to half of the merge phase (§17). Falsify costs the same in either mode, since
 it grows with the guards a diff adds, not with the number of slices.
 
-- **One kind of slice.** A slice holds one or more steps. A slice with one step is today's slice
-  and has no `### Steps` section. `slices.mode` only changes how `/spry:slice` splits a story:
-  - `split` (default): one step per slice, as today.
-  - `steps`: the story is planned as steps, as slices are today (a title, the criteria each
-    covers, one visible change each, in build order). Then consecutive steps are packed into the
-    fewest slices that fit `slices.steps.max` (default 5) and `slices.steps.max_lines` (default
-    800 lines changed, documents and `checks.generated` files left out; `0` turns it off). With
-    `slices.steps.step_lines` set (default `0`, off), each step is also kept under that many lines
-    — the size one reviewer reads. A story over the cap gets several slices, and each of those is a
-    steps slice. Steps that could be built at the same time by different people go
-    into different slices, so the slices can run side by side.
-- **The work order.** In a steps slice, `### Plan` is replaced by `### Steps`. Each
+- **One kind of slice, and one way to build it** (CH-88). A slice holds one or more steps, and
+  its work order has `### Steps` even for one. The story is planned as steps (a title, the
+  criteria each covers, one visible change each, in build order). Then consecutive steps are
+  packed into the fewest slices that fit `slices.steps.max` (default 5) and
+  `slices.steps.max_lines` (default 800 lines changed, documents and `checks.generated` files
+  left out; `0` turns it off). With `slices.steps.step_lines` set (default `0`, off), each step
+  is also kept under that many lines — the size one reviewer reads. Steps that could be built at
+  the same time by different people go into different slices, so the slices can run side by side.
+  - **`slices.steps.max: 1` is what `split` was:** every change its own slice and pull request.
+    It is a size, not a second procedure — the step is still committed by the tool after its
+    checks, and read by one reviewer (`step --ranges` prints one line for a slice of one step).
+  - **Why the mode went.** Two procedures cost a dozen asides in `slicing.md` (*a steps slice
+    instead…*) and a *Steps* section that restated *Close* "with three differences"; an agent in
+    either mode read both. The rules that held only in steps mode — the tool commits, the
+    formatter runs first, the fast gate cannot be skipped, the session stops between steps when
+    it has grown — were the ones a split slice kept breaking by hand (§17: the full gate failed
+    in 40% of slices). And the measured cost per line fell with size up to the cap.
+  - **Before CH-88:** a work order with `### Plan` and no `### Steps` is one step, committed by
+    hand and read by one reviewer; `check` and `merge-check` take it as they did. A config that
+    still says `slices.mode: split` is read as `steps.max: 1` unless it sets `steps.max`, and
+    `check` warns until the key is removed.
+- **The work order.** `### Steps` holds the plan. Each
   `#### Step <k> · <title>` has a `Covers:` line (the slice's criteria it covers, or `—` for a
   step that only prepares) and one plan bullet per file. `check` refuses steps that are not
   numbered from 1, more steps than `slices.steps.max`, a criterion that is in `covers` but in no
@@ -449,7 +460,7 @@ it grows with the guards a diff adds, not with the number of slices.
   - `check --base`, run locally on the slice's branch, warns about a code commit with no `Step:`
     trailer that is not a `fixup!` of a step commit, and about steps committed out of order or
     twice. CI checks out a detached merge ref, so it never sees these; `merge-check` does.
-  - `check` refuses a `slices.mode` other than `split` or `steps`, so a typo is not quietly `split`.
+  - `check` warns about a `slices.mode` left in the config (CH-88), and says what replaces it.
   - `merge-check` blocks unless every step has exactly one commit, in order, with no `fixup!` left.
   - A slice over `slices.steps.max_lines` at close is listed in the merge's ask, for the person to
     accept, as survivors are. So is each step whose commit is over `slices.steps.step_lines`
@@ -483,7 +494,7 @@ it grows with the guards a diff adds, not with the number of slices.
   run once, at close, on the whole slice. Pushes happen only at close — for the review, and at its
   end with `--force-with-lease` after the fixups are folded in — so CI runs twice per slice rather
   than twice per step.
-- **Review, step by step.** At close, `/spry:review` on a steps slice starts one fresh agent per
+- **Review, step by step.** At close, `/spry:review` on a slice of more than one step starts one fresh agent per
   step, all in parallel. Each agent gets only its step's diff (its step's own commit), the step's plan, its criteria and the slice's `Must not`. One
   more agent reads the whole diff for the **seams** only: what one step relies on from another
   (an interface, the shape of data, ordering, shared state), which no single step's review can
@@ -499,7 +510,7 @@ it grows with the guards a diff adds, not with the number of slices.
   commit. The merge stays a squash: every commit on the main branch passed the full gate, so
   bisect never stops on a commit that only passed `gate --fast`. `merge-message` adds the step
   titles to the body.
-- **Pace** (§17) reads a steps slice like any other. The config commit that turns the mode on is a
+- **Pace** (§17) reads a slice of many steps like any other. The config commit that turns the mode on is a
   dated change, so the page compares slices before and after it. The review-agent flag counts
   agents per step.
 - **What it costs, and when not to use it:**
@@ -527,7 +538,7 @@ three decisions): nothing checked that a choice it took without asking really wa
   the parent's feature, `AGENTS.md`, and the decisions and conventions indexes. It edits nothing.
 - **What it checks:** each choice the plan takes without asking, against *When to stop and ask*;
   what the plan assumes that no story, feature or decision says; for each choice, an option harder
-  to build and better for the product; in a steps slice, what each step needs from an earlier one.
+  to build and better for the product; what each step needs from an earlier one.
 - **What comes of it:** Blocker / Should / Nit, each resting on a line. The opening agent verifies
   each. A Blocker that stands is an ask before any code — the third decision, found by a second
   reader. An accepted Should changes the work order then.
@@ -924,7 +935,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean; with `slices.design_review`, a warning when the work order has no design review or a Blocker went unasked A light slice's missing design review is `ok`; one that outgrew light without one is a warning (§25). |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
-| `step <slice> [--commit] [--ranges [--head]] [--squash] [--base]` | steps mode (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` — and, with `slices.steps.tests`, the test files the step added or changed — and commits it with its `Step:` trailer, first running every `fix` in `checks.fast` on the step's files (CH-84); `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps `--ranges` prints one `light` line for a light slice (§25). |
+| `step <slice> [--commit] [--ranges [--head]] [--squash] [--base]` | steps (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` — and, with `slices.steps.tests`, the test files the step added or changed — and commits it with its `Step:` trailer, first running every `fix` in `checks.fast` on the step's files (CH-84); `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps `--ranges` prints one `light` line for a light slice (§25). |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
@@ -1531,6 +1542,16 @@ in `spry/history/writ.md`, then retires `canon/`.
   (a project that changes nothing must lose no reading); an estimate of size at plan time (no
   slice has one, and the diff is exact); dropping falsify or the gate at level 0 (they are proof,
   not readings).
+- 2026-11-25 — every slice is built in steps (CH-88, 0.77.0). `slices.mode` is gone: a slice
+  holds one to `slices.steps.max` steps, its work order always has `### Steps`, and the tool
+  commits each one. What `split` gave — one change a pull request — is `slices.steps.max: 1`.
+  `slicing.md` lost its *Steps* section and its per-mode asides; the step loop is *Build* step 3
+  and the fixups are *Close* steps 5 and 7. Kept working: work orders written with `### Plan`,
+  a config that still says `split` (read as `max: 1`, with a warning), and a project whose own
+  `slicing.md` still has *Steps* apart (`proc --for` adds it). Rejected: keeping `split` as a
+  default and only merging the text (two procedures in one text is what cost the asides);
+  refusing a work order without `### Steps` in `check` (hundreds of closed slices have none);
+  one reviewer for the seams of a one-step slice (there are none).
 
 ## 24. Worktrees and progress
 

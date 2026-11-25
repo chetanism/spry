@@ -116,7 +116,9 @@ the agent wrote its <strong>work order</strong>. The summary is for anyone; the 
 - The desk refuses a loan when the member already has 3 books, or has an overdue one.
 - The refusal shows as soon as the library card is scanned, before any book.
 
-### Plan
+### Steps
+#### Step 1 · Refuse a loan over the limit
+Covers: AC-1, AC-2
 - src/loans/eligibility.ts — canBorrow(memberId, today); reads loans.due_on (D-1)
 - src/loans/lend.ts — call canBorrow before inserting
 - src/desk/LendPanel.tsx — show the refusal after the card scan; disable Lend

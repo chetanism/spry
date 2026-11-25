@@ -1,6 +1,6 @@
 {
-  "spry": "0.76.0",
-  "spry_baseline": "CH-87",
+  "spry": "0.77.0",
+  "spry_baseline": "CH-88",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -90,7 +90,6 @@
   "rigor": 1,
   "slices": {
     "pick": "offer",
-    "mode": "split",
     "design_review": false,
     "fresh_context": 150000,
     "light": {"max_lines": 300, "never": ["**/migrations/**", "**/*.sql"]},

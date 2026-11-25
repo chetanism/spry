@@ -65,7 +65,7 @@ from the argument (`SL-n` or a PR number), or from the current branch's `open` /
      (`next <type>` after merging the main branch in) and every place it is cited, then step 1 again.
 6. **Ask:** one line — what merges, the trailer it carries — and each `!` item as something the person
    accepts: a survivor or skipped control with its reason, a criterion with no test, a criterion
-   changed under its tests or scenarios, CI that did not run, a steps slice over its size cap. Merge only on a yes given in this
+   changed under its tests or scenarios, CI that did not run, a slice over its size cap. Merge only on a yes given in this
    conversation, for this PR.
    - **Already answered** when the person chose *fix, then merge* in a review of this PR
    (`reviewing.md` §5a) and every `!` here was in that review's report. Anything new — a `!` the

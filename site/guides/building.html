@@ -69,7 +69,9 @@ not settled, an outside team's date — is the person's call. See <a href="team.
     opened, its body generated from the slice file. One command does all of it —
     <code>spry.py publish SL-2 open</code> — and it changes nothing if <code>check</code> refuses the work order.</p></li>
   <li><strong>Build.</strong>
-    <p>In the same session, unless you said to open only. When the code is built and committed, the
+    <p>In the same session, unless you said to open only — one <a href="slicing.html#built-in-steps">step</a>
+    at a time, each committed by <code>spry.py step SL-2 --commit</code> after its fast checks, never by
+    hand. When every step is committed, the
     agent stops and asks you to <code>/clear</code> and run <code>/spry:slice-close SL-2</code>, so the
     <a href="closing.html">close</a> starts in a fresh session instead of re-reading the whole build on
     every request. The slice file and the commits carry everything it needs.</p></li>
@@ -106,7 +108,7 @@ session, on the model you pick with <code>/model</code>:</p>
   <tbody>
     <tr><td><strong>Summary</strong></td><td>2–4 bullets anyone on the team can read: what will be done, and what a person will see</td></tr>
     <tr><td><strong>Covers</strong></td><td>The criteria this slice proves, as links — never restated</td></tr>
-    <tr><td><strong>Plan</strong></td><td>One bullet per file and what changes in it</td></tr>
+    <tr><td><strong>Steps</strong></td><td>One heading per <a href="slicing.html#built-in-steps">step</a> — a slice of one change has one — with the criteria it covers, then one bullet per file and what changes in it</td></tr>
     <tr><td><strong>Must not</strong></td><td>The decisions and rules this change could break, linked, each with one line on how</td></tr>
     <tr><td><strong>Tests</strong></td><td>At least one per criterion, each name containing the criterion, like <code>S-2/AC-1</code></td></tr>
     <tr><td><strong>Demo</strong></td><td>Steps anyone can copy and paste to see it working — no values to fill in by hand</td></tr>
@@ -126,7 +128,11 @@ session, on the model you pick with <code>/model</code>:</p>
 
 - [S-2](README.md) AC-1, AC-2
 
-### Plan
+### Steps
+
+#### Step 1 · Refuse a loan over the limit
+
+Covers: AC-1, AC-2
 
 - `src/loans/eligibility.ts` — `canBorrow(memberId, today): Result&lt;void, AtLimit | Overdue&gt;`; reads `loans.due_on` (D-1)
 - `src/loans/lend.ts` — call `canBorrow` before inserting; same errors

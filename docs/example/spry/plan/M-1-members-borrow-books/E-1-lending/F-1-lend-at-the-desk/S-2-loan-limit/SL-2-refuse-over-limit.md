@@ -23,7 +23,11 @@ related: [SL-1]
 
 - [S-2](README.md) AC-1, AC-2
 
-### Plan
+### Steps
+
+#### Step 1 · Refuse a loan over the limit
+
+Covers: AC-1, AC-2
 
 - `src/loans/eligibility.ts` — `canBorrow(memberId, today): Result<void, AtLimit | Overdue>`; reads `loans.due_on` (D-1)
 - `src/loans/lend.ts` — call `canBorrow` before inserting; same errors

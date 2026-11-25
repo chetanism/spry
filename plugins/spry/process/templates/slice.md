@@ -25,9 +25,9 @@ related: []
 
 <!-- guide: the parent's acceptance criteria this slice proves, as links — never restate their text. For a task or bug, its "Done when" lines. -->
 
-### Plan
+### Steps
 
-<!-- guide: one bullet per file: `path` — what changes. A code snippet only where the shape is not obvious (a signature, a query, a rule). -->
+<!-- guide: one `#### Step <k> · <title>` per visible change, in build order; a slice of one change has one. Under each: `Covers: AC-1` (the slice's criteria it covers, `—` for a step that only prepares), then one bullet per file: `path` — what changes. A code snippet only where the shape is not obvious (a signature, a query, a rule). The tool commits each step: `spry.py step SL-<n> --commit`. -->
 
 ### Must not
 
@@ -53,7 +53,7 @@ related: []
 
 ### Review
 
-<!-- guide: written at close, once the review's findings are verified: `- <n> Blocker, <n> Should, <n> Nit — <n> fixed`. One line per review; a steps slice counts all its reviewers together. `spry pace` reads it. Delete if the slice was not reviewed at close. -->
+<!-- guide: written at close, once the review's findings are verified: `- <n> Blocker, <n> Should, <n> Nit — <n> fixed`. One line per review, all its reviewers counted together. `spry pace` reads it. Delete if the slice was not reviewed at close. -->
 
 ### Falsify
 
