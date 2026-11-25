@@ -1784,3 +1784,19 @@ Entry format:
 - **Adapt:** a project that changed *Close* step 6, or *Plan* step 1, keeps its own wording and
   takes only the new call (`brief SL-<n> --as <skill>`).
 - **Migrate:** nothing. `brief` without `--as`, and `proc` with section names, work as before.
+
+## CH-83 · A build stops growing between steps
+
+- **Date:** 2026-11-25 · **Version:** 0.72.0
+- **Touches:** `tool/spry.py` (`step --commit`), `process/slicing.md` (*Steps* → *Build*)
+- **Why:** the context check (`slices.fresh_context`) ran only where a skill starts, so one build
+  session carried every step it had built into every request of the steps left. Across two
+  projects, slices of 2,500 lines or more peaked at a median of 434k tokens of context, and the
+  build was 58% of one such slice's spend.
+  - `step --commit` now says, after the commit and while a step is left, when the session is past
+    the limit: `[Run] /clear`, then `/spry:slice-build SL-n`. `spry.py step SL-n` there names the
+    next step from the commits, so nothing is lost.
+  - It is never said after the last step: the close starts in a fresh session anyway.
+- **Adapt:** `slices.fresh_context`. A project that raised it far above the default (1,000,000,
+  say) has turned this and the checks at open, close and merge off; 150000 brings them back.
+- **Migrate:** nothing.

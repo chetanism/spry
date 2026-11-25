@@ -3915,6 +3915,14 @@ class Pace(Base):
                       "CH-76: each request counted in the phase it fell in; CH-77: a subagent in the phase it started in")
         self.assertIn("- requests that called a tool: 1, 0% of them called one", lines, "r2 made two calls in one request")
 
+    def test_a_step_commit_says_when_the_next_step_belongs_in_a_fresh_session(self):
+        """CH-83: a build that outgrew `slices.fresh_context` stops between steps, where nothing is lost."""
+        p = self.tree().project()
+        with unittest.mock.patch.object(spry, "session_context", return_value=200_000):
+            stop = spry.context_stop(p, "/spry:slice-build SL-1")
+        self.assertIn("over `slices.fresh_context` (150k)", stop)
+        self.assertIn("`/spry:slice-build SL-1`", stop)
+
     def test_brief_says_when_the_session_is_too_big_to_close_in(self):
         """CH-76: past `slices.fresh_context`, the close starts after /clear; a reviewer's --diff never asks."""
         t = self.tree()
@@ -4374,6 +4382,27 @@ class Steps(Base):
     def read(self, rel):
         with open(os.path.join(self.t.root, rel)) as handle:
             return handle.read()
+
+    def test_past_the_context_limit_a_step_commit_ends_the_session_before_the_next_step(self):
+        """CH-83: said after the commit, and never after the last step — the close starts fresh anyway."""
+        self.on_branch()
+        self.write("src/lend.ts", "export const limit = 4\n")
+        with unittest.mock.patch.object(spry, "session_context", return_value=200_000):
+            code, out = self.say(True, False, False)
+            self.assertEqual(code, 0, out)
+            self.assertIn("committed step 1 of 2", out)
+            self.assertIn("! this session carries 200k tokens of context, over `slices.fresh_context` (150k)", out)
+            self.assertIn("[Run] `/clear`, then `/spry:slice-build SL-1`", out)
+            self.assertTrue(out.rstrip().endswith("`spry.py step SL-1` there names step 2"), out)
+            self.write("src/page.ts", "export const shown = true\n")
+            code, out = self.say(True, False, False)
+            self.assertIn("committed step 2 of 2", out)
+            self.assertNotIn("this session carries", out)
+        self.write("src/more.ts", "export const more = 1\n")
+        self.run_git("reset", "-q", "--hard", "HEAD~2")
+        self.write("src/lend.ts", "export const limit = 4\n")
+        with unittest.mock.patch.object(spry, "session_context", return_value=100_000):
+            self.assertNotIn("this session carries", self.say(True, False, False)[1])
 
     def test_a_step_whose_only_fault_is_formatting_is_formatted_and_committed(self):
         self.on_branch()

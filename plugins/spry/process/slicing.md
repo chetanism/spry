@@ -301,7 +301,9 @@ file, keeps that so (DESIGN.md §15 *Steps mode*).
 - **Build.** `spry.py step SL-<n>` names the next step and its plan, from the commits already made
   — so a new session, or one after a compaction, starts there. Build that step only, then
   `spry.py step SL-<n> --commit`: `gate --fast`, then one commit, `SL-<n> step <k>: <title>`, with
-  the trailer `Step: SL-<n>/<k>`. A step over `slices.steps.step_lines` is a `!` after the commit:
+  the trailer `Step: SL-<n>/<k>`. A `!` after the commit saying the session is past
+  `slices.fresh_context` → stop there: `[Run] /clear`, then `/spry:slice-build SL-<n>`, which
+  starts at the next step — every request of the steps left would read the steps built again. A step over `slices.steps.step_lines` is a `!` after the commit:
   split it now (`git reset --soft HEAD^`, then commit its parts as steps) or leave it for the person
   to accept at the merge. Red fast checks → fix and run it again; when every red check has
   a `fix` in `checks.fast` (the formatter), the tool runs it on the step's files, says which
