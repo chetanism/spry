@@ -239,9 +239,10 @@ search is <code>find</code>; the <a href="#pace">pace</a> page is at <code>/-/pa
 <code>merge-check</code> write and Claude Code's session logs for this clone. It writes
 <code>.spry/view/pace.md</code>, which shows:</p>
 <ul>
+  <li>limits loosened or off: each config value that turns one of spry's limits off or sets it looser than spry ships it — <code>slices.fresh_context</code>, <code>slices.steps.max_lines</code>, <code>slices.steps.max</code>, a hook set <code>false</code> — beside what the slices did. Absent when every limit is as shipped</li>
   <li>each category's share of the time</li>
   <li>before and after each dated change — and, under it, the slices of each size by themselves: p25 / median / p75 of the 20 before and of those after (a size needs 10 before), then the bugs filed later against them, per slice</li>
-  <li>flags</li>
+  <li>flags, counted by kind — one on more than a third of the slices is in bold — and then listed by slice</li>
   <li>a row per slice, with its lines changed — and, apart from them, the lines in <code>checks.generated</code> files</li>
   <li>by size: the medians of active time and spend for slices of each size, each per 100 changed lines as p25 / median / p75, and the bugs filed later</li>
   <li>tokens per slice: the spend in input-token equivalents, the subagents' share, the spend by phase (subagents in the phase they started in), the share of requests that called one tool, the largest context, and the context when the close started</li>
@@ -254,11 +255,12 @@ search is <code>find</code>; the <a href="#pace">pace</a> page is at <code>/-/pa
   <li>the slowest calls</li>
 </ul>
 <p>Never committed.</p>
-<pre><code>spry pace [SLICE] [--since YYYY-MM-DD] [--last N] [--compare POINT]</code></pre>
+<pre><code>spry pace [SLICE] [--since YYYY-MM-DD] [--last N] [--compare POINT] [--summary]</code></pre>
 <ul>
   <li><code>SLICE</code> — print one slice in detail instead: each kind of time, each phase, its gates, tokens, subagents, review findings, the bugs filed later against it, red checks, falsify runs, reruns and flags — and where it falls among the other slices of its size.</li>
   <li><code>--since</code>, <code>--last N</code> — only slices active since that day, or the last N.</li>
   <li><code>--compare POINT</code> — before and after a date, a <code>CH-n</code> taken, or a commit, instead of every change.</li>
+  <li><code>--summary</code> — print the head, the limits loosened, the flags counted, the size table and before/after: what a reader judges from, about a third of the page, with no row for each slice. The page is still written.</li>
 </ul>
 <p>Session logs are read once per size and change time. The first run on a long project can take a minute.</p>
 <p>Tokens come from Claude Code's session logs. An agent that writes none gets the time report without them.</p>

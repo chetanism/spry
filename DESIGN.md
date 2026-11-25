@@ -749,7 +749,7 @@ it never changes anything.
 - **When it runs:** `merge-check`, once it passes, writes the slice's summary with no extra call. It
   reads only logs changed since a day before the slice's file was made, and any failure is
   swallowed, because pace never stands between a slice and its merge.
-  `spry pace [<slice>] [--since <date>] [--last <n>] [--compare <point>]` runs it on demand. Each slice gets a summary,
+  `spry pace [<slice>] [--since <date>] [--last <n>] [--compare <point>] [--summary]` runs it on demand. Each slice gets a summary,
   `.spry/pace/slices/<SL-n>.json`, written once and kept: Claude Code deletes its logs after
   `cleanupPeriodDays` (30 by default), but the numbers outlive them. Only logs that are new or
   changed (by size and mtime) are read. The prototype took 1.5–2.5 min to read 750 logs; one
@@ -817,8 +817,20 @@ it never changes anything.
   | falsify above a share of the slice | `falsify.parallel` or `falsify.setup` |
   | the agent ran the whole suite | breaks §15 |
 
-- **`/spry:pace`** (audience 7) does the judging. It runs `spry pace`; a fresh agent reads the page
-  and the flagged slices, and proposes one thing per finding, with its evidence: a process change
+  **Counted** (CH-86): *Flags, counted* gives each kind of flag the slices it is on. With six
+  slices or more, one on more than a third of them is in bold — a rule broken that often is not
+  being read, and the fix is in the tool or the config, not in its wording.
+  - **Limits loosened or off** (CH-86): each config value that turns one of spry's limits off or
+    sets it looser than spry ships it — `slices.fresh_context`, `slices.steps.max_lines`,
+    `slices.steps.max`, a hook set `false` — beside what the slices in range did: how many peaked
+    above the default context, how many changed more lines than the default and the bugs filed
+    later against those and against the rest. It describes; the value is the project's choice.
+    Absent when every limit is as shipped.
+- **`spry pace --summary`** (CH-86) prints what a reader judges from — the head, the limits
+  loosened, the flags counted, *By size* and *Before and after each change* — and no row for each
+  slice: a third of the page. The page is still written.
+- **`/spry:pace`** (audience 7) does the judging. It runs `spry pace`; a fresh agent reads the
+  summary, a section of the page where a finding needs it and the flagged slices, and proposes one thing per finding, with its evidence: a process change
   (`/spry:process-change`), a config change, a bug against spry (`/spry:contribute`) or against
   the project (`/spry:bug`, `/spry:task`), or nothing. Report only.
 - **Stays on this machine.** `.spry/pace/` holds numbers, kinds and short command heads, never log
@@ -928,7 +940,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `install --agent` | §3 |
 | `codeowners` | §14 |
 | `draw` | seeded, replayable choices for `/spry:explore` |
-| `pace [<slice>] [--since] [--last] [--compare]` | where slices' time went (§17): the page in `.spry/view/pace.md`, or one slice in detail |
+| `pace [<slice>] [--since] [--last] [--compare] [--summary]` | where slices' time went (§17): the page in `.spry/view/pace.md`, or one slice in detail; `--summary` prints the part a reader judges from — limits loosened, flags counted, the size table, before and after |
 | `agent-hook <name>` | one Claude Code hook call, its payload on stdin (§18); run by `hooks/hooks.json`, not by hand |
 | `worktree list \| new [name] \| claim <name\|index> \| release [name] [--force] \| home [name] \| prune [--kept]` | the worktrees sessions build in (§24) |
 | `say "<text>" [--slice]` · `watch [-n s] [--once]` | a milestone line in the progress log; a panel per worktree drawn from it (§24) |
@@ -1496,6 +1508,17 @@ in `spry/history/writ.md`, then retires `canon/`.
   `reviewing.md`, and a second copy would be the plugin's, not the project's. Rejected: a `model:`
   on the agent — the reviewer is where a mistake is last caught. Rejected: one agent per kind of
   review — one prompt, five ways to start, is less to keep in step.
+- 2026-11-25 — `pace` shows what is switched off, and a summary for its reader (CH-86, 0.75.0).
+  A review of two projects found both had set `slices.fresh_context` to 1,000,000 and raised
+  `slices.steps.max_lines`, and nothing on the page said so: the reader saw large contexts and
+  large slices with no line tying them to a setting. *Limits loosened or off* now names each such
+  value beside what the slices did. *Flags, counted* marks a flag on more than a third of the
+  slices, with the rule that follows from it: **a rule broken that often is fixed in the tool or
+  the config, never by wording it again** — four flags were on 40–45% of one project's slices
+  after several rewordings. `pace --summary` prints 13k characters of a 39k page; the judging
+  agent read the whole page before, mostly rows it never cited. Rejected: a JSON form of the page
+  (one more thing to keep in step with it; the 2026-10-31 decision stands) and judging the limits
+  in the tool (whether 2,500 lines suits a project is its call — `pace` puts the bugs beside it).
 
 ## 24. Worktrees and progress
 

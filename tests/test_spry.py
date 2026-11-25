@@ -4244,6 +4244,66 @@ class Pace(Base):
         self.assertIn("| SL-3 | 500 | 2.5M | 500k | 20% | 250k | 180k | 1 | 10 | 7 | 3 | 0 | 5.0s | 0 (0) | 0 |", page)
         self.assertIn("| SL-1 | 200 | – | – | – | – | – | – | – | – | – | – | – | 0 (0) | 0 |", page)
 
+    def test_the_page_names_limits_set_looser_than_spry_ships_them(self):
+        def one(n, lines, peak, bugs):
+            return {"id": f"SL-{n}", "kinds": {"agent": 600}, "phases": {}, "first": T0 + n, "last": T0 + 100 + n, "sessions": 1,
+                    "prompts": 1, "questions": 0, "compactions": 0, "reviews": [], "limit": 0, "slowest": [], "suite": 0,
+                    "gates": [], "lines": lines, "tokens": {"input": 1_000_000}, "requests": 9, "peak": peak, "bugs": bugs}
+        slices = {s["id"]: s for s in [one(1, 200, 100_000, []), one(2, 900, 300_000, [["B-1", "major"]]), one(3, 2000, 400_000, [])]}
+        self.assertNotIn("Limits loosened", spry.pace_page(self.tree().project(), slices), "the defaults are no finding")
+        t = self.tree()
+        config = json.loads(open(os.path.join(t.root, "spry/spry.config.json")).read())
+        config["slices"] = {"fresh_context": 1_000_000, "steps": {"max_lines": 2500}}
+        config["hooks"] = {"check_edit": False}
+        open(os.path.join(t.root, "spry/spry.config.json"), "w").write(json.dumps(config))
+        page = spry.pace_page(t.project(), slices)
+        self.assertIn("- `slices.fresh_context` is 1000000 — spry ships 150000: 2 of 3 slices peaked above the default, "
+                      "median peak 300k; no session is told to start fresh", page)
+        self.assertIn("- `slices.steps.max_lines` is 2500 — spry ships 800: 2 of 3 slices changed more than the default — "
+                      "1 bug filed later (0.50 a slice), against 0 bugs filed later (0.00 a slice) in the rest", page)
+        self.assertIn("- hooks switched off: `hooks.check_edit`", page)
+        config["slices"] = {"fresh_context": 0, "steps": {"max_lines": 0}}
+        open(os.path.join(t.root, "spry/spry.config.json"), "w").write(json.dumps(config))
+        page = spry.pace_page(t.project(), slices)
+        self.assertIn("`slices.fresh_context` is off (0)", page)
+        self.assertIn("`slices.steps.max_lines` is off (0)", page)
+
+    def test_flags_are_counted_and_one_on_a_third_of_the_slices_is_marked(self):
+        t = self.tree()
+
+        def one(n, **more):
+            return {"id": f"SL-{n}", "kinds": {"agent": 600}, "phases": {}, "first": T0 + n, "last": T0 + 100 + n, "sessions": 1,
+                    "prompts": 1, "questions": 0, "compactions": 0, "reviews": [], "limit": 0, "slowest": [], "suite": 0,
+                    "gates": [], **more}
+        slices = {s["id"]: s for s in [one(1, suite=2, compactions=1), one(2, suite=1), one(3, suite=1)] + [one(n) for n in (4, 5, 6)]}
+        page = spry.pace_page(t.project(), slices)
+        self.assertIn("| **the agent ran the whole suite** | 3 | 50% |", page)
+        self.assertIn("| compactions | 1 | 17% |", page)
+        self.assertIn("not fixed by wording it again", page)
+        few = spry.pace_page(t.project(), {k: slices[k] for k in ("SL-1", "SL-2")})
+        self.assertIn("| the agent ran the whole suite | 2 | 100% |", few, "two slices are too few to mark")
+        self.assertEqual([kind for kind, _ in spry.pace_flag_pairs(t.project(), slices["SL-1"])],
+                         ["compactions", "the agent ran the whole suite"])
+
+    def test_the_summary_keeps_what_a_reader_judges_from(self):
+        page = ("# Pace\n\n- 2 slices\n\n## Limits loosened or off\n\n- a\n\n## Where the time went\n\n| x |\n\n"
+                "## Before and after each change\n\n### 2026-01-01 — c\n\n- b\n\n## Flags, counted\n\n| f |\n\n## Flags\n\n- SL-1: f\n\n"
+                "## Slices, newest first\n\n| SL-1 |\n\n## By size\n\n| under 300 |\n\n## Gate steps\n\n| lint |\n")
+        short = spry.pace_summary(page)
+        self.assertEqual([line for line in short.split("\n") if line.startswith("## ")],
+                         ["## Limits loosened or off", "## Before and after each change", "## Flags, counted", "## By size"])
+        self.assertIn("- 2 slices", short)
+        self.assertIn("### 2026-01-01 — c", short)
+        self.assertNotIn("SL-1", short)
+        t = self.tree()
+        said = []
+        with unittest.mock.patch.object(spry, "pace_page", return_value=page):
+            self.assertEqual(spry.pace(t.project(), say=said.append, summary=True), 0)
+        self.assertIn("## By size", said[0])
+        self.assertIn(".spry/view/pace.md", said[1])
+        with open(os.path.join(t.root, ".spry/view/pace.md")) as handle:
+            self.assertEqual(handle.read(), page, "the whole page is still written")
+
 
 STEPS = ("### Steps\n\n#### Step 1 · Refuse a fifth book\n\nCovers: AC-1\n\n- `src/lend.ts` — the limit\n\n"
          "#### Step 2 · Show the limit\n\nCovers: AC-2\n\n- `src/page.ts` — the count\n\n")
