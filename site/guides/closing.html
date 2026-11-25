@@ -63,7 +63,7 @@ replay the branch's commits on top of the latest main branch.
     <code>gate --fast</code> passes. The gate later stands for the code that merges, so the rebase comes
     before it, not after.</p></li>
   <li><strong>What changed.</strong>
-    <p>The agent compares the diff with the work order's <em>Plan</em> and writes only the differences, and
+    <p>The agent compares the diff with each step's plan in the work order and writes only the differences, and
     why. If it matches the plan, the section is deleted.</p></li>
   <li><strong>Proof.</strong>
     <p>Every criterion the slice covers has a test that cites it by name — or the agent tells QA which
@@ -78,7 +78,7 @@ replay the branch's commits on top of the latest main branch.
     <em>a</em> post its comments, fix every blocker and should, then merge; <em>b</em> post and fix, but stop
     before the merge; <em>c</em> post only; <em>d</em> neither. Accepted fixes are applied before falsify; on
     <em>c</em> or <em>d</em> the close goes on to falsify with nothing fixed. A slice
-    <a href="slicing.html#built-in-steps">built in steps</a> gets one reviewer per step and one for the seams,
+    <a href="slicing.html#built-in-steps">of several steps</a> gets one reviewer per step and one for the seams — a slice of one step, one reviewer —
     and each fix is a fixup of its step.</p>
     <p>What the review found is written into the slice, under <em>Review</em>: one line,
     <code>2 Blocker, 5 Should, 3 Nit — 7 fixed</code> — the findings that held up when checked, and how many
@@ -88,7 +88,7 @@ replay the branch's commits on top of the latest main branch.
     criteria are run. They should fail. Details below.</p></li>
   <li><strong>Gate.</strong>
     <p><code>spry.py gate</code>: check, fast checks, affected tests. If it fails, fix and run again — it
-    repeats only what the fix could change. In a slice built in steps, <code>spry.py step SL-n --squash</code>
+    repeats only what the fix could change. <code>spry.py step SL-n --squash</code>
     first folds the fixups into their steps.</p></li>
   <li><strong>Mark it closed and ready.</strong>
     <p><code>state: closed</code> and <code>closed:</code> today's date, committed with a <code>Slice: SL-n</code>

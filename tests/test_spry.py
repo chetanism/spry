@@ -4800,9 +4800,33 @@ class Steps(Base):
         s["reviews"] = [{}] * 6
         self.assertTrue(any("6 review agents" in f for f in spry.pace_flags(project, s)))
 
-    def test_slices_mode_is_split_or_steps(self):
-        self.write("spry/spry.config.json", json.dumps({**CONFIG, "slices": {"mode": "step"}}))
-        self.assertProblem(self.t.problems(), "`slices.mode` is `step`")
+    def test_slices_mode_is_gone_and_split_still_means_one_change_a_slice(self):
+        """CH-88: every slice is built in steps. A config that still says `split` keeps one step a
+        slice until it is migrated; `check` says how, as a warning."""
+        def warned():
+            return [str(p) for p in spry.check(self.t.project()) if p.level == "warning"]
+        self.assertEqual(spry.steps_config(self.t.project())["max"], 5)
+        self.assertEqual(warned(), [])
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "slices": {"mode": "split"}}))
+        self.assertEqual(spry.steps_config(self.t.project())["max"], 1)
+        self.assertProblem(warned(), "`slices.mode` is gone (CH-88)")
+        self.assertProblem(warned(), "set `slices.steps.max` to 1")
+        self.assertProblem(self.t.problems(), "2 steps, over `slices.steps.max` (1)")
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "slices": {"mode": "split", "steps": {"max": 3}}}))
+        self.assertEqual(spry.steps_config(self.t.project())["max"], 3, "a value the project set wins")
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "slices": {"mode": "steps"}}))
+        self.assertEqual(spry.steps_config(self.t.project())["max"], 5)
+        self.assertProblem(warned(), "remove the key")
+        self.assertEqual(self.t.problems(), [])
+
+    def test_a_slice_of_one_step_has_one_reviewer(self):
+        one = STEPS.split("#### Step 2")[0].replace("Covers: AC-1", "Covers: AC-1, AC-2")
+        self.assertEqual(self.with_steps(one), [])
+        self.on_branch()
+        self.write("src/lend.ts", "export const limit = 4\n")
+        self.assertEqual(self.say(True, False, False)[0], 0)
+        code, out = self.say(False, True, False)
+        self.assertRegex(out, r"^one step · one reviewer reads the whole diff · git diff \w+ \w+ · Refuse a fifth book$")
 
     def test_the_hook_sends_a_code_commit_to_the_tool(self):
         self.write("spry/spry.config.json", json.dumps({**CONFIG, "main_branch": "main", "hooks": {"step_commit": True}}))
@@ -5853,7 +5877,8 @@ class Proc(Base):
         self.assertGreaterEqual(seen, 9)
 
     def test_proc_for_prints_all_a_skill_reads_before_it_starts(self):
-        """CH-82: one call, not one per file — and *Steps* only for a project or a slice built in steps."""
+        """CH-82: one call, not one per file. CH-88: steps are in the sections themselves; a project
+        whose `slicing.md` still has *Steps* apart gets it too."""
         t = self.tree()
         out = spry.proc_for(t.project(), "slice-close")
         for part in ("## Close — `/spry:slice-close [SL-n]`", "## When to stop and ask", "## While building",
@@ -5861,9 +5886,11 @@ class Proc(Base):
             self.assertIn(part, out)
         self.assertNotIn("\n## Steps —", out)
         self.assertNotIn("\n## Plan —", out, "only the sections the skill runs")
+        self.assertIn("`spry.py step SL-<n> --commit`", spry.proc_for(t.project(), "slice-build"))
+        old = self.tree(**{"spry__process__slicing.md": "# Slicing\n\n## When to stop and ask\n\na\n\n## Build — x\n\nb\n\n"
+                                                         "## While building\n\nc\n\n## Steps — `slices.mode: steps`\n\nd\n"})
+        self.assertIn("## Steps — `slices.mode: steps`", spry.proc_for(old.project(), "slice-build"))
         p = t.project()
-        p.config["slices"] = {"mode": "steps"}
-        self.assertIn("## Steps — `slices.mode: steps`", spry.proc_for(p, "slice-build"))
         self.assertIn("# Conflict check", spry.proc_for(p, "slice-plan"))
         self.assertIn("## Merge", spry.proc_for(p, "merge"))
         with self.assertRaises(SystemExit) as caught:

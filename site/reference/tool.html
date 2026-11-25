@@ -102,7 +102,7 @@ run in another worktree to finish.</p>
 <p>More: <a href="../design/gate.html">The gate and test speed</a>.</p>
 
 <h3 id="step">step</h3>
-<p>For a slice built in steps (<code>slices.mode: steps</code>): which step comes next, worked out from the
+<p>Every slice is built in steps: which step comes next, worked out from the
 commits already on the branch, and the commit that finishes it.</p>
 <pre><code>spry step [--commit] [--ranges [--head REF]] [--squash] [--base BASE] slice</code></pre>
 <ul>
@@ -139,7 +139,7 @@ changed a criterion and code together without <code>criteria_approved_by:</code>
 when a slice built in steps has a step with no commit, one made twice or out of order, code committed
 without a <code>Step:</code> trailer, or a fixup not folded in, or when <code>check</code> is not clean. It warns (<code>!</code>) about things a person must accept
 at the merge — a survivor or skipped control with a reason, a covered criterion no test cites (QA
-checks it by hand after the merge), one whose latest manual check failed, a steps slice over
+checks it by hand after the merge), one whose latest manual check failed, a slice over
 <code>slices.steps.max_lines</code> or a step over <code>slices.steps.step_lines</code>, or, with <code>slices.design_review</code> on, a work order with no
 <em>Design review</em> or with a Blocker that was not asked. Lines in <code>checks.generated</code> files are not part of that size;
 they are printed beside it.</p>
@@ -497,8 +497,7 @@ spry proc --for skill</code></pre>
 <p><code>--list</code> — the headings and their sizes. With no section, the whole file.</p>
 <p><code>--for slice-open | slice-plan | slice-build | slice-close | merge | review-slice | review-plan | review-other</code> — everything that skill
 reads before it starts, in one call: the sections of its process file, then the files it reads beside it
-(<code>chat.md</code>, <code>writing.md</code>, <code>conflicts.md</code>). A project with
-<code>slices.mode: steps</code> gets <em>Steps</em> too. The list lives in the tool, so a skill no longer
+(<code>chat.md</code>, <code>writing.md</code>, <code>conflicts.md</code>). The list lives in the tool, so a skill no longer
 names sections that a process file might rename.</p>
 
 <h3 id="find">find</h3>

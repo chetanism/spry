@@ -24,7 +24,11 @@ related: []
 
 - [T-1](README.md) — both "Done when" lines
 
-### Plan
+### Steps
+
+#### Step 1 · CI pipeline
+
+Covers: —
 
 - `.github/workflows/pr.yml` — three parallel jobs: `vitest run --changed origin/main`, `spry.py check`, `tsc --noEmit`
 - `.github/workflows/main.yml` — `pnpm test:all`, then `spry.py index` and a `[skip ci]` commit

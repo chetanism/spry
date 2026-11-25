@@ -24,7 +24,11 @@ related: []
 
 - [S-1](README.md) AC-1, AC-2, AC-3
 
-### Plan
+### Steps
+
+#### Step 1 · Record a loan
+
+Covers: AC-1, AC-2, AC-3
 
 - `db/migrations/0003_loans.sql` — `loans` table; `due_on date not null`; partial unique index on `book_id where returned_at is null` (F-1/R-3)
 - `src/loans/lend.ts` — `lend(memberId, bookId, today): Result<Loan, LendError>`

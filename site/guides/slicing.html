@@ -32,6 +32,10 @@ nobody ends up reviewing a 3,000-line pull request the agent wrote in one go.</p
   screen, a refusal, a printed date.</li>
 </ul>
 
+<p>A slice is built in <a href="#built-in-steps">steps</a>: each step is one such change, with its own commit
+and its own reviewer, and a slice holds as many steps of one story as fit — up to five by default. A
+slice with one step is the smallest slice.</p>
+
 <p>A slice covers one or more acceptance criteria of <strong>one</strong> story, and between them a
 story's slices cover all of its criteria. A slice under a task or a bug covers its <em>Done when</em> or
 the behaviour it fixes instead. Each slice is a single file, <code>SL-&lt;n&gt;-&lt;slug&gt;.md</code> (the slug is the title in
@@ -63,15 +67,16 @@ commit, a closed slice on the main branch always means a merged one.</p>
   <li><strong>The agent reads first.</strong>
     <p>The story, its feature's rules, the project's coding conventions and decisions, and the code the
     change will touch.</p></li>
-  <li><strong>It proposes the slices in one reply.</strong>
-    <p>For each: a title, the criteria it covers, and one line on the visible change. They are ordered
-    so each builds on the last, and the agent says which ones <em>need</em> an earlier one — its code,
-    its data, its screen — and which could be built at the same time.</p></li>
+  <li><strong>It proposes the steps, then the slices that hold them, in one reply.</strong>
+    <p>For each step: a title, the criteria it covers, and one line on the visible change, in the order
+    they build. Then the fewest slices that hold them within the <a href="#built-in-steps">cap</a>. The
+    agent says which slices <em>need</em> an earlier one — its code, its data, its screen — and which
+    could be built at the same time.</p></li>
   <li><strong>You approve or adjust.</strong>
     <p>Merge two, split one, reorder. This is a developer conversation, so expect paths and code names.</p></li>
   <li><strong>The slice files are created.</strong>
     <p>One <code>spry.py new slice</code> with a <code>--title</code> per slice, which picks the next IDs and the right folder. Only the
-    <em>Summary</em>, <code>covers</code> and <code>blocked_by</code> are filled in now. Everything else waits for
+    <em>Summary</em>, <code>covers</code>, <code>blocked_by</code> and each step's heading are filled in now. Everything else waits for
     <a href="building.html">opening the slice</a>.</p></li>
   <li><strong>Checked and committed.</strong>
     <p><code>spry check</code> runs, and the commit is <code>docs(plan): slices for S-2</code>.</p></li>
@@ -130,18 +135,21 @@ Some signals — rules of thumb, not checked by spry:</p>
 
 <h2>Built in steps</h2>
 
-<p>Every slice pays the same fixed costs whatever its size: a work order, a review, falsify, the full gate,
-two CI runs and a merge. A story cut into four slices pays them four times. A project that wants them
-paid once can set <code>slices.mode</code> to <code>steps</code> in its <a href="../reference/config.html">config</a>.
-The default, <code>split</code>, works as described above.</p>
+<p>Every slice pays the same fixed costs whatever its size: a work order, a review set-up, falsify, the full
+gate, two CI runs and a merge. A story cut into four pull requests pays them four times. So a slice holds
+several changes — <strong>steps</strong> — and pays once.</p>
 
-<p>With <code>steps</code>, <code>/spry:slice</code> plans the story exactly as it would plan slices — each change
-reviewable, each one visible, each covering its criteria — but calls them <strong>steps</strong>, and packs
+<p><code>/spry:slice</code> plans the story as steps — each change
+reviewable, each one visible, each covering its criteria — and packs
 them into as few slices as the cap allows: <code>slices.steps.max</code> steps (5) and about
 <code>slices.steps.max_lines</code> changed lines (800, documents and generated files not counted; 0 for no slice cap). Set
 <code>slices.steps.step_lines</code> and each step is also kept under that many lines — the size one reviewer reads; a step
 over it is named when it is committed and again at the merge. A story that fits becomes one
 slice. Steps two people could build at the same time go into separate slices.</p>
+
+<p>Want every change as its own pull request? Set <code>slices.steps.max</code> to <code>1</code> in the
+<a href="../reference/config.html">config</a>: every step is then a slice, still committed and checked by
+the tool, and read by one reviewer.</p>
 
 <p>Nothing about review or proof gets smaller. The tool keeps each step separate:</p>
 
@@ -151,13 +159,13 @@ slice. Steps two people could build at the same time go into separate slices.</p
     <tr><td>One step at a time</td><td><code>spry.py step SL-n</code> names the next step and its plan, worked out from the commits made so far — a new session starts there too</td></tr>
     <tr><td>Each step one commit</td><td><code>spry.py step SL-n --commit</code> runs the fast checks, then commits with the trailer <code>Step: SL-n/k</code>. It formats the step's files first, when the format check has a <code>fix</code> command, so formatting never stops a commit. With <code>slices.steps.tests</code> on, it first runs the test files the step added or changed, and a failing one stops the commit. The <code>step_commit</code> hook refuses a <code>git commit</code> of code made by hand</td></tr>
     <tr><td>Tests once</td><td>Steps run the fast checks only; the full gate and falsify run once, at close, on the whole slice</td></tr>
-    <tr><td>Review one step at a time</td><td>One fresh reviewer per step, given only that step's diff, and one more for the seams between steps — all at once</td></tr>
+    <tr><td>Review one step at a time</td><td>One fresh reviewer per step, given only that step's diff, and one more for the seams between steps — all at once. A slice of one step has one reviewer</td></tr>
     <tr><td>Clean commits to read</td><td>Review fixes are fixups of their step, folded in by <code>spry.py step SL-n --squash</code> before the gate</td></tr>
     <tr><td>Nothing missing</td><td><code>merge-check</code> blocks a step with no commit, one made twice or out of order, code without a trailer, or a fixup not folded in. Over the line cap, it asks you to accept the size</td></tr>
   </tbody>
 </table></div>
 
-<p>The work order's <em>Plan</em> becomes <em>Steps</em>: one heading per step, the criteria it covers, then
+<p>The work order's <em>Steps</em> section has one heading per step, the criteria it covers, then
 one bullet per file.</p>
 
 <pre data-label="SL-4-refuse-over-limit.md"><code>### Steps
@@ -175,10 +183,11 @@ Covers: AC-2
 - `src/member-page.ts` — "3 of 4 books"</code></pre>
 
 <div class="callout">
-  <span class="callout-title">What it costs</span>
+  <span class="callout-title">What several steps in one slice cost</span>
   <p>A bigger pull request for a person to read, though they can read it commit by commit. A branch that
-  lives longer, so use it for stories whose files no other open slice touches. And nothing reaches the
-  main branch until the last step is done.</p>
+  lives longer, so put steps that touch files another open slice touches in a slice of their own. And nothing reaches the
+  main branch until the last step is done. Lower <code>slices.steps.max</code> when that matters more than
+  the fixed costs.</p>
 </div>
 
 <h2>What can go wrong</h2>

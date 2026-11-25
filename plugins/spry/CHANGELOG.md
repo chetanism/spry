@@ -1888,3 +1888,34 @@ Entry format:
   A project with its own lane for small work (a `catch-up.md`) can replace it with this.
 - **Migrate:** nothing. `"rigor": 1` and `slices.light` in the template are the defaults; a
   config without them behaves the same.
+
+## CH-88 · Every slice is built in steps
+
+- **Date:** 2026-11-25 · **Version:** 0.77.0
+- **Touches:** `process/slicing.md` (*What a slice is*, *Split*, *Plan*, *Build*, *While
+  building*, *Close*; *Steps* removed), `process/reviewing.md` (§2, §3a, §5a),
+  `process/setup.md`, `process/merging.md`, `process/templates/slice.md` (`### Steps` in place of
+  `### Plan`), `skills/slice`, `skills/review`, `tool/spry.py` (`slices.mode`, `step --ranges`,
+  `proc --for`), config template (`slices.mode` removed)
+- **Why:** spry had two ways to build a slice, and `slicing.md` described the second as a list
+  of differences from the first: a *Steps* section and a dozen asides, all read in either mode.
+  The rules that were only the tool's in steps mode — it commits, the formatter runs first, the
+  fast checks cannot be skipped, the session stops between steps once it has grown — were rules
+  a `split` slice was asked to keep by hand, and the full gate failed at close in 40% of slices.
+  - A slice holds one or more steps. Its work order has `### Steps` — one `#### Step <k> ·
+    <title>` for a single change — and every step is committed by `spry.py step SL-n --commit`.
+  - `/spry:slice` plans a story as steps and packs them into the fewest slices within
+    `slices.steps.max` (5) and `slices.steps.max_lines` (800).
+  - A slice of one step has one reviewer: `step SL-n --ranges` prints one line.
+  - `slicing.md` is one procedure; *Steps* → *Build* is *Build* step 3, and the fixups and the
+    squash are *Close* steps 5 and 7.
+- **Adapt:** a project that wants one change a pull request sets `slices.steps.max` to 1; it
+  keeps that, and gains the tool's commit and checks on every slice. A project whose
+  `slicing.md` differs from spry's takes the new text section by section — its own rules in
+  *Build* and *Close* stay; drop its *Steps* section once nothing in it is its own. A custom
+  skill that printed `proc slicing … Steps` drops `Steps`.
+- **Migrate:** in `spry/spry.config.json`, remove `slices.mode`. Where it was `split` (or
+  absent) and you want what it did, set `"steps": {"max": 1}` under `slices`; where it was
+  `steps`, nothing else. Until then the tool reads `split` as `max: 1` and `check` warns. Slices
+  already written with `### Plan` need no change, open or closed. `spry/process/templates/slice.md`
+  → take the new `### Steps` section.

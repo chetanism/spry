@@ -56,9 +56,10 @@ together. With no argument, the current branch's PR.
   words, the whole diff and its checks in one call, rather than piece by piece with `git show` and `sed`. It
   opens a file only for what the diff does not show. Never paste the brief into its prompt — the
   session would pay to write it.
-- **A slice built in steps** (`slicing.md` *Steps*) gets one new agent per step and one for the
-  seams, all in parallel (§3a). When `spry.py step SL-<n> --ranges` prints one `light` line, it is
-  a light slice (`slicing.md` *Light*): one agent, started with `brief SL-<n> --diff` like any slice's.
+- **A slice of more than one step** gets one new agent per step and one for the seams, all in
+  parallel (§3a). When `spry.py step SL-<n> --ranges` prints one line — a slice of one step, a
+  light one (`slicing.md` *Light*), or a work order from before steps — it is one agent, started
+  with `brief SL-<n> --diff`.
 - **An agent with no subagents:** ask the person to run `/spry:review <target>` in a new session.
 - **Another review after fixes** gets another new agent. It writes its own findings before it reads
   the earlier ones. Then it says which of the earlier ones still stand.
@@ -89,8 +90,8 @@ said not to do".
 6. **Conventions.** The areas the diff touches (`spry/knowledge/conventions/INDEX.md`).
 7. **Demo.** Run it when it can run locally. If you did not run it, say so.
 
-**A slice built in steps** has a `### Steps` section, and *For the reviewer* lists them. The
-scope stays one step per reviewer, and one more reads the seams between them:
+**A slice of more than one step** — *For the reviewer* lists them. The scope stays one step per
+reviewer, and one more reads the seams between them:
 
 - **One agent per step.** `spry.py step SL-<n> --ranges` prints each step's `git diff <a> <b>` —
   from the slice's branch on the remote when it is not checked out, so nothing is switched
@@ -257,9 +258,9 @@ The session that ran the review does this, not the reviewing agent.
      fixed code.
    - A PR already closed: falsify again when code changed (`merge-check` blocks a control with no
      row), then `spry.py gate`; the slice's *What changed* and the PR body when the diff did.
-4. **Commit** `fix(<SL-n>): review findings`. In a slice built in steps, each fix is instead
-   `git commit --fixup=<its step's commit>` (`step SL-<n> --ranges`), folded in before the gate
-   (`slicing.md` *Steps*). Reviewed at close: the close pushes, at its end. Otherwise push once.
+4. **Commit** each fix as `git commit --fixup=<its step's commit>` (`step SL-<n> --ranges`),
+   folded in before the gate (`slicing.md` *Close* step 7); in a slice with no steps, or another
+   PR, `fix(<SL-n>): review findings`. Reviewed at close: the close pushes, at its end. Otherwise push once.
 5. **Reviewed at close,** record the counts under the slice's `### Review` (`slicing.md` *Close*
    step 5) and finish the close (from *Falsify*). A draft PR reviewed
    before its close: stop there; the close runs from step 1 when the build is done. **On *a*,** then
