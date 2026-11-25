@@ -180,6 +180,7 @@ each slice's time into what filled it, so you can see which part of the process,
 tests to change.</p>
 
 <pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py pace                       <span class="c"># the page: .spry/view/pace.md</span>
+<span class="p">$ </span>python3 spry/tool/spry.py pace --summary             <span class="c"># the part to judge from, printed</span>
 <span class="p">$ </span>python3 spry/tool/spry.py pace SL-42                 <span class="c"># one slice in detail</span>
 <span class="p">$ </span>python3 spry/tool/spry.py pace --compare 2026-10-20  <span class="c"># before and after a day, a CH-n or a commit</span></code></pre>
 
@@ -271,13 +272,19 @@ tests to change.</p>
 
 <p>The page shows where the time went; it doesn't say what to do about it. <code>/spry:pace</code> does
 that step. It runs <code>spry pace</code>, and a fresh agent — never the session you are in — reads the
-page, the slices that were flagged and the log of your process changes.</p>
+summary (<code>pace --summary</code>), the slices that were flagged and the log of your process changes.</p>
 
 <pre data-label="In your agent"><code><span class="p">&gt; </span>/spry:pace</code></pre>
 
 <ol class="steps">
   <li><strong>It finds what is worth a change.</strong> A flag on several slices, or a share of the time that
   is high throughout or moved after a dated change. A flag on one slice is a note.</li>
+  <li><strong>It reads the limits you loosened.</strong> The page names each limit your config turns off or
+  sets looser than spry ships it, beside what your slices did: how many grew past the default, and the bugs
+  filed later against those. Worse numbers beside a loosened limit is a finding; the proposal is the value.</li>
+  <li><strong>It doesn't reword a rule that isn't read.</strong> A flag on more than a third of your slices
+  is in bold. For those it proposes what makes the tool or the config do the work — a <code>fix</code> on a
+  check, a limit, a hook — never the same rule in new words.</li>
   <li><strong>It proposes one thing per finding,</strong> with its evidence: a process change, a config key
   and its value, a bug in spry, a bug or task in your project, or nothing when the time is where the work is.</li>
   <li><strong>It won't read a difference into too few slices.</strong> Below 10 slices on each side of a

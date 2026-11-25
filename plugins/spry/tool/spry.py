@@ -93,7 +93,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.74.0"
+VERSION = "0.75.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -8500,12 +8500,13 @@ def pace_subs(s: dict, weights: dict) -> list:
             for kind in PACE_AGENTS if kind in subs]
 
 
-def pace_flags(project: Project, s: dict) -> list:
-    """What stands out in one slice, each with its number. Flags describe; they never judge."""
+def pace_flag_pairs(project: Project, s: dict) -> list:
+    """What stands out in one slice — (the kind of flag, the line with its number). Flags describe; they never judge."""
     conf = pace_config(project)["flags"]
     active = pace_active(s) or 1
     full = pace_full_gates(s)
     out = []
+    add = lambda kind, line: out.append((kind, line))
     failed = sum(1 for g in full if not g.get("ok", True))
     if failed:
         red = pace_failed_full(s)
@@ -8516,11 +8517,11 @@ def pace_flags(project: Project, s: dict) -> list:
                 if tests and not checks else
                 "fast checks while building catch the checks earlier; `gate --failed` reruns the tests" if tests else
                 "fast checks while building catch most of that earlier")
-        out.append(f"the full gate failed {failed}×" + (": " + ", ".join(f"{k} {n}×" for n, k in named) if named else "")
+        add("the full gate failed", f"the full gate failed {failed}×" + (": " + ", ".join(f"{k} {n}×" for n, k in named) if named else "")
                    + " — " + hint)
     tested = [g for g in full if g.get("tests")]
     if len(tested) > 1:
-        out.append(f"tests ran through the full gate {len(tested)}× — §15 expects one full gate")
+        add("tests ran through the full gate more than once", f"tests ran through the full gate {len(tested)}× — §15 expects one full gate")
     passed, again = set(), 0
     for g in sorted(full, key=lambda g: g.get("at", 0)):
         code = g.get("code")
@@ -8529,42 +8530,116 @@ def pace_flags(project: Project, s: dict) -> list:
         if code and g.get("ok", True):
             passed.add(code)
     if again:
-        out.append(f"tests ran again {again}× on code that had passed — the stamp missed: a spry bug, worth /spry:contribute")
+        add("tests ran again on code that had passed", f"tests ran again {again}× on code that had passed — the stamp missed: a spry bug, worth /spry:contribute")
     retried = sum(1 for g in s["gates"] if g.get("retried"))
     if retried:
         lost = sum(pace_retry_lost(g) for g in s["gates"])
-        out.append(f"{retried} quiet retr{'y' if retried == 1 else 'ies'}" + (f", {pace_time(lost)} lost to the first attempt" if lost >= 1 else "")
+        add("quiet retries", f"{retried} quiet retr{'y' if retried == 1 else 'ies'}" + (f", {pace_time(lost)} lost to the first attempt" if lost >= 1 else "")
                    + " — the machine was loaded, or a test is flaky")
     if s.get("limit"):
-        out.append(f"{s['limit']} call{'s' if s['limit'] != 1 else ''} ran to the agent's 10-minute limit — a wait that belonged in the background, or a hung test")
+        add("calls ran to the 10-minute limit", f"{s['limit']} call{'s' if s['limit'] != 1 else ''} ran to the agent's 10-minute limit — a wait that belonged in the background, or a hung test")
     asked = s.get("tool_requests", 0)
     if asked >= PACE_LONE_MIN and s.get("lone", 0) / asked > conf["lone_share"]:
-        out.append(f"{pace_share(s['lone'], asked)} of {asked} requests that called a tool called one — each re-reads "
+        add("one tool call a request", f"{pace_share(s['lone'], asked)} of {asked} requests that called a tool called one — each re-reads "
                    "the whole session: independent reads and commands go in one call (slicing.md *While building*)")
     session = s["kinds"].get("session", 0)
     if session / active > conf["session_share"]:
-        out.append(f"waiting on another session took {pace_share(session, active)} ({pace_time(session)})")
+        add("waiting on another session", f"waiting on another session took {pace_share(session, active)} ({pace_time(session)})")
     lock = s["kinds"].get("lock", 0)
     if lock / active > conf["lock_share"]:
-        out.append(f"waiting for the check lock took {pace_share(lock, active)} ({pace_time(lock)}) — other sessions' gates held it")
+        add("waiting for the check lock", f"waiting for the check lock took {pace_share(lock, active)} ({pace_time(lock)}) — other sessions' gates held it")
     merge = s["phases"].get("merge", {})
     merge_all = sum(merge.values())
     merge_you = merge.get("you", 0) + merge.get("question", 0)
     if merge_all >= 600 and merge_you / merge_all > conf["merge_wait_share"]:
-        out.append(f"the merge waited on you for {pace_share(merge_you, merge_all)} of its {pace_time(merge_all)}")
+        add("the merge waited on you", f"the merge waited on you for {pace_share(merge_you, merge_all)} of its {pace_time(merge_all)}")
     item = getattr(project, "items", {}).get(s.get("id"))
     steps = len(slice_steps(item.text)) if item is not None and item.type == "slice" else 0
     # A slice built in steps has one review agent per step and one for the seams between them.
     if len(s.get("reviews", [])) > conf["review_agents"] + (steps if steps > 1 else 0):
-        out.append(f"{len(s['reviews'])} review agents — the slice may be too big, or its work order unclear")
+        add("more review agents than expected", f"{len(s['reviews'])} review agents — the slice may be too big, or its work order unclear")
     if s.get("compactions"):
-        out.append(f"{s['compactions']} compaction{'s' if s['compactions'] != 1 else ''} — the slice outgrew one context")
+        add("compactions", f"{s['compactions']} compaction{'s' if s['compactions'] != 1 else ''} — the slice outgrew one context")
     falsify = s["kinds"].get("falsify", 0)
     if falsify / active > conf["falsify_share"]:
-        out.append(f"falsify took {pace_share(falsify, active)} ({pace_time(falsify)}) — `falsify.parallel` or `falsify.setup`")
+        add("falsify took long", f"falsify took {pace_share(falsify, active)} ({pace_time(falsify)}) — `falsify.parallel` or `falsify.setup`")
     if s.get("suite"):
-        out.append(f"the agent ran the whole suite {s['suite']}× — §15 leaves that to CI and /spry:test-all")
+        add("the agent ran the whole suite", f"the agent ran the whole suite {s['suite']}× — §15 leaves that to CI and /spry:test-all")
     return out
+
+
+def pace_flags(project: Project, s: dict) -> list:
+    return [line for _kind, line in pace_flag_pairs(project, s)]
+
+
+PACE_OFTEN = (6, 1 / 3)   # with this many slices, a flag in more than this share of them is marked
+
+
+def pace_flags_counted(project: Project, chosen: list) -> list:
+    """The flags by kind, with the slices each is on. One in more than a third of the slices is marked:
+    a rule broken that often is not being read, and wording it again has not helped."""
+    counts = {}
+    for s in chosen:
+        for kind in {kind for kind, _line in pace_flag_pairs(project, s)}:
+            counts[kind] = counts.get(kind, 0) + 1
+    if not counts:
+        return []
+    least, share = PACE_OFTEN
+    rows = ["## Flags, counted", "", "| flag | slices | share |", "|---|---:|---:|"]
+    often = []
+    for kind, n in sorted(counts.items(), key=lambda kv: (-kv[1], kv[0])):
+        marked = len(chosen) >= least and n / len(chosen) > share
+        often += [kind] if marked else []
+        rows.append(f"| {'**' + kind + '**' if marked else kind} | {n} | {pace_share(n, len(chosen))} |")
+    if often:
+        rows += ["", f"In bold: on more than a third of the {len(chosen)} slices. A rule broken that often is not fixed by "
+                 "wording it again — the tool or the config has to do it, or the flag's threshold (`pace.flags`) is wrong."]
+    return rows + [""]
+
+
+PACE_HOOKS_ON = ("session", "link_fields", "cited_criteria", "check_edit", "merge", "check_stop", "step_commit", "session_end")
+
+
+def pace_guards(project: Project, chosen: list, numbers: dict) -> list:
+    """Config values that turn one of spry's limits off, or set it looser than spry ships it — each beside
+    what the slices in range did. It describes; whether the value is right is the reader's call."""
+    conf = project.config.get("slices") or {}
+    out = []
+    def was(value, default):
+        return "is off (0)" if not value else f"is {value}"
+    given = conf.get("fresh_context", FRESH_CONTEXT)
+    limit = fresh_context(project)
+    if not limit or limit > FRESH_CONTEXT:
+        peaks = [t["peak"] for t in numbers.values() if t and t.get("peak")]
+        over = sum(1 for v in peaks if v > FRESH_CONTEXT)
+        seen = (f"{over} of {len(peaks)} slices peaked above the default, median peak {pace_tokens(pace_median(peaks))}"
+                if peaks else "no slice in range has a measured context")
+        out.append(f"- `slices.fresh_context` {was(limit and given, FRESH_CONTEXT)} — spry ships {FRESH_CONTEXT}: {seen}; "
+                   + ("no session is told to start fresh" if not limit or (peaks and max(peaks) <= limit) else
+                      "a session is told to start fresh only above it"))
+    steps = steps_config(project)
+    cap = steps["max_lines"]
+    if not cap or cap > STEP_DEFAULTS["max_lines"]:
+        sized = [s for s in chosen if s.get("lines")]
+        big = [s for s in sized if s["lines"] > STEP_DEFAULTS["max_lines"]]
+        def later(group):
+            known = [len(s["bugs"]) for s in group if s.get("bugs") is not None]
+            return f"{sum(known)} bug{'' if sum(known) == 1 else 's'} filed later ({sum(known) / len(known):.2f} a slice)" if known else "bugs filed later unknown"
+        seen = (f"{len(big)} of {len(sized)} slices changed more than the default — {later(big)}, against "
+                f"{later([s for s in sized if s not in big])} in the rest" if big else
+                f"none of {len(sized)} slices changed more than the default")
+        out.append(f"- `slices.steps.max_lines` {was(cap, 0)} — spry ships {STEP_DEFAULTS['max_lines']}: {seen}")
+    if steps["max"] > STEP_DEFAULTS["max"]:
+        counts = [len(slice_steps(i.text)) for i in (project.items.get(s["id"]) for s in chosen) if i is not None and i.type == "slice"]
+        over = sum(1 for n in counts if n > STEP_DEFAULTS["max"])
+        out.append(f"- `slices.steps.max` is {steps['max']} — spry ships {STEP_DEFAULTS['max']}: {over} of {len(counts)} slices have more steps than the default")
+    hooks = project.config.get("hooks") or {}
+    off = [k for k in PACE_HOOKS_ON if hooks.get(k) is False]
+    if off:
+        out.append("- hooks switched off: " + ", ".join(f"`hooks.{k}`" for k in off) + " — what each one checked is no longer checked as the agent works")
+    if not out:
+        return []
+    return ["## Limits loosened or off", "", "Each is this project's choice, set beside what its slices did.", ""] + out + [""]
 
 
 def pace_changes(project: Project) -> list:
@@ -8882,6 +8957,7 @@ def pace_page(project: Project, slices: dict, since: str | None = None, last: in
                     + f"; median peak context {pace_tokens(pace_median([t['peak'] for t in counted]))}"
                     + f"; subagents {pace_share(sum(t['sub'] for t in counted), sum(t['spend'] for t in counted))} of the spend")
     rows.append("")
+    rows += pace_guards(project, chosen, numbers)
     rows += ["## Where the time went", "", "| | time | share |", "|---|---:|---:|"]
     for name, group in PACE_GROUPS:
         part = sum(kinds.get(k, 0) for k in group)
@@ -8898,6 +8974,7 @@ def pace_page(project: Project, slices: dict, since: str | None = None, last: in
     for at, label in reversed(changes):
         rows += pace_compare(chosen, at, label, conf["weights"], conf["buckets"])
     flagged = [(s, pace_flags(project, s)) for s in reversed(chosen)]
+    rows += pace_flags_counted(project, chosen)
     rows += ["## Flags", ""]
     listed = [f"- {s['id']}: {f}" for s, flags in flagged for f in flags]
     rows += (listed[:40] or ["- none"]) + [""]
@@ -9011,8 +9088,19 @@ def pace_page(project: Project, slices: dict, since: str | None = None, last: in
     return "\n".join(rows) + "\n"
 
 
+PACE_SUMMARY = ("Limits loosened or off", "Flags, counted", "By size", "Before and after each change")
+
+
+def pace_summary(page: str) -> str:
+    """The part of the page a reader judges from: its head and the sections in PACE_SUMMARY — a tenth
+    of the page, with no row for each slice."""
+    head, *sections = page.split("\n## ")
+    kept = [head.rstrip()] + ["## " + s.rstrip() for s in sections if s.split("\n", 1)[0].strip() in PACE_SUMMARY]
+    return "\n\n".join(kept) + "\n"
+
+
 def pace(project: Project, slice_id: str | None = None, since: str | None = None, last: int | None = None,
-         compare: str | None = None, say=print) -> int:
+         compare: str | None = None, say=print, summary: bool = False) -> int:
     """`spry pace`: read what changed, keep each closed slice's numbers, write the page."""
     if slice_id and slice_id not in project.items:
         raise PlanError(f"no slice {slice_id}")
@@ -9036,9 +9124,13 @@ def pace(project: Project, slice_id: str | None = None, since: str | None = None
     target = os.path.join(project.root, ".spry", "view", "pace.md")
     os.makedirs(native(os.path.dirname(target)), exist_ok=True)
     write(target, page)
+    if summary:
+        say(pace_summary(page).rstrip())
+        say(f"\nthe whole page, a row for each slice: {project.rel(target)}; one slice: `spry.py pace SL-n`")
+        return 0
     head = page.split("## Flags")[0].split("\n")
     say("\n".join(line for line in head if line.startswith("- ")))
-    say(f"page: {project.rel(target)} — `spry serve` shows it at /-/pace")
+    say(f"page: {project.rel(target)} — `spry serve` shows it at /-/pace; `pace --summary` prints what a reader judges from")
     return 0
 
 
@@ -10920,6 +11012,8 @@ def main(argv=None) -> int:
     p.add_argument("--since", metavar="YYYY-MM-DD", help="slices active since this day")
     p.add_argument("--last", type=int, metavar="N", help="the last N slices")
     p.add_argument("--compare", metavar="POINT", help="before and after a date, a CH-n or a commit")
+    p.add_argument("--summary", action="store_true", help="print the head, the limits loosened, the flags counted, "
+                                                            "the size table and before/after — not a row for each slice")
     p = sub.add_parser("memory-check", help="Claude Code's memory for this checkout: index against files, dates gone by, "
                                             "and the IDs, pull requests, commits and paths it names")
     p.add_argument("--dir", help="the memory folder (default: this checkout's, under ~/.claude/projects/)")
@@ -11071,7 +11165,7 @@ def main(argv=None) -> int:
         return 0
     if args.command == "pace":
         try:
-            return pace(project, args.slice, args.since, args.last, args.compare)
+            return pace(project, args.slice, args.since, args.last, args.compare, summary=args.summary)
         except PlanError as e:
             print(str(e), file=sys.stderr)
             return 2

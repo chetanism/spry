@@ -1840,3 +1840,25 @@ Entry format:
   general-purpose agent with `proc --for review-<kind>` in its prompt, as §2 says.
 - **Migrate:** nothing. The saving is not measured yet — compare *Subagents* in `spry pace`
   before and after.
+
+## CH-86 · `pace` shows what is switched off, and a summary for its reader
+
+- **Date:** 2026-11-25 · **Version:** 0.75.0
+- **Touches:** `tool/spry.py` (`pace`, `pace --summary`), `skills/pace`
+- **Why:** two projects had set `slices.fresh_context` to 1,000,000 and raised
+  `slices.steps.max_lines`, and the pace page showed the large contexts and large slices without
+  naming the settings behind them. The agent that judges the page read all 39k characters of it.
+  - **Limits loosened or off:** a section naming each config value that turns one of spry's
+    limits off or sets it looser than spry ships it (`slices.fresh_context`,
+    `slices.steps.max_lines`, `slices.steps.max`, a hook set `false`), beside what the slices did
+    — how many peaked above the default context; how many changed more than the default, with
+    the bugs filed later against those and against the rest. Absent when nothing is loosened.
+  - **Flags, counted:** each kind of flag with the slices it is on. With six slices or more, one
+    on more than a third of them is in bold, and `/spry:pace` then proposes a change to the tool
+    or the config, never a rule worded again.
+  - **`pace --summary`** prints the head, those two sections, *By size* and *Before and after
+    each change* — a third of the page. `/spry:pace` gives its fresh agent this, and the page
+    only for a section a finding needs.
+- **Adapt:** nothing. A project that loosened a limit on purpose keeps it; the page now shows
+  what that cost or did not.
+- **Migrate:** nothing. Run `spry pace --summary` once and read *Limits loosened or off*.

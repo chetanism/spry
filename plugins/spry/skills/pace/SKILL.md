@@ -12,13 +12,23 @@ and writes nothing but what `spry pace` keeps under `.spry/`.
 1. **The numbers:** run `python3 spry/tool/spry.py pace $ARGUMENTS`, which writes
    `.spry/view/pace.md`. For one slice it prints that slice and stops; use the page for the rest.
    No page, or "no slice time found" → say that no session or step log names a slice yet, and stop.
-2. **A fresh agent reads them** — a new agent, never this session or a fork of it (§2). Give it the
-   page, `spry/knowledge/process-changes.md` and `pace` in `spry/spry.config.json`, and for each
-   flagged slice `spry pace <SL-n>`. It reads those and not the session logs, which hold everything the
-   agent saw. It returns, for each finding: the evidence (slice and number), what it means, and one
-   proposal.
+2. **A fresh agent reads them** — a new agent, never this session or a fork of it (§2). It runs
+   `python3 spry/tool/spry.py pace --summary $ARGUMENTS` — the head, the limits loosened, the flags
+   counted, the size table and before/after, a third of the page — and reads
+   `spry/knowledge/process-changes.md` and `pace` in `spry/spry.config.json`. It opens
+   `.spry/view/pace.md` only for a section a finding needs (*Red checks*, *Subagents*, *Findings*),
+   and runs `spry pace <SL-n>` for a slice it will cite. It never reads the session logs, which hold
+   everything the agent saw. It returns, for each finding: the evidence (slice and number), what it
+   means, and one proposal.
 3. **What counts as a finding:**
-   - a flag on the page, with the slices it names — a flag on one slice is a note, on several a finding;
+   - a flag in *Flags, counted* — on one slice it is a note, on several a finding. **One in bold is on
+     more than a third of the slices:** the rule behind it is not being read, so never propose wording
+     it again. Propose what makes the tool or the config do it — a `fix` on a check, a limit, a hook,
+     `/spry:contribute` when spry should — or a changed threshold in `pace.flags` when the flag is wrong;
+   - **limits loosened:** each line under *Limits loosened or off* is a choice this project made, set
+     beside what its slices did. A finding when the numbers beside it are worse — slices over the
+     shipped limit with more bugs filed later, most slices peaking above `slices.fresh_context`'s
+     default; the proposal is the config value. Nothing worse beside it → it is a note;
    - a category whose share is high across the slices, or that moved after a dated change;
    - **tokens:** spend per 100 lines well above the median of the slice's own row in *By size*, in
      several slices; a context entering close that is most of the peak, so every turn of the close
