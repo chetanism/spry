@@ -1819,3 +1819,24 @@ Entry format:
   linter's `--fix` only if the team accepts its rewrites unseen. A rule the list keeps showing
   is a convention to record (`/spry:record`) or a rule to drop from the linter.
 - **Migrate:** nothing.
+
+## CH-85 · A reviewer agent ships with the plugin
+
+- **Date:** 2026-11-25 · **Version:** 0.74.0
+- **Touches:** `agents/reviewer.md` (new), `tool/spry.py` (`brief --diff`, `proc --for review-*`),
+  `process/reviewing.md` (§2), `process/slicing.md` (*Plan* step 4), `skills/review`
+- **Why:** every review was done by a general-purpose agent: it started with every tool's schema
+  in its context, could edit files though the rules forbade it, and was told in its prompt which
+  call printed its rules. Across two projects, reviewers were most of the subagents' quarter of
+  all spend.
+  - `spry:reviewer` has four tools — Bash, Read, Grep, Glob. It cannot edit a file.
+  - It knows how to start for each kind of target, so the prompt holds only the target and its
+    kind.
+  - `brief SL-n --diff` ends with the reviewer's part of `reviewing.md`
+    (`proc --for review-slice`), so a slice's reviewer reads its checks and the diff in one call.
+    `review-plan` and `review-other` print the other two parts.
+- **Adapt:** nothing in Claude Code with the plugin installed. A project whose `reviewing.md` §2
+  names another agent keeps it. Another agent tool (`install --agent`) has no `spry:reviewer`: a
+  general-purpose agent with `proc --for review-<kind>` in its prompt, as §2 says.
+- **Migrate:** nothing. The saving is not measured yet — compare *Subagents* in `spry pace`
+  before and after.

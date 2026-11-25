@@ -25,6 +25,7 @@
 plugins/spry/                     # the process plugin
   .claude-plugin/plugin.json
   skills/<name>/SKILL.md          # thin entry points
+  agents/reviewer.md              # the fresh-eyes reviewer: read-only by its tools (CH-85)
   hooks/hooks.json                # Claude Code hooks, each switched on in a project's config (§18)
   process/                        # rules every agent follows; vendored into each project
     chat.md  writing.md  conflicts.md  interview.md  planning.md  slicing.md  setup.md
@@ -907,7 +908,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it, with its `owner` — and cut its branch; give it back |
 | `link <slice> [--branch] [--pr] [--owner [name]]` · `link <item> --issue <n>` | set them in the slice's front-matter; a bare `--owner` is the person at this clone. On a plan item, add an issue to its `issues:` |
 | `issues [--sync [--dry-run]] [--offline] [--json]` · `issues --legacy [--close]` | each issue plan items name, its stage (§14) and whether its label shows it; `--sync` sets the label and comments when the stage changes, never closing one; `--legacy` the per-slice issues from before CH-52 still open, `--close` closes them with a comment |
-| `brief <slice> [--diff] [--as <skill>]` | a slice in one call: `pr-body`'s page (a planned slice: the slice as written, with its criteria in words), then the files the branch changed (`--stat`); `--diff` adds the whole diff, for a reviewer. Without `--diff`, a `!` first when this checkout's session carries more context than `slices.fresh_context` (150k; 0 turns it off) — the open or the close starts in a fresh session; `step --commit` says the same after a step's commit, for the next step (CH-83); `merge-ready` says the same before its ask. `--as <skill>` (CH-82) ends the brief with what that skill reads before it starts: `proc --for <skill>`; for `slice-plan` and `slice-open` the parent and its feature, whole but for generated blocks, and `related`; for `slice-close` whether the tree is committed and how far the main branch moved (after a fetch); for `slice-build` and `slice-open` the rules that failed the checks most (CH-84) |
+| `brief <slice> [--diff] [--as <skill>]` | a slice in one call: `pr-body`'s page (a planned slice: the slice as written, with its criteria in words), then the files the branch changed (`--stat`); `--diff` adds the whole diff and `proc --for review-slice`, for a reviewer (CH-85). Without `--diff`, a `!` first when this checkout's session carries more context than `slices.fresh_context` (150k; 0 turns it off) — the open or the close starts in a fresh session; `step --commit` says the same after a step's commit, for the next step (CH-83); `merge-ready` says the same before its ask. `--as <skill>` (CH-82) ends the brief with what that skill reads before it starts: `proc --for <skill>`; for `slice-plan` and `slice-open` the parent and its feature, whole but for generated blocks, and `related`; for `slice-close` whether the tree is committed and how far the main branch moved (after a fetch); for `slice-build` and `slice-open` the rules that failed the checks most (CH-84) |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean; with `slices.design_review`, a warning when the work order has no design review or a Blocker went unasked |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
@@ -920,7 +921,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `merge-finish [<pr>\|<slice>] [--ci-local]` | on the yes, steps 7–8: CI and `merge-check` again, the squash with `merge-message` at the PR's head, this tree to the main branch, CI there when the main branch moved under the PR, the progress tables when CI left them stale, `issues --sync`, what is unblocked |
 | `vendor` | copy `process/` and the tool into a project (plugin's copy only); `--diff` lists what differs |
 | `scrub <file>` | private words (product, people, glossary terms, emails, URLs) left in text about to leave the project |
-| `proc <file> [<section>…] [--list]` | a process file's opening and only the `##` sections named, matched by their first words — what a skill reads instead of the whole file; `--list` the headings and their sizes. `proc --for <skill>` (CH-82) prints all a skill reads before it starts — its sections, then `chat.md`, `writing.md` and `conflicts.md` where it reads them, and *Steps* in a steps project — from one table in the tool (`PROC_FOR`: `slice-open`, `slice-plan`, `slice-build`, `slice-close`, `merge`) |
+| `proc <file> [<section>…] [--list]` | a process file's opening and only the `##` sections named, matched by their first words — what a skill reads instead of the whole file; `--list` the headings and their sizes. `proc --for <skill>` (CH-82) prints all a skill reads before it starts — its sections, then `chat.md`, `writing.md` and `conflicts.md` where it reads them, and *Steps* in a steps project — from one table in the tool (`PROC_FOR`: `slice-open`, `slice-plan`, `slice-build`, `slice-close`, `merge`, and a reviewer's `review-slice`, `review-plan`, `review-other`) |
 | `find <query>` | full-text search, best sections first (§11) |
 | `falsify suggest <slice>` · `falsify run <plan>` | §16 |
 | `tests --slowest` | §15 |
@@ -967,6 +968,10 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `update` | 7 | Offer a project what spry gained since it was set up; port only what is chosen |
 | `contribute` | 7 | Offer spry what a project built; files an issue, never a PR |
 | `adopt` | 5 | Put spry around an existing codebase: survey, seed knowledge from what exists, plan from the next work; a writ project is planned from its mapping file (`process/from-writ.md`) — built with `init` |
+
+Every review — at close, of a work order, of a plan item — is done by the plugin's `spry:reviewer`
+agent (`agents/reviewer.md`, CH-85): its tools are Bash, Read, Grep and Glob, so it cannot edit, and
+its prompt holds the one call that gives it its checks and its target.
 
 The slice skills and `merge` hold only the call that prints their reading (`brief --as`, `proc --for`,
 §19), the argument rule and where to stop; the rules are in the process file alone (CH-82).
@@ -1479,6 +1484,18 @@ in `spry/history/writ.md`, then retires `canon/`.
   Rejected: the full `pace` reading in `brief` — it parses every session log; the step log is one
   file. Rejected: writing the rules into `conventions/` by tool — a convention is a decision a
   person records (`/spry:record`); the list is a reading, and goes when the rule stops failing.
+- 2026-11-25 — a reviewer agent in the plugin (CH-85, 0.74.0). The same reading: subagents were
+  25% of all spend (264M of 1.05B) — 603 close reviewers at about 0.2M each, 155 design reviewers
+  at about 0.3M — each a general-purpose agent starting at 36k of context with every tool's
+  schema, told by its prompt which `proc` call held its rules, and 94% of its requests calling one
+  tool. `agents/reviewer.md` is `spry:reviewer`: Bash, Read, Grep and Glob only, so the rule
+  "never edits" is its tools and not its obedience; and its first call returns the checks with the
+  target — `brief --diff` now ends with `proc --for review-slice`. What it saves is not measured:
+  `pace`'s *Subagents* table, before and after, is the test, and the entry goes if it shows
+  nothing. Rejected: the checks of §3 written into the agent file — a project adapts
+  `reviewing.md`, and a second copy would be the plugin's, not the project's. Rejected: a `model:`
+  on the agent — the reviewer is where a mistake is last caught. Rejected: one agent per kind of
+  review — one prompt, five ways to start, is less to keep in step.
 
 ## 24. Worktrees and progress
 

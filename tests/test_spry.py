@@ -1818,6 +1818,17 @@ class Kit(unittest.TestCase):
         self.assertEqual(template["spry_baseline"], entries[-1][0], "a new project starts at the last entry")
         self.assertEqual(entries[-1][1], version, "the last entry ships in the current version")
 
+    def test_the_reviewer_agent_cannot_edit(self):
+        """CH-85: the plugin's reviewer is read-only by its tools, and every command it names exists."""
+        path = os.path.join(REPO, "plugins", "spry", "agents", "reviewer.md")
+        with open(path) as handle:
+            text = handle.read()
+        self.assertTrue(text.startswith("---\nname: reviewer\n"))
+        tools = re.search(r"^tools: (.*)$", text, re.M).group(1).split(", ")
+        self.assertEqual(tools, ["Bash", "Read", "Grep", "Glob"])
+        for kind in re.findall(r"proc --for ([\w-]+)", text):
+            self.assertIn(kind, spry.PROC_FOR)
+
     def test_every_skill_names_files_that_exist(self):
         import re
         plugin = os.path.join(REPO, "plugins", "spry")
@@ -5698,7 +5709,10 @@ class Proc(Base):
         self.assertIn("## Merge", spry.proc_for(p, "merge"))
         with self.assertRaises(SystemExit) as caught:
             spry.proc_for(p, "status")
-        self.assertIn("proc --for takes: slice-open, slice-plan, slice-build, slice-close, merge", str(caught.exception))
+        self.assertIn("proc --for takes: slice-open, slice-plan, slice-build, slice-close, merge, review-slice", str(caught.exception))
+        self.assertIn("### b. Plan", spry.proc_for(p, "review-plan"))
+        self.assertNotIn("### a. Slice", spry.proc_for(p, "review-plan"))
+        self.assertIn("### c. Other", spry.proc_for(p, "review-other"))
 
     def test_a_brief_for_a_skill_ends_with_what_it_reads_first(self):
         """CH-82: `brief --as` carries the parent, the feature, `related` and the procedure, so a plan
@@ -5719,7 +5733,11 @@ class Proc(Base):
         self.assertNotIn("## Story —", build, "the planning is not read again at the build")
         plain = spry.brief(p, "SL-1")
         self.assertNotIn("## Procedure", plain)
-        self.assertNotIn("## Procedure", spry.brief(p, "SL-1", diff=True, skill="slice-close"), "a reviewer reads its own part")
+        review = spry.brief(p, "SL-1", diff=True, skill="slice-close")
+        self.assertIn("## Procedure\n\n# Reviewing", review, "CH-85: a reviewer's checks come with its diff")
+        self.assertIn("### a. Slice", review)
+        self.assertNotIn("## 5. Post", review, "the rest is for the session that runs the review")
+        self.assertNotIn("## Close —", review)
 
 
 if __name__ == "__main__":

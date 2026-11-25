@@ -41,17 +41,19 @@ together. With no argument, the current branch's PR.
 ## 2. Fresh eyes
 
 - **A new agent does the review.** It is never the session that wrote the work, and never a fork of
-  it. In Claude Code, that is the Agent tool with a new general-purpose agent, one per target, run
-  in parallel.
+  it. In Claude Code, that is the Agent tool with the plugin's `spry:reviewer` agent — read-only by
+  its tools, and it knows how to start — one per target, run in parallel; a general-purpose agent
+  where the plugin's is not installed.
 - **Its prompt holds only:**
   - the target and its kind;
-  - the command that prints its part of this file — `spry.py proc reviewing "1. What" "<check>"
-    "4. Findings" "6. How"`, where `<check>` is `a. Slice`, `b. Plan` or `c. Other` (§3) — about
-    half the file; the rest is for the session that runs the review;
+  - for a general-purpose agent, the command that prints its part of this file —
+    `spry.py proc --for review-slice`, `review-plan` or `review-other` (§3): about half the file;
+    the rest is for the session that runs the review. The `spry:reviewer` agent runs it unasked,
+    and for a slice `brief --diff` ends with it;
   - the output shape in §4.
 - **Leave out why the work was written as it was.** That reasoning is what the review is testing.
 - **A slice's reviewer starts with `spry.py brief SL-<n> --diff`:** the work order, the criteria in
-  words and the whole diff in one call, rather than piece by piece with `git show` and `sed`. It
+  words, the whole diff and its checks in one call, rather than piece by piece with `git show` and `sed`. It
   opens a file only for what the diff does not show. Never paste the brief into its prompt — the
   session would pay to write it.
 - **A slice built in steps** (`slicing.md` *Steps*) gets one new agent per step and one for the

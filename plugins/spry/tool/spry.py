@@ -34,7 +34,7 @@
     python3 spry/tool/spry.py draw <seed> <n> --pick < choices   # the same choice for ever, per (seed, n)
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
     python3 spry/tool/spry.py publish <slice> open|review|ready   # a slice's PR: draft opened, body refreshed, marked ready — with the commits and pushes
-    python3 spry/tool/spry.py brief <slice> [--diff]   # one call: work order, criteria in words, files changed (--diff: the diff, for a reviewer); --as <skill> adds what that skill reads first — its procedure, a plan's parent, feature and `related`, a close's rebase facts; warns when this session's context is past slices.fresh_context
+    python3 spry/tool/spry.py brief <slice> [--diff]   # one call: work order, criteria in words, files changed (--diff: the diff and the reviewer's checks, for a reviewer); --as <skill> adds what that skill reads first — its procedure, a plan's parent, feature and `related`, a close's rebase facts; warns when this session's context is past slices.fresh_context
     python3 spry/tool/spry.py backlog [--section NAME]… [--rows N] [--plain]   # the backlog, or only the rows asked for, links as text
     python3 spry/tool/spry.py merge-ready [<pr>|<slice>] [--wait [MIN]]   # merging.md steps 1–5 in one report, then the ask; --wait waits for pending checks here
     python3 spry/tool/spry.py merge-finish [<pr>|<slice>] [--ci-local REASON]   # on the yes: squash, main, CI there, tables, issues, unblocked
@@ -93,7 +93,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.73.0"
+VERSION = "0.74.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -2702,6 +2702,8 @@ def brief(project: Project, slice_id: str, diff: bool = False, skill: str | None
             out.append(f"## Diff\n\n```diff\n{text}\n```\n")
     else:
         out.append(f"## Changed\n\n{base} is not known here — `git fetch`\n")
+    if diff:   # a reviewer: the checks it runs, in the call that gave it the diff
+        out.append("## Procedure\n\n" + proc_for(project, "review-slice", item))
     if named and not stop:
         if named in ("slice-plan", "slice-open"):
             out.append(brief_plan(project, item))
@@ -4428,6 +4430,10 @@ PROC_FOR = {
     "slice-build": [("slicing", ["When to stop", "Build", "While building"]), ("chat", [])],
     "slice-close": [("slicing", ["Close", "When to stop", "While building"]), ("writing", []), ("chat", [])],
     "merge": [("merging", ["Merge"]), ("chat", [])],
+    # A reviewer is a new agent: its part of reviewing.md, and nothing the reviewing session needs.
+    "review-slice": [("reviewing", ["1. What", "a. Slice", "4. Findings", "6. How"])],
+    "review-plan": [("reviewing", ["1. What", "b. Plan", "4. Findings", "6. How"])],
+    "review-other": [("reviewing", ["1. What", "c. Other", "4. Findings", "6. How"])],
 }
 
 
@@ -10839,7 +10845,7 @@ def main(argv=None) -> int:
     p.add_argument("--close", action="store_true", help="with --legacy: close them, each with a comment")
     p = sub.add_parser("brief", help="a slice in one call: work order, criteria in words, files changed — and the diff, for a reviewer")
     p.add_argument("slice")
-    p.add_argument("--diff", action="store_true", help="add the branch's whole diff, and leave out the context check (a reviewer is a fresh agent)")
+    p.add_argument("--diff", action="store_true", help="for a reviewer: add the branch's whole diff and its part of reviewing.md, and leave out the context check (a reviewer is a fresh agent)")
     p.add_argument("--as", dest="skill", choices=BRIEF_SKILLS, help="the skill this session runs: the context check names it, and the brief ends with what it reads "
                    "before it starts — its procedure, and for a plan the parent, the feature and `related`; default: by the slice's state, and no procedure")
     p = sub.add_parser("pr-body", help="a slice's work order and close summary, for its pull request")

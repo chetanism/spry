@@ -101,7 +101,7 @@ open:
    nowhere. The review at close asks whether the
    code is what the work order said; this one asks whether the work order is right, while changing
    it costs nothing.
-   - **One new agent**, never a fork of this session, given only: the slice file, its parent and
+   - **One new agent** — the `spry:reviewer` agent in Claude Code — never a fork of this session, given only: the slice file, its parent and
      the parent's feature, `AGENTS.md`, the decisions and conventions indexes, and the four checks
      below. It may read the code; it edits nothing. Leave out why the plan is as it is.
    - It checks:

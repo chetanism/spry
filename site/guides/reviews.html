@@ -45,7 +45,8 @@ before a teammate does.</p>
 
 <ul>
   <li><strong>A new agent,</strong> never the session that wrote the work, and never a fork of it (a copy
-  that carries that session's memory).</li>
+  that carries that session's memory). In Claude Code it is the plugin's own <code>spry:reviewer</code> agent:
+  it has no tool that edits a file, and it reads its checks and the diff in its first call.</li>
   <li><strong>Its prompt holds only</strong> the target and its kind, the review rules, and the shape of the
   report. Why the work was written as it was is left out on purpose — that reasoning is what's being tested.</li>
   <li><strong>It reads and comments.</strong> It never checks a branch out, edits, pushes, approves (unless

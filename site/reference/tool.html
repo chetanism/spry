@@ -372,7 +372,7 @@ order), then the files the branch changed. A session reads it instead of opening
 <code>git diff</code> one by one. Every request to the model reads the whole session again, so one call in
 place of ten saves nine readings of it.</p>
 <pre><code>spry brief [--diff] [--as skill] slice</code></pre>
-<p><code>--diff</code> — add the branch's whole diff: what a slice's reviewer starts with. Without it,
+<p><code>--diff</code> — add the branch's whole diff and the reviewer's part of <code>reviewing.md</code>: what a slice's reviewer starts with. Without it,
 <code>brief</code> first says when this checkout's session carries more context than
 <code>slices.fresh_context</code> — the cue to <code>/clear</code> before the close.</p>
 <p><code>--as slice-plan | slice-open | slice-build | slice-close</code> — the skill this session runs.
@@ -490,7 +490,7 @@ use it so the agent reads, say, <em>Open</em> and <em>While building</em> of <co
 <pre><code>spry proc [--list] file [section ...]
 spry proc --for skill</code></pre>
 <p><code>--list</code> — the headings and their sizes. With no section, the whole file.</p>
-<p><code>--for slice-open | slice-plan | slice-build | slice-close | merge</code> — everything that skill
+<p><code>--for slice-open | slice-plan | slice-build | slice-close | merge | review-slice | review-plan | review-other</code> — everything that skill
 reads before it starts, in one call: the sections of its process file, then the files it reads beside it
 (<code>chat.md</code>, <code>writing.md</code>, <code>conflicts.md</code>). A project with
 <code>slices.mode: steps</code> gets <em>Steps</em> too. The list lives in the tool, so a skill no longer
