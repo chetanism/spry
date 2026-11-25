@@ -459,13 +459,17 @@ it grows with the guards a diff adds, not with the number of slices.
     `spry.py step --commit`. As with every hook, it fails open, and the rule stays in `check` and
     `merge-check`.
 - **A red the tool can mend, it mends** (CH-59). A `checks.fast` entry may carry `fix`, the same
-  tool in write mode: the formatter's. When every red check of a step's fast gate has one,
-  `step --commit` runs each on the step's files (`{files}`), names the files that changed, runs
-  the fast gate again and commits on its answer. A red check without one (lint, types) refuses
-  the commit as before and nothing is formatted; so does a `fix` that fails or changes no file.
-  With `gate.keep_going: off` the gate stops at the first red check, so the formatter may run
-  before a lint error is seen. No `fix`, no change: that is the switch. `gate` itself never
-  writes a file.
+  tool in write mode: the formatter's. `step --commit` runs every `fix` on the step's files
+  (`{files}`) **before** the fast gate (CH-84), and names the files that changed: a fault the tool
+  can mend never turns a check red, and the gate runs once. A red check without one (lint,
+  types) refuses the commit as before — with the step's files already formatted; a `fix` that
+  fails is said and left to its check. No `fix`, no change: that is the switch. `gate` itself
+  never writes a file.
+- **The rules that fail most are shown before the code is written** (CH-84). `brief --as
+  slice-build` and `--as slice-open` list up to six rules that turned a check red in three or
+  more of the step log's newest 400 gates — `lint unicorn(consistent-function-scoping) — 44 red
+  gates`. The log already held them for `pace` (CH-61); a rule the agent meets at the gate, slice
+  after slice, is one nobody told it.
 - **A step's own tests, by a switch** (CH-58). With `slices.steps.tests` on, `step --commit` runs
   the test files the step added or changed, after the fast checks and through their
   `falsify.runners`, as the step `step tests`. A red one refuses the commit and names the file,
@@ -903,11 +907,11 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it, with its `owner` — and cut its branch; give it back |
 | `link <slice> [--branch] [--pr] [--owner [name]]` · `link <item> --issue <n>` | set them in the slice's front-matter; a bare `--owner` is the person at this clone. On a plan item, add an issue to its `issues:` |
 | `issues [--sync [--dry-run]] [--offline] [--json]` · `issues --legacy [--close]` | each issue plan items name, its stage (§14) and whether its label shows it; `--sync` sets the label and comments when the stage changes, never closing one; `--legacy` the per-slice issues from before CH-52 still open, `--close` closes them with a comment |
-| `brief <slice> [--diff] [--as <skill>]` | a slice in one call: `pr-body`'s page (a planned slice: the slice as written, with its criteria in words), then the files the branch changed (`--stat`); `--diff` adds the whole diff, for a reviewer. Without `--diff`, a `!` first when this checkout's session carries more context than `slices.fresh_context` (150k; 0 turns it off) — the open or the close starts in a fresh session; `step --commit` says the same after a step's commit, for the next step (CH-83); `merge-ready` says the same before its ask. `--as <skill>` (CH-82) ends the brief with what that skill reads before it starts: `proc --for <skill>`; for `slice-plan` and `slice-open` the parent and its feature, whole but for generated blocks, and `related`; for `slice-close` whether the tree is committed and how far the main branch moved (after a fetch) |
+| `brief <slice> [--diff] [--as <skill>]` | a slice in one call: `pr-body`'s page (a planned slice: the slice as written, with its criteria in words), then the files the branch changed (`--stat`); `--diff` adds the whole diff, for a reviewer. Without `--diff`, a `!` first when this checkout's session carries more context than `slices.fresh_context` (150k; 0 turns it off) — the open or the close starts in a fresh session; `step --commit` says the same after a step's commit, for the next step (CH-83); `merge-ready` says the same before its ask. `--as <skill>` (CH-82) ends the brief with what that skill reads before it starts: `proc --for <skill>`; for `slice-plan` and `slice-open` the parent and its feature, whole but for generated blocks, and `related`; for `slice-close` whether the tree is committed and how far the main branch moved (after a fetch); for `slice-build` and `slice-open` the rules that failed the checks most (CH-84) |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean; with `slices.design_review`, a warning when the work order has no design review or a Blocker went unasked |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
-| `step <slice> [--commit] [--ranges [--head]] [--squash] [--base]` | steps mode (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` — and, with `slices.steps.tests`, the test files the step added or changed — and commits it with its `Step:` trailer, first running the `fix` of the red checks when each has one; `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps |
+| `step <slice> [--commit] [--ranges [--head]] [--squash] [--base]` | steps mode (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` — and, with `slices.steps.tests`, the test files the step added or changed — and commits it with its `Step:` trailer, first running every `fix` in `checks.fast` on the step's files (CH-84); `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
@@ -1465,6 +1469,16 @@ in `spry/history/writ.md`, then retires `canon/`.
   learned about the code, and the session would pay to brief it; a commit boundary loses nothing.
   Rejected: refusing the next step — the agent may be mid-thought on a two-step slice; it is said,
   and `pace` shows whether it was heeded (peak context, by size).
+- 2026-11-25 — red checks prevented, not repeated (CH-84, 0.73.0). The same reading: format went
+  red 49 and 62 times in the two projects, most of them mended by CH-59's `fix` — after a red
+  gate, so the fast gate ran twice, and not at all while lint was red beside it. And three lint
+  rules made 98 red gates in one project, `unicorn(consistent-function-scoping)` in 31 slices: a
+  rule met at the gate, slice after slice. So `step --commit` runs every `fix` before the gate,
+  and `brief --as slice-build` lists the rules that failed three or more of the last 400 gates.
+  Rejected: an agent hook that formats after each edit — §18's rule, no process per tool call.
+  Rejected: the full `pace` reading in `brief` — it parses every session log; the step log is one
+  file. Rejected: writing the rules into `conventions/` by tool — a convention is a decision a
+  person records (`/spry:record`); the list is a reading, and goes when the rule stops failing.
 
 ## 24. Worktrees and progress
 

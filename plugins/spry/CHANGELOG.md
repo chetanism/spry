@@ -1800,3 +1800,22 @@ Entry format:
 - **Adapt:** `slices.fresh_context`. A project that raised it far above the default (1,000,000,
   say) has turned this and the checks at open, close and merge off; 150000 brings them back.
 - **Migrate:** nothing.
+
+## CH-84 · Red checks are prevented, not repeated
+
+- **Date:** 2026-11-25 · **Version:** 0.73.0
+- **Touches:** `tool/spry.py` (`step --commit`, `brief --as`), `process/slicing.md` (*Build* step 2,
+  *Steps* → *Build*)
+- **Why:** a step's formatting was mended only after it had turned the fast gate red, and only
+  when no other check was red, so the gate ran twice — and across two projects three lint rules
+  alone made 98 red gates, one of them in 31 slices.
+  - `step --commit` runs every `fix` in `checks.fast` on the step's files before the checks, and
+    names the files it changed. A lint or type failure still refuses the commit; the files are
+    then already formatted.
+  - `brief SL-n --as slice-build` (and `--as slice-open`) lists up to six rules that turned a
+    check red in three or more of the project's last 400 gates, from `.spry/pace/steps.jsonl`.
+    Nothing is listed until a rule has failed three.
+- **Adapt:** a `fix` on each `checks.fast` entry whose tool can write — the formatter's, and a
+  linter's `--fix` only if the team accepts its rewrites unseen. A rule the list keeps showing
+  is a convention to record (`/spry:record`) or a rule to drop from the linter.
+- **Migrate:** nothing.

@@ -93,7 +93,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.72.0"
+VERSION = "0.73.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -2707,6 +2707,8 @@ def brief(project: Project, slice_id: str, diff: bool = False, skill: str | None
             out.append(brief_plan(project, item))
         if named == "slice-close" and known:
             out.append(brief_close(project, base))
+        if named in ("slice-build", "slice-open"):
+            out.append(brief_red_rules(project))
         out.append("## Procedure\n\n" + proc_for(project, named, item))
     return "\n".join(out)
 
@@ -2727,6 +2729,42 @@ def brief_plan(project: Project, item: Item) -> str:
     found = related(project, item.doc)
     out.append("## Related — the conflict check starts here\n\n" + re.sub(r"^## ", "### ", found, flags=re.M))
     return "\n".join(out)
+
+
+RED_RULE_GATES, RED_RULE_RUNS, RED_RULE_ROWS = 400, 3, 6
+
+
+def brief_red_rules(project: Project) -> str:
+    """The rules that turned this project's checks red most often, from the newest gates in the step
+    log — shown before any code is written, so the step's checks pass the first time. Empty until a
+    rule has failed `RED_RULE_RUNS` gates: one failure teaches nothing."""
+    try:
+        lines = read(os.path.join(pace_home(project), "steps.jsonl")).split("\n")
+    except OSError:
+        return ""
+    gates = []
+    for line in reversed(lines):
+        if '"gate"' not in line:
+            continue
+        try:
+            row = json.loads(line)
+        except ValueError:
+            continue
+        if row.get("command") == "gate":
+            gates.append(row)
+            if len(gates) == RED_RULE_GATES:
+                break
+    runs: dict = {}
+    for row in gates:
+        for check, rules in (row.get("red") or {}).items():
+            for rule in rules if isinstance(rules, dict) else {}:
+                runs[(check, rule)] = runs.get((check, rule), 0) + 1
+    top = sorted(((n, check, rule) for (check, rule), n in runs.items() if n >= RED_RULE_RUNS), reverse=True)[:RED_RULE_ROWS]
+    if not top:
+        return ""
+    rows = [f"- {check} `{rule}` — {n} red gates" for n, check, rule in top]
+    return (f"## Rules that failed the checks most\n\nIn this project's last {len(gates)} gates. Write to them, so the "
+            "checks pass the first time:\n\n" + "\n".join(rows) + "\n")
 
 
 def brief_close(project: Project, base: str) -> str:
@@ -6577,6 +6615,32 @@ def step_fix(project: Project, paths: list, said: list, say) -> bool:
     return True
 
 
+def step_fix_first(project: Project, paths: list, say) -> None:
+    """Before a step's checks: run every `fix` in `checks.fast` on the step's files, so a fault the
+    tool can mend never turns a check red, and the checks run once. Says which files changed; a
+    `fix` that fails is said and left to its check."""
+    fixes = fast_fixes(project)
+    here = [p for p in paths if os.path.isfile(native(os.path.join(project.root, p)))]
+    if not fixes or not here:
+        return
+    before = {p: file_digest(os.path.join(project.root, p)) for p in here}
+    started, ran = time.time(), []
+    for name, fix in fixes.items():
+        command = fix.replace("{files}", " ".join(shell_quote(p) for p in here))
+        at = time.time()
+        done = subprocess.run(command, shell=True, cwd=project.root, capture_output=True, text=True)
+        if done.returncode != 0:
+            say(f"✗ {name}, fix · {time.time() - at:.1f}s — {command}")
+            say("\n".join("  " + line for line in (done.stdout + done.stderr).rstrip().split("\n")[-10:]))
+            continue
+        ran.append(name)
+    changed = [p for p in here if before[p] != file_digest(os.path.join(project.root, p))]
+    if ran:
+        pace_log(project, "fix", time.time() - started, checks=ran, files=len(changed), first=True)
+    if changed:
+        say(f"– {', '.join(ran)}: the `fix` ran before the checks — files changed: {', '.join(changed)}")
+
+
 def slice_steps(text: str) -> list:
     """[{n, title, covers, plan, line}] — each `#### Step <k> · <title>` under the work order's
     `### Steps`; [] for a slice without one, which is one step. `n` is None for a heading that is not
@@ -6918,6 +6982,7 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
         say(f"– the step's tests: {', '.join(files)}")
     if left:
         say(f"– left to the gate, no falsify runner takes them: {', '.join(left)}")
+    step_fix_first(project, paths, say)
     said = []
     code = gate(project, fast=True, say=lambda line: (said.append(line), say(line))[1], step_tests=files)
     if code and step_fix(project, paths, said, say):
