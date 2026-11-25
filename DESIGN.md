@@ -1561,6 +1561,11 @@ in `spry/history/writ.md`, then retires `canon/`.
   `SPRY_RUN=1`, under which the merge hook and `merge-finish` refuse. Headless sessions were
   tested against the hooks first; they run. Rejected: answering asks from the recommended
   option, a default permission mode, a flag that merges.
+- 2026-11-25 — a claim always names its owner (CH-90, 0.79.0), from a project's report (#60). A
+  bare `claim` with `mint: main` wrote no owner when git's identity matched no member, leaving
+  `owner: <name>` on main for the backlog to print. It now resolves the owner as `--owner` does
+  and refuses before writing; `<name>` reads as no one wherever an owner is shown. Rejected: a
+  warning and a claim without an owner — the backlog is how others see who holds a slice.
 
 ## 24. Worktrees and progress
 
