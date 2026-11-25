@@ -1963,3 +1963,17 @@ Entry format:
   until the member is added or `--owner` is passed; the message names both.
 - **Migrate:** a slice already on the main branch with `owner: <name>`: `python3 spry/tool/spry.py
   link SL-n --owner <name>` once. Until then the backlog shows `—`.
+
+## CH-91 · A cost is stated, never by itself a reason against an option
+
+- **Date:** 2026-11-25 · **Version:** 0.80.0
+- **Touches:** `process/chat.md` (*Asks*), `process/templates/AGENTS.md` (*Replies*)
+- **Why:** an agent passed over the option that was right for the project because it added a new
+  dependency. `chat.md` said what a recommendation may not rest on — the agent's convenience — but
+  not what to do with a cost the project carries, so a dependency, a migration or an approval read
+  as a reason against. Now each is a cost stated on its option's line, never by itself a reason
+  against it; the best option is still recommended, with what it costs. Asked for by a project.
+- **Adapt:** a project whose `AGENTS.md` *Replies* or `chat.md` *Asks* differs from spry's adds
+  the sentence in its own words.
+- **Migrate:** `AGENTS.md` → add the second sentence to the `(recommended)` line under *Replies*;
+  `spry/process/chat.md` → take the new *Asks* bullet.
