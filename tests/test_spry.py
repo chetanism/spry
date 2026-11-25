@@ -1818,6 +1818,25 @@ class Kit(unittest.TestCase):
         self.assertEqual(template["spry_baseline"], entries[-1][0], "a new project starts at the last entry")
         self.assertEqual(entries[-1][1], version, "the last entry ships in the current version")
 
+    # Lines each process file may hold. A session reads these on every slice and every request
+    # reads them again, so a rule added is paid for until it is cut. Over budget → cut or merge
+    # something first; raise a number only with the reason in the commit message.
+    PROCESS_BUDGETS = {"slicing.md": 400, "reviewing.md": 295, "merging.md": 115, "chat.md": 85, "writing.md": 50,
+                       "conflicts.md": 55, "planning.md": 145, "interview.md": 65, "testing.md": 160, "qa.md": 70,
+                       "setup.md": 115, "updating.md": 80, "compacting.md": 75, "audits.md": 60, "contributing.md": 55,
+                       "recording.md": 45, "changing.md": 25, "from-writ.md": 450}
+
+    def test_every_process_file_keeps_to_its_line_budget(self):
+        folder = os.path.join(REPO, "plugins", "spry", "process")
+        files = sorted(f for f in os.listdir(folder) if f.endswith(".md"))
+        self.assertEqual(sorted(self.PROCESS_BUDGETS), files, "every process file has a budget, and no budget is left over")
+        for name in files:
+            with open(os.path.join(folder, name)) as handle:
+                lines = len(handle.read().split("\n")) - 1
+            self.assertLessEqual(lines, self.PROCESS_BUDGETS[name],
+                                 f"{name} has {lines} lines, over its budget of {self.PROCESS_BUDGETS[name]} — cut or merge a rule "
+                                 "before adding one")
+
     def test_the_reviewer_agent_cannot_edit(self):
         """CH-85: the plugin's reviewer is read-only by its tools, and every command it names exists."""
         path = os.path.join(REPO, "plugins", "spry", "agents", "reviewer.md")
