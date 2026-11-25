@@ -1,6 +1,6 @@
 ---
 name: review
-description: Review with fresh eyes — a slice's PR against its work order, a plan PR or plan item against its parent, the code and the glossary, or any other PR — verify every finding, show them first, and on a yes post one inline comment per line with a suggested change wherever the fix is wording. COMMENT only on your own PR. One answer can also fix the accepted findings and merge, on your own PR; the reviewing agent itself never edits or merges. Use when a PR or a newly written plan item is ready for review, solo or on a team.
+description: Review a slice's PR, a plan item or any PR with a new agent; verify findings, show them, post on a yes. Use when one is ready for review.
 argument-hint: "[PR number, slice ID or plan item ID …]"
 ---
 

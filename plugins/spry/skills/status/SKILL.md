@@ -1,6 +1,6 @@
 ---
 name: status
-description: Show how far the project has got — done versus total at every level, open slices and open bugs — and what to pick up next, explained at the reader's tone. Use when someone asks where things stand or what to work on next.
+description: Show how far the project has got and what to pick up next. Use when someone asks where things stand.
 argument-hint: "[ID, or a level such as feature]"
 ---
 

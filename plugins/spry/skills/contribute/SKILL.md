@@ -1,6 +1,6 @@
 ---
 name: contribute
-description: Offer spry something this project built — a process change, a skill, a stack profile — judged honestly for use beyond this project, stripped of everything private, and filed as an issue on spry after an explicit yes. Never opens a pull request.
+description: Offer spry something this project built, stripped of everything private, as an issue on spry after an explicit yes.
 argument-hint: "[what to contribute, optional]"
 disable-model-invocation: true
 ---

@@ -1,6 +1,6 @@
 ---
 name: update
-description: Bring a spry project up to date with what spry has gained since it was set up — each change offered and explained in the project's own terms, ported only if chosen, adapted to the project, and recorded. Use after updating the spry plugin.
+description: Bring a spry project up to date with what spry has gained, each change offered and ported only if chosen. Use after updating the plugin.
 disable-model-invocation: true
 ---
 

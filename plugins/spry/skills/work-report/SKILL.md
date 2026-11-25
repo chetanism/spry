@@ -1,6 +1,6 @@
 ---
 name: work-report
-description: Report what one person built between two dates — each story, task and bug they worked on with a two-to-three-line summary of their part, the slices under it by ID and title, and what they are building now — from the slices' owners and closed dates. Report only; never edits the repository. Use when asked what someone did, for a person's weekly or monthly report, or for a review of their work.
+description: Report what one person built between two dates, from the slices' owners and closed dates. Report only.
 argument-hint: "<person> [from YYYY-MM-DD] [to YYYY-MM-DD]"
 ---
 

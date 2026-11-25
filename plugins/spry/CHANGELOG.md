@@ -1760,3 +1760,27 @@ Entry format:
 - **Adapt:** nothing.
 - **Migrate:** nothing. A log without the column reads exactly as before. To log per scenario,
   add `Scenario` after `AC` in the header; past rows may leave it empty.
+
+## CH-82 · A skill starts in one call
+
+- **Date:** 2026-11-25 · **Version:** 0.71.0
+- **Touches:** `tool/spry.py` (`brief --as`, `proc --for`, `falsify`), `process/slicing.md` (*Plan*
+  steps 1 and 3, *Close* steps 0, 1 and 6, *While building*), `skills/{slice-open,slice-plan,slice-build,slice-close,merge}`,
+  every skill's `description`
+- **Why:** ten days of two projects' logs showed 94–97% of requests that called a tool calling
+  one, in every skill, with 148k of context read again on each. The rule in `slicing.md` had not
+  changed that. A plan session opened the parent, the feature and the indexes in about 15 calls.
+  - `brief SL-n --as <skill>` ends with what that skill reads before it starts: its procedure; for
+    a plan, the slice's parent and feature and `related`; for a close, whether the tree is
+    committed and how far the main branch has moved.
+  - `proc --for <skill>` prints a skill's procedure and the files it reads beside it in one call,
+    with *Steps* in a steps project. The list is in the tool.
+  - The slice skills and `merge` are the call, the argument rule and the stop rule. They no longer
+    restate `slicing.md` or `merging.md`.
+  - Skill descriptions are a line or two each. They are in every session and every subagent.
+  - *Close* step 6 keeps falsify's usual path. `falsify suggest` and `run` print what each other
+    case needs when it happens: a control to write by hand, one no test names, `survived`,
+    `unreliable`.
+- **Adapt:** a project that changed *Close* step 6, or *Plan* step 1, keeps its own wording and
+  takes only the new call (`brief SL-<n> --as <skill>`).
+- **Migrate:** nothing. `brief` without `--as`, and `proc` with section names, work as before.

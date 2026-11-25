@@ -1,6 +1,6 @@
 ---
 name: record
-description: Record what the project learned — a decision and the options rejected, a coding convention, or how an external service actually behaves — in the right knowledge file, findable from its index. Use when something was decided or discovered that the next person will need.
+description: Record a decision, a coding convention or how an external service behaves, in the right knowledge file.
 argument-hint: "[decision | convention | external] [what]"
 ---
 

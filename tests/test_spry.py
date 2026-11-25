@@ -5382,6 +5382,25 @@ class MergeFlow(unittest.TestCase):
         self.assertNotIn("## Diff", out)
         self.assertIn("+    return 1", self.run_tool("brief", "SL-1", "--diff")[1])
 
+    def test_a_close_brief_says_whether_a_rebase_is_due(self):
+        """CH-82: the close's first facts come with the brief — the tree, and how far the main branch moved."""
+        code, out = self.run_tool("brief", "SL-1", "--as", "slice-close")
+        self.assertEqual(code, 0, out)
+        self.assertIn("## Before the close\n\n- working tree: committed\n- `origin/main` has not moved: no rebase", out)
+        self.assertIn("## Close — `/spry:slice-close [SL-n]`", out)
+        other = os.path.join(self.tmp, "other")
+        subprocess.run(["git", "clone", "-q", self.remote, other], check=True)
+        for key, value in (("user.email", "t@t"), ("user.name", "t")):
+            self.git("config", key, value, root=other)
+        self.git("commit", "-q", "--allow-empty", "-m", "moved", root=other)
+        self.git("push", "-q", "origin", "main", root=other)
+        with open(os.path.join(self.root, "new.py"), "w") as handle:
+            handle.write("x = 1\n")
+        out = self.run_tool("brief", "SL-1", "--as", "slice-close")[1]
+        self.assertIn("- working tree: 1 uncommitted file — commit first", out)
+        self.assertIn("- `origin/main` has 1 commit this branch lacks — `git rebase origin/main`", out, "it fetched")
+        self.assertNotIn("## Before the close", self.run_tool("brief", "SL-1")[1])
+
     def test_ci_that_never_started_is_stood_in_for_by_the_gate(self):
         self.checks[0]["bucket"], self.jobs[0]["steps"] = "fail", []
         with unittest.mock.patch.object(spry, "gate", lambda *a, **k: 0) as _:
@@ -5598,13 +5617,58 @@ class Proc(Base):
             with open(os.path.join(plugin, "skills", name, "SKILL.md")) as handle:
                 text = " ".join(handle.read().split())
             for call in re.findall(r"`python3 spry/tool/spry\.py proc ([^`]+)`", text):
-                words = shlex.split(call)
+                words = shlex.split(call.split(";")[0])
+                if words[0] == "--for":
+                    continue   # counted below
                 spry.proc(t.project(), words[0], words[1:])
                 seen += 1
             for extra in re.findall(r"adding `([^`]+)`", text):
                 file = re.search(r"spry\.py proc (\w+)", text).group(1)
                 spry.proc(t.project(), file, shlex.split(extra))
-        self.assertGreaterEqual(seen, 6)
+            for skill in re.findall(r"spry\.py (?:proc --for|brief SL-<n> --as) ([\w-]+)", text):
+                self.assertEqual(skill, name, "a skill asks for its own reading")
+                spry.proc_for(t.project(), skill)
+                seen += 1
+        self.assertGreaterEqual(seen, 9)
+
+    def test_proc_for_prints_all_a_skill_reads_before_it_starts(self):
+        """CH-82: one call, not one per file — and *Steps* only for a project or a slice built in steps."""
+        t = self.tree()
+        out = spry.proc_for(t.project(), "slice-close")
+        for part in ("## Close — `/spry:slice-close [SL-n]`", "## When to stop and ask", "## While building",
+                     "# Writing rules", "# Chat rules"):
+            self.assertIn(part, out)
+        self.assertNotIn("\n## Steps —", out)
+        self.assertNotIn("\n## Plan —", out, "only the sections the skill runs")
+        p = t.project()
+        p.config["slices"] = {"mode": "steps"}
+        self.assertIn("## Steps — `slices.mode: steps`", spry.proc_for(p, "slice-build"))
+        self.assertIn("# Conflict check", spry.proc_for(p, "slice-plan"))
+        self.assertIn("## Merge", spry.proc_for(p, "merge"))
+        with self.assertRaises(SystemExit) as caught:
+            spry.proc_for(p, "status")
+        self.assertIn("proc --for takes: slice-open, slice-plan, slice-build, slice-close, merge", str(caught.exception))
+
+    def test_a_brief_for_a_skill_ends_with_what_it_reads_first(self):
+        """CH-82: `brief --as` carries the parent, the feature, `related` and the procedure, so a plan
+        session asks for none of them one call at a time; without `--as` the brief is as it was."""
+        t = self.tree(**{f"{S}__SL-2-b.md": slice_("SL-2", state="planned")})
+        p = t.project()
+        out = spry.brief(p, "SL-2", skill="slice-plan")
+        self.assertIn(f"## Story — `{S}/README.md`", out)
+        self.assertIn("| AC-1 | x | y | z |", out, "the parent, whole")
+        self.assertNotIn("<!-- spry:proof -->", out, "generated blocks left out")
+        self.assertIn(f"## Feature — `{F}/README.md`", out)
+        self.assertIn("## Related — the conflict check starts here", out)
+        self.assertIn("### Siblings", out)
+        self.assertIn("## Procedure\n\n# Slicing", out)
+        self.assertIn("## Plan — `/spry:slice-plan [SL-n]`", out)
+        build = spry.brief(p, "SL-1", skill="slice-build")
+        self.assertIn("## Build — `/spry:slice-build [SL-n]`", build)
+        self.assertNotIn("## Story —", build, "the planning is not read again at the build")
+        plain = spry.brief(p, "SL-1")
+        self.assertNotIn("## Procedure", plain)
+        self.assertNotIn("## Procedure", spry.brief(p, "SL-1", diff=True, skill="slice-close"), "a reviewer reads its own part")
 
 
 if __name__ == "__main__":

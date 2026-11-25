@@ -1,6 +1,6 @@
 ---
 name: milestone
-description: Define one milestone with the product owner — why, done-when, scope and constraints — in plain words, then check it for conflicts. Does not define its epics. Use when planning the next big outcome.
+description: Define one milestone with the product owner: why, done-when, scope and constraints. Does not define its epics.
 argument-hint: "[#issue] [milestone ID to continue, or a title]"
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: tone
-description: Set how technical the agent's replies are for you, from 1 (no technical knowledge) to 10 (engineer in this codebase), or reset to the default for each document.
+description: Set how technical the agent's replies are for you, from 1 to 10, or reset to each document's default.
 argument-hint: "<1-10 | reset>"
 ---
 

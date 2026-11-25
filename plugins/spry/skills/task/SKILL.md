@@ -1,6 +1,6 @@
 ---
 name: task
-description: Record technical work no story asks for — set-up, upgrades, refactors, infrastructure — under the milestone or epic it serves, with why, what changes and how to tell it is done. Use when developers need work planned that is not a user-facing story.
+description: Record technical work no story asks for — set-up, upgrades, refactors — under the milestone or epic it serves.
 argument-hint: "[#issue] [milestone or epic ID] [the work]"
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: init
-description: Set up spry in a new project — interview the team about the product, people, roadmap, security, performance, external services and stack, then write the plan, knowledge files, AGENTS.md and CI. Use once, at the start of a new project.
+description: Set up spry in a new project: interview the team, then write the plan, knowledge files, AGENTS.md and CI. Use once.
 argument-hint: "[high-level description, or a path to one]"
 disable-model-invocation: true
 ---

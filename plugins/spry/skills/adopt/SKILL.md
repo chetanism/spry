@@ -1,6 +1,6 @@
 ---
 name: adopt
-description: Put spry around an existing codebase — survey the code first, then interview with the surveyed answers offered for confirmation, and write the plan, knowledge files, AGENTS.md and CI without blocking any existing code. Use once, on a project that already has code.
+description: Put spry around an existing codebase: survey it, confirm the answers, write the plan, knowledge files, AGENTS.md and CI. Use once.
 argument-hint: "[what the next piece of work is, optional]"
 disable-model-invocation: true
 ---

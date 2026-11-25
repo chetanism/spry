@@ -1,6 +1,6 @@
 ---
 name: explore
-description: Exploratory manual testing — a seeded, replayable random walk over a real, isolated instance, combining actions in orders nobody wrote down, each step predicted from the area's acceptance criteria before it runs, ending in a classified report of defects and gaps. Report only; never edits the repository. Use when asked to manually test, explore, poke at, smoke-test or sanity-check the product beyond what the tests assert.
+description: Exploratory manual testing: a seeded, replayable walk over a real instance. Report only. Use when asked to manually test or smoke-test.
 argument-hint: "[area] [sanity | regular | deep | adversarial] [seed to replay]"
 ---
 

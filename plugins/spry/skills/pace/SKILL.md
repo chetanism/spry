@@ -1,6 +1,6 @@
 ---
 name: pace
-description: Read where slices' time went and propose what to change — a process change, a config change, a bug or task, or nothing — one proposal per finding, each with its evidence. A fresh agent judges; the numbers come from spry pace. Report only; never edits. Use when slices feel slow, after a process change to see if it helped, or when asked what to improve.
+description: Read where slices' time and tokens went and propose what to change, each with its evidence. Report only. Use when slices feel slow.
 argument-hint: "[SL-n | --since YYYY-MM-DD | --last N | --compare POINT, optional]"
 ---
 

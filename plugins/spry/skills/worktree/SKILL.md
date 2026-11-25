@@ -1,6 +1,6 @@
 ---
 name: worktree
-description: Move this session into a worktree of its own — claim one by name or index, or make a new one, set up by the project's own script — so several sessions build side by side without sharing a branch, a database or a port. Use when starting a second session, or when asked which worktree is free.
+description: Move this session into a worktree of its own, so several sessions build side by side. Use when starting a second session.
 argument-hint: "[index | name | new]"
 ---
 

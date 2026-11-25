@@ -1,6 +1,6 @@
 ---
 name: memory-check
-description: Audit Claude Code's auto-memory for this checkout — the index against its files, and every memory's claims against the repository, the plan and GitHub — then propose keep, update or delete for each stale one with its reason, and change nothing until the person approves. Use when asked to check, clean up or prune the agent's memory, or when MEMORY.md has grown long.
+description: Audit the agent's auto-memory against the repository and the plan; propose keep, update or delete. Changes nothing without a yes.
 argument-hint: "[memory folder, optional — default: this checkout's]"
 ---
 

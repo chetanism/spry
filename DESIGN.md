@@ -903,7 +903,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it, with its `owner` — and cut its branch; give it back |
 | `link <slice> [--branch] [--pr] [--owner [name]]` · `link <item> --issue <n>` | set them in the slice's front-matter; a bare `--owner` is the person at this clone. On a plan item, add an issue to its `issues:` |
 | `issues [--sync [--dry-run]] [--offline] [--json]` · `issues --legacy [--close]` | each issue plan items name, its stage (§14) and whether its label shows it; `--sync` sets the label and comments when the stage changes, never closing one; `--legacy` the per-slice issues from before CH-52 still open, `--close` closes them with a comment |
-| `brief <slice> [--diff]` | a slice in one call: `pr-body`'s page (a planned slice: the slice as written, with its criteria in words), then the files the branch changed (`--stat`); `--diff` adds the whole diff, for a reviewer. Without `--diff`, a `!` first when this checkout's session carries more context than `slices.fresh_context` (150k; 0 turns it off) — the open or the close starts in a fresh session; `merge-ready` says the same before its ask |
+| `brief <slice> [--diff] [--as <skill>]` | a slice in one call: `pr-body`'s page (a planned slice: the slice as written, with its criteria in words), then the files the branch changed (`--stat`); `--diff` adds the whole diff, for a reviewer. Without `--diff`, a `!` first when this checkout's session carries more context than `slices.fresh_context` (150k; 0 turns it off) — the open or the close starts in a fresh session; `merge-ready` says the same before its ask. `--as <skill>` (CH-82) ends the brief with what that skill reads before it starts: `proc --for <skill>`; for `slice-plan` and `slice-open` the parent and its feature, whole but for generated blocks, and `related`; for `slice-close` whether the tree is committed and how far the main branch moved (after a fetch) |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean; with `slices.design_review`, a warning when the work order has no design review or a Blocker went unasked |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
@@ -916,7 +916,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `merge-finish [<pr>\|<slice>] [--ci-local]` | on the yes, steps 7–8: CI and `merge-check` again, the squash with `merge-message` at the PR's head, this tree to the main branch, CI there when the main branch moved under the PR, the progress tables when CI left them stale, `issues --sync`, what is unblocked |
 | `vendor` | copy `process/` and the tool into a project (plugin's copy only); `--diff` lists what differs |
 | `scrub <file>` | private words (product, people, glossary terms, emails, URLs) left in text about to leave the project |
-| `proc <file> [<section>…] [--list]` | a process file's opening and only the `##` sections named, matched by their first words — what a skill reads instead of the whole file; `--list` the headings and their sizes |
+| `proc <file> [<section>…] [--list]` | a process file's opening and only the `##` sections named, matched by their first words — what a skill reads instead of the whole file; `--list` the headings and their sizes. `proc --for <skill>` (CH-82) prints all a skill reads before it starts — its sections, then `chat.md`, `writing.md` and `conflicts.md` where it reads them, and *Steps* in a steps project — from one table in the tool (`PROC_FOR`: `slice-open`, `slice-plan`, `slice-build`, `slice-close`, `merge`) |
 | `find <query>` | full-text search, best sections first (§11) |
 | `falsify suggest <slice>` · `falsify run <plan>` | §16 |
 | `tests --slowest` | §15 |
@@ -963,6 +963,9 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `update` | 7 | Offer a project what spry gained since it was set up; port only what is chosen |
 | `contribute` | 7 | Offer spry what a project built; files an issue, never a PR |
 | `adopt` | 5 | Put spry around an existing codebase: survey, seed knowledge from what exists, plan from the next work; a writ project is planned from its mapping file (`process/from-writ.md`) — built with `init` |
+
+The slice skills and `merge` hold only the call that prints their reading (`brief --as`, `proc --for`,
+§19), the argument rule and where to stop; the rules are in the process file alone (CH-82).
 
 `milestone` / `epic` / `feature` / `story` share one procedure (`process/planning.md`); each skill
 only names its template and level. Every plan item, with `bug` and `task`, finishes with a
@@ -1435,6 +1438,22 @@ in `spry/history/writ.md`, then retires `canon/`.
   failure of another. Rejected: a form in `serve` for logging a run, because serve never writes.
   Rejected: a generated `QA.md`, because the page's lists depend on what has closed, which the main
   branch's blocks show only after CI runs.
+- 2026-11-25 — a skill starts in one call (CH-82, 0.71.0). Read from ten days of two projects'
+  logs (896 sessions, 973 subagents, 1.05B input-token equivalents): 73% of the main sessions'
+  spend was still cache reads, at 148k of context a request, and 94–97% of requests that called a
+  tool called one, in every skill — the rule CH-76 put in `slicing.md` did not change it. A plan
+  session opened the parent, the feature and the indexes in about 15 `sed`, `grep` and `cat` calls,
+  and each slice skill named its own `proc` sections and three files to read beside them. So the
+  tool does the batching: `brief --as <skill>` ends with the procedure, a plan's parent, feature
+  and `related`, and a close's rebase facts; `proc --for <skill>` prints a skill's reading from
+  one table. The slice skills and `merge` shrink to the call, the argument rule and the stop rule,
+  and say nothing the process file says: a rule kept in two places drifts. Every skill description
+  is cut to a line or two (9.3k characters to 3.7k): the listing is in every session and every
+  subagent. *Close* step 6 keeps falsify's usual path; what each other case needs is printed by
+  `falsify suggest` and `run` when it happens. A rule that prose has failed to carry moves into the
+  tool. Rejected: `disable-model-invocation` on more skills — a close runs `/spry:merge` and a
+  retro starts `/spry:process-change`, so the model must see them. Rejected: a rebase inside
+  `brief` — a conflict needs judgement; it reports, the agent rebases.
 
 ## 24. Worktrees and progress
 
