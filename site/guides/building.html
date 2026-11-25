@@ -181,6 +181,33 @@ only the third comes up:</p>
 <p>Everything else runs as one piece of work, because the checks stand in for a person watching. See
 <a href="../design/decisions.html">Where a person decides</a>.</p>
 
+<h2>Light slices</h2>
+
+<p>Every reading costs about the same whatever the size of the slice, so a small slice pays the most for
+them. Across 195 slices in two projects, one under 300 changed lines cost three times as much per line as
+one of 1,300–2,500 — and on those small slices the design review and the review at close each found a
+Blocker once in twenty.</p>
+
+<p>You can mark work as <strong>light</strong>. A light slice has no design review, and one reviewer reads
+its whole diff at close, not one for each step and one for the seams. Nothing else changes: the agent
+still stops to ask before anything hard to undo, every criterion still needs its test, falsify and the
+gate still run, and you still merge.</p>
+
+<ul>
+  <li><strong>You ask for it.</strong> Put <code>rigor: 0</code> in the front-matter of a story, feature or
+  epic, and every slice under it is at level 0. <code>rigor: 1</code> on an item below takes it back out.
+  <code>"rigor": 0</code> in the <a href="../reference/config.html">config</a> covers the whole project.
+  The agent never sets it.</li>
+  <li><strong>The tool checks the slice fits.</strong> Light holds while the slice changes at most 300
+  lines of code (<code>slices.light.max_lines</code>) and touches no migration or SQL file
+  (<code>slices.light.never</code> — add your own: auth, billing, a public API).</li>
+  <li><strong>A slice that outgrows it</strong> is reviewed in full at close, and <code>merge-check</code>
+  warns that nobody read its design before the code.</li>
+  <li><strong>See whether it is safe.</strong> <code>spry pace</code> has a <em>By level</em> table: light
+  slices against the others of the same size — what they cost, what the review found, and the bugs filed
+  later. Start with one epic of small work, and widen it when that table gives no reason not to.</li>
+</ul>
+
 <h2>The design review</h2>
 
 <p>The agent itself judges whether a choice is hard to undo, and nobody checks that judgement. The

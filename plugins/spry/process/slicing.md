@@ -97,7 +97,8 @@ open:
 3. **Conflict check** — `conflicts.md`, from the brief's *Related*; once the `Plan` names its
    files, `spry.py related <slice file>` again for open slices on the same ones.
 4. **Design review** — always under `slice-plan`; under `slice-open` only with
-   `slices.design_review` on. A plan another session builds from gets its second reading here or
+   `slices.design_review` on; **never for a light slice** — one whose brief has a *Rigor* section
+   saying so (*Light* below). A plan another session builds from gets its second reading here or
    nowhere. The review at close asks whether the
    code is what the work order said; this one asks whether the work order is right, while changing
    it costs nothing.
@@ -226,7 +227,8 @@ that merges.
    `pr-body --base origin/<main>`; the PR stays a draft. Code is committed first, as it was built.
    `/spry:review SL-<n>`, and the fixes accepted applied (`reviewing.md` §5a)
    — before falsify and the gate, so a fix costs neither a second time. A steps slice gets one
-   reviewer per step and one for the seams; each fix is a fixup of its step (*Steps* → *Close*). The review reads no
+   reviewer per step and one for the seams — a light one (the brief's *Rigor*) a single reviewer
+   for the whole diff; each fix is a fixup of its step (*Steps* → *Close*). The review reads no
    Falsify rows yet; `merge-check` and the merge's ask cover them. The close waits for the review's
    Ask 1; on *c* or *d* it goes on to *Falsify* with nothing fixed.
    - **Record it** under `### Review` in the close summary: `- <n> Blocker, <n> Should, <n> Nit —
@@ -317,7 +319,8 @@ file, keeps that so (DESIGN.md §15 *Steps mode*).
   (`spry.py gate`), as in any slice.
 - **Close.** As *Close* above, with three differences:
   - **Review** (step 5): `/spry:review SL-<n>` starts one reviewer per step and one for the seams
-    (`reviewing.md` §3a). `spry.py step SL-<n> --ranges` gives each one its diff, from any branch.
+    (`reviewing.md` §3a). `spry.py step SL-<n> --ranges` gives each one its diff, from any branch
+    — for a light slice, one line and one reviewer.
   - **Fixes and falsify's new tests** are `git commit --fixup=<the step's commit>` — the step the
     code belongs to; never `--squash`, whose message would bury the step's trailer. Nothing but
     documents is committed until the gate.
@@ -330,6 +333,21 @@ file, keeps that so (DESIGN.md §15 *Steps mode*).
   committed without a trailer, and a fixup not folded in. A slice over `slices.steps.max_lines`,
   and each step over `slices.steps.step_lines`, is a `!` the person accepts; generated lines (`checks.generated`) are printed beside the size,
   not counted in it. The squash keeps the step titles in its body.
+
+## Light — `rigor: 0`
+
+A small slice that is easy to undo does not need three readings. At level 0 a slice has **no
+design review** and **one reviewer at close**, for the whole diff. Everything else holds: *When to
+stop and ask*, the criteria and their tests, falsify, the gate, the person's merge.
+
+- **A person sets it**, never the agent: `rigor: 0` in a plan item's front-matter covers that item
+  and everything under it (the nearest value wins, so `rigor: 1` on a risky story keeps it out);
+  `"rigor": 0` in the config covers the project.
+- **The tool decides whether a slice fits:** at most `slices.light.max_lines` lines of code
+  changed (300), and no file — named in its plan or changed on its branch — under
+  `slices.light.never` (migrations, SQL). The brief's *Rigor* section and `merge-check` say which.
+- **A slice that outgrows it** is reviewed in full at close, and `merge-check` warns that nobody
+  read its design before the code.
 
 ## Slices side by side
 

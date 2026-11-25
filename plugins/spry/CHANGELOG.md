@@ -1862,3 +1862,29 @@ Entry format:
 - **Adapt:** nothing. A project that loosened a limit on purpose keeps it; the page now shows
   what that cost or did not.
 - **Migrate:** nothing. Run `spry pace --summary` once and read *Limits loosened or off*.
+
+## CH-87 · A light level for small slices
+
+- **Date:** 2026-11-25 · **Version:** 0.76.0
+- **Touches:** `tool/spry.py` (`rigor:`, `slices.light`, `brief`, `step --ranges`, `merge-check`,
+  `check`, `pace`), `process/slicing.md` (*Light*, *Plan* step 4, *Close* step 5),
+  `process/reviewing.md` (§2), `skills/review`, config template (`rigor`, `slices.light`)
+- **Why:** across 195 slices in two projects, a slice under 300 changed lines cost three times as
+  much per line as one of 1,300–2,500, because every reading costs the same whatever the size —
+  and on those small slices the design review and the review at close each left 0.05 Blockers a
+  slice.
+  - **`rigor: 0`** on a plan item (it covers everything under it; the nearest value wins) or
+    `"rigor": 0` in the config makes a slice *light*: no design review, and one reviewer for the
+    whole diff at close, not one for each step and the seams. Everything else holds.
+  - **The tool decides whether a slice fits**, never the agent: at most `slices.light.max_lines`
+    lines of code changed (300) and no file under `slices.light.never` (migrations and SQL by
+    default). A slice that outgrows it is reviewed in full, and `merge-check` warns that its
+    design was not read before the code.
+  - **`pace` → *By level*** sets light slices against level 1 slices of the same size: spend,
+    review agents, the review's findings, bugs filed later.
+- **Adapt:** nothing changes until someone writes `rigor: 0`. Start narrow — one epic of small,
+  easily undone work — and widen it when *By level* shows no more bugs filed later. Add to
+  `slices.light.never` what your project must always have read twice: auth, billing, a public API.
+  A project with its own lane for small work (a `catch-up.md`) can replace it with this.
+- **Migrate:** nothing. `"rigor": 1` and `slices.light` in the template are the defaults; a
+  config without them behaves the same.
