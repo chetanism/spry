@@ -903,7 +903,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it, with its `owner` — and cut its branch; give it back |
 | `link <slice> [--branch] [--pr] [--owner [name]]` · `link <item> --issue <n>` | set them in the slice's front-matter; a bare `--owner` is the person at this clone. On a plan item, add an issue to its `issues:` |
 | `issues [--sync [--dry-run]] [--offline] [--json]` · `issues --legacy [--close]` | each issue plan items name, its stage (§14) and whether its label shows it; `--sync` sets the label and comments when the stage changes, never closing one; `--legacy` the per-slice issues from before CH-52 still open, `--close` closes them with a comment |
-| `brief <slice> [--diff] [--as <skill>]` | a slice in one call: `pr-body`'s page (a planned slice: the slice as written, with its criteria in words), then the files the branch changed (`--stat`); `--diff` adds the whole diff, for a reviewer. Without `--diff`, a `!` first when this checkout's session carries more context than `slices.fresh_context` (150k; 0 turns it off) — the open or the close starts in a fresh session; `merge-ready` says the same before its ask. `--as <skill>` (CH-82) ends the brief with what that skill reads before it starts: `proc --for <skill>`; for `slice-plan` and `slice-open` the parent and its feature, whole but for generated blocks, and `related`; for `slice-close` whether the tree is committed and how far the main branch moved (after a fetch) |
+| `brief <slice> [--diff] [--as <skill>]` | a slice in one call: `pr-body`'s page (a planned slice: the slice as written, with its criteria in words), then the files the branch changed (`--stat`); `--diff` adds the whole diff, for a reviewer. Without `--diff`, a `!` first when this checkout's session carries more context than `slices.fresh_context` (150k; 0 turns it off) — the open or the close starts in a fresh session; `step --commit` says the same after a step's commit, for the next step (CH-83); `merge-ready` says the same before its ask. `--as <skill>` (CH-82) ends the brief with what that skill reads before it starts: `proc --for <skill>`; for `slice-plan` and `slice-open` the parent and its feature, whole but for generated blocks, and `related`; for `slice-close` whether the tree is committed and how far the main branch moved (after a fetch) |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean; with `slices.design_review`, a warning when the work order has no design review or a Blocker went unasked |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
@@ -1454,6 +1454,17 @@ in `spry/history/writ.md`, then retires `canon/`.
   tool. Rejected: `disable-model-invocation` on more skills — a close runs `/spry:merge` and a
   retro starts `/spry:process-change`, so the model must see them. Rejected: a rebase inside
   `brief` — a conflict needs judgement; it reports, the agent rebases.
+- 2026-11-25 — a build stops growing between steps (CH-83, 0.72.0). The same reading: slices of
+  2,500 lines or more had a median peak context of 434k and a median spend of 11.8M, and the build
+  phase was 58% of one such slice's spend, at 98% one-tool requests — each step's requests re-read
+  every step before it. The context check ran only where a skill starts. `step --commit` now runs
+  it after the commit, when a step is left: `/clear`, then `/spry:slice-build`, and `spry step`
+  names the next step from the commits, as it always could. Both projects had set
+  `slices.fresh_context` to 1,000,000, which turns every one of these checks off; the config
+  reference says so. Rejected: a subagent per step — step 3's builder would not see what step 2
+  learned about the code, and the session would pay to brief it; a commit boundary loses nothing.
+  Rejected: refusing the next step — the agent may be mid-thought on a two-step slice; it is said,
+  and `pace` shows whether it was heeded (peak context, by size).
 
 ## 24. Worktrees and progress
 

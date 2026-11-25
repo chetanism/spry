@@ -93,7 +93,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.71.0"
+VERSION = "0.72.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -2638,7 +2638,7 @@ def pr_body(project: Project, slice_id: str, base: str | None = None) -> str:
     return f"**{item.label}**{parent} — `{project.rel(item.doc)}`\n\n{review}{body}\n"
 
 
-FRESH_CONTEXT = 150_000   # `slices.fresh_context`: tokens of context above which a close starts in a fresh session
+FRESH_CONTEXT = 150_000   # `slices.fresh_context`: tokens of context above which a skill, or a slice's next step, starts in a fresh session
 
 
 def fresh_context(project: Project) -> int:
@@ -6946,6 +6946,10 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
     if over:
         say(f"! {over} — split it before the next step (`git reset --soft HEAD^`), or a person accepts it at the merge")
     progress_event(project, "step", f"step {k} of {total} committed ({sha})", item.id)
+    stop = context_stop(project, f"/spry:slice-build {item.id}") if k < total else None
+    if stop:
+        # The step is committed, so nothing is lost: the next session starts at step k + 1 from the commits.
+        say(f"! {stop} — `spry.py step {item.id}` there names step {k + 1}")
     return 0
 
 
