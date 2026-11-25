@@ -3923,6 +3923,27 @@ class Pace(Base):
         self.assertIn("over `slices.fresh_context` (150k)", stop)
         self.assertIn("`/spry:slice-build SL-1`", stop)
 
+    def test_a_build_brief_names_the_rules_that_failed_the_checks_most(self):
+        """CH-84: read from the step log's newest gates; a rule that failed fewer than three is not a pattern."""
+        t = self.tree()
+        p = t.project()
+        self.assertNotIn("## Rules that failed", spry.brief(p, "SL-1", skill="slice-build"), "no log yet")
+        home = spry.pace_home(p)
+        os.makedirs(home, exist_ok=True)
+        rows = [{"command": "gate", "ok": False, "red": {"lint": {"eslint(no-shadow)": 2, "eslint(once)": 1}}},
+                {"command": "gate", "ok": False, "red": {"lint": {"eslint(no-shadow)": 1}, "types": {"TS2345": 4}}},
+                {"command": "falsify"}, {"command": "gate", "ok": True},
+                {"command": "gate", "ok": False, "red": {"lint": {"eslint(no-shadow)": 1}, "types": {"TS2345": 1}}},
+                {"command": "gate", "ok": False, "red": {"types": {"TS2345": 1}}},
+                {"command": "gate", "ok": False, "red": {"types": {"TS2345": 1}}}]
+        with open(os.path.join(home, "steps.jsonl"), "w") as handle:
+            handle.write("".join(json.dumps(r) + "\n" for r in rows) + "not json\n")
+        out = spry.brief(p, "SL-1", skill="slice-build")
+        self.assertIn("## Rules that failed the checks most\n\nIn this project's last 6 gates.", out)
+        self.assertIn("- types `TS2345` — 4 red gates\n- lint `eslint(no-shadow)` — 3 red gates\n", out)
+        self.assertNotIn("eslint(once)", out)
+        self.assertNotIn("## Rules that failed", spry.brief(p, "SL-1", skill="slice-close"), "only where code is written")
+
     def test_brief_says_when_the_session_is_too_big_to_close_in(self):
         """CH-76: past `slices.fresh_context`, the close starts after /clear; a reviewer's --diff never asks."""
         t = self.tree()
@@ -4412,8 +4433,8 @@ class Steps(Base):
         self.write("src/it's new.ts", "export const shown = true UGLY\n")
         code, out = self.say(True, False, False)
         self.assertEqual(code, 0, out)
-        self.assertIn("✗ format", out)
-        self.assertIn("– format fixed by its `fix` command — files changed: src/it's new.ts, src/lend.ts; the checks run again", out)
+        self.assertNotIn("✗ format", out, "CH-84: the fix runs first, so the check never goes red")
+        self.assertIn("– format: the `fix` ran before the checks — files changed: src/it's new.ts, src/lend.ts", out)
         self.assertIn("committed step 1 of 2", out)
         self.assertEqual(int(self.commits()), int(before) + 1, "one `step --commit`, one commit")
         self.assertEqual(self.read("src/lend.ts"), "export const limit = 4\n")
@@ -4421,10 +4442,10 @@ class Steps(Base):
         self.assertEqual(show, "export const limit = 4\n", "the commit holds the formatted file")
         self.assertEqual(subprocess.run(["git", "status", "--porcelain"], cwd=self.t.root, capture_output=True, text=True).stdout, "")
         rows = [json.loads(line) for line in self.read(".spry/pace/steps.jsonl").strip().split("\n")]
-        self.assertEqual([(r["command"], r.get("ok")) for r in rows[-3:]], [("gate", False), ("fix", None), ("gate", True)])
-        self.assertEqual((rows[-2]["checks"], rows[-2]["files"]), (["format"], 2))
+        self.assertEqual([(r["command"], r.get("ok")) for r in rows[-2:]], [("fix", None), ("gate", True)], "one gate, not two")
+        self.assertEqual((rows[-2]["checks"], rows[-2]["files"], rows[-2]["first"]), (["format"], 2, True))
 
-    def test_a_lint_failure_still_refuses_the_step_and_nothing_is_formatted(self):
+    def test_a_lint_failure_still_refuses_the_step_but_the_formatting_is_already_done(self):
         self.on_branch()
         self.fast_checks()
         before = self.commits()
@@ -4432,15 +4453,15 @@ class Steps(Base):
         code, out = self.say(True, False, False)
         self.assertEqual(code, 1, out)
         self.assertIn("✗ lint", out)
-        self.assertNotIn("fixed by", out)
+        self.assertNotIn("✗ format", out, "CH-84: only what the agent must mend is red")
         self.assertIn("step 1 not committed: the fast checks are red", out)
-        self.assertEqual(self.read("src/lend.ts"), "export const limit = 4 UGLY LINT\n", "left as the agent wrote it")
+        self.assertEqual(self.read("src/lend.ts"), "export const limit = 4 LINT\n", "formatted; the lint fault is the agent's")
         self.assertEqual(self.commits(), before)
         self.write("src/lend.ts", "export const limit = 4 UGLY\n")
         self.write("src/page.ts", "export const shown = true\n")
         code, out = self.say(True, False, False)
         self.assertEqual(code, 0, out)
-        self.assertIn("files changed: src/lend.ts;", out, "only the files the formatter changed are named")
+        self.assertTrue(out.split("\n")[0].endswith("files changed: src/lend.ts"), "only the files the formatter changed are named")
 
     def test_without_a_fix_command_a_format_failure_refuses_the_step_as_before(self):
         self.on_branch()
@@ -4467,7 +4488,8 @@ class Steps(Base):
         self.fast_checks()
         code, out = self.say(True, False, False)
         self.assertEqual(code, 0, out)
-        self.assertIn("– not run again", out, "the red a gate already found is fixed too, not run a second time first")
+        self.assertIn("– format: the `fix` ran before the checks — files changed: src/lend.ts", out,
+                      "CH-84: a red an earlier gate found is fixed before the checks run again")
         self.assertIn("committed step 1 of 2", out)
 
     def test_a_slice_over_the_size_cap_is_the_person_s_call(self):

@@ -113,9 +113,9 @@ commits already on the branch, and the commit that finishes it.</p>
   are red, when nothing changed, when only documents changed, or when the steps so far are out of order.
   With <code>slices.steps.tests</code> on it also runs the test files the step added or changed, less
   <code>slices.steps.tests_skip</code>, and refuses when one fails, naming the file.
-  When every red check has a <code>fix</code> in <code>checks.fast</code> — the formatter's write mode — it runs
-  that on the step's files, names the files it changed, runs the checks again and commits. A lint or
-  type failure still refuses the commit, and then nothing is formatted.</li>
+  Before the checks it runs every <code>fix</code> in <code>checks.fast</code> — the formatter's write mode — on
+  the step's files and names the files it changed, so formatting never turns a check red and the checks
+  run once. A lint or type failure still refuses the commit; the files are already formatted.</li>
   <li><code>--ranges</code> — each step's <code>git diff</code>, and the whole branch's, for the reviewers.
   Off the slice's branch it reads <code>origin/&lt;branch&gt;</code>, so nothing is checked out;
   <code>--head REF</code> names another place.</li>
@@ -379,7 +379,9 @@ place of ten saves nine readings of it.</p>
 The brief then ends with everything that skill reads before it starts, so the session asks for none of
 it in calls of its own: the procedure (<code>proc --for</code>, below); for a plan, the slice's parent
 and its feature and the output of <code>related</code>; for a close, whether the working tree is
-committed and how far the main branch has moved since the branch left it (it fetches first).</p>
+committed and how far the main branch has moved since the branch left it (it fetches first); for a build,
+the rules that failed this project's checks most often — up to six that turned a check red in three or
+more of the last 400 gates — so the code is written to them.</p>
 
 <h3 id="pr-body">pr-body</h3>
 <p>A slice's pull request body: <em>For the reviewer</em> first (covered criteria in words, criteria

@@ -144,7 +144,8 @@ Run on whichever model the person chose; the work order holds what this session 
 1. **Branch:** on the slice's `branch:` — `git fetch`, then `git switch <branch>`. Checked out in
    another worktree → build there (`/spry:worktree`). Never a new branch.
 2. **Read** what the work order names: the files in `Plan` (or the step's plan), the rules linked
-   under `Must not`, the `### Design review` answers. Not the planning again: the parent, the
+   under `Must not`, the `### Design review` answers — in one call. The brief's *Rules that failed
+   the checks most* are the lint and type rules this project's code keeps breaking: write to them. Not the planning again: the parent, the
    feature and the knowledge indexes were read when the plan was written.
 3. **Build** to the plan, as *While building* says; a steps slice one step at a time (*Steps* →
    *Build*).
@@ -305,9 +306,9 @@ file, keeps that so (DESIGN.md §15 *Steps mode*).
   `slices.fresh_context` → stop there: `[Run] /clear`, then `/spry:slice-build SL-<n>`, which
   starts at the next step — every request of the steps left would read the steps built again. A step over `slices.steps.step_lines` is a `!` after the commit:
   split it now (`git reset --soft HEAD^`, then commit its parts as steps) or leave it for the person
-  to accept at the merge. Red fast checks → fix and run it again; when every red check has
-  a `fix` in `checks.fast` (the formatter), the tool runs it on the step's files, says which
-  changed, and commits. With `slices.steps.tests`
+  to accept at the merge. It runs every `fix` in `checks.fast` (the
+  formatter) on the step's files first and says which changed, so never format by hand. Red fast
+  checks → fix and run it again. With `slices.steps.tests`
   on, it also runs the test files the step added or changed (not those in
   `slices.steps.tests_skip`), and a red one refuses the commit and names the file: fix it in this
   step, not at close. **Never `git commit` code
