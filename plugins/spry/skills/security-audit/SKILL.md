@@ -1,6 +1,6 @@
 ---
 name: security-audit
-description: Review the product, a milestone, an area or a branch for security problems against the project's security rules — access, sign-in, input, personal data, secrets, dependencies, external services — and write a report whose findings become bugs or tasks. Reports only; never fixes.
+description: Review the product, a milestone, an area or a branch against the project's security rules. Report only; never fixes.
 argument-hint: "[scope: product | milestone ID | area | branch]"
 ---
 

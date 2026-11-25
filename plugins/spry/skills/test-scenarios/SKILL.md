@@ -1,6 +1,6 @@
 ---
 name: test-scenarios
-description: Write the steps QA follows by hand to check each acceptance criterion of a story — with the data to use and what they should see — into the story's checks file. Use once a story is ready, before or while it is built.
+description: Write the steps QA follows by hand to check each acceptance criterion of a story, into its checks file.
 argument-hint: "<story ID>"
 ---
 

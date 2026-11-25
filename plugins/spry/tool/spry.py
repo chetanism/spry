@@ -25,6 +25,7 @@
     python3 spry/tool/spry.py falsify suggest <slice> [--base main]   # draft a plan from the diff
     python3 spry/tool/spry.py falsify run <plan.json> [--dry-run] [--record <slice>] [--jobs N]
     python3 spry/tool/spry.py proc <file> ["<section>" …] [--list]   # a process file, or only the sections a skill needs
+    python3 spry/tool/spry.py proc --for <skill>   # everything that skill reads before it starts, in one call
     python3 spry/tool/spry.py find "<words>"     # search spry/ and AGENTS.md, best sections first
     python3 spry/tool/spry.py check --base origin/main   # also warn on criteria changed under tests or manual checks
     python3 spry/tool/spry.py codeowners [--check]       # .github/CODEOWNERS from team.review
@@ -33,7 +34,7 @@
     python3 spry/tool/spry.py draw <seed> <n> --pick < choices   # the same choice for ever, per (seed, n)
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
     python3 spry/tool/spry.py publish <slice> open|review|ready   # a slice's PR: draft opened, body refreshed, marked ready — with the commits and pushes
-    python3 spry/tool/spry.py brief <slice> [--diff]   # one call: work order, criteria in words, files changed (--diff: the diff, for a reviewer); warns when this session's context is past slices.fresh_context
+    python3 spry/tool/spry.py brief <slice> [--diff]   # one call: work order, criteria in words, files changed (--diff: the diff, for a reviewer); --as <skill> adds what that skill reads first — its procedure, a plan's parent, feature and `related`, a close's rebase facts; warns when this session's context is past slices.fresh_context
     python3 spry/tool/spry.py backlog [--section NAME]… [--rows N] [--plain]   # the backlog, or only the rows asked for, links as text
     python3 spry/tool/spry.py merge-ready [<pr>|<slice>] [--wait [MIN]]   # merging.md steps 1–5 in one report, then the ask; --wait waits for pending checks here
     python3 spry/tool/spry.py merge-finish [<pr>|<slice>] [--ci-local REASON]   # on the yes: squash, main, CI there, tables, issues, unblocked
@@ -92,7 +93,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.70.0"
+VERSION = "0.71.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -2682,7 +2683,7 @@ def brief(project: Project, slice_id: str, diff: bool = False, skill: str | None
     branch = str(item.fm.get("branch") or "")
     head = "HEAD" if not branch or current_branch(project) == branch else f"{REMOTE}/{branch}"
     known = git(project.root, "rev-parse", "--verify", "--quiet", f"{base}^{{commit}}").returncode == 0
-    out = []
+    out, named, stop = [], None if diff else skill, None
     if not diff:
         skill = skill or ("slice-close" if item.state in ("open", "closed") else "slice-open")
         stop = context_stop(project, f"/spry:{skill} {item.id}")
@@ -2701,7 +2702,45 @@ def brief(project: Project, slice_id: str, diff: bool = False, skill: str | None
             out.append(f"## Diff\n\n```diff\n{text}\n```\n")
     else:
         out.append(f"## Changed\n\n{base} is not known here — `git fetch`\n")
+    if named and not stop:
+        if named in ("slice-plan", "slice-open"):
+            out.append(brief_plan(project, item))
+        if named == "slice-close" and known:
+            out.append(brief_close(project, base))
+        out.append("## Procedure\n\n" + proc_for(project, named, item))
     return "\n".join(out)
+
+
+def brief_plan(project: Project, item: Item) -> str:
+    """What a session about to write a work order reads next, so it asks for none of it one file at a
+    time: the slice's parent and that parent's feature, whole but for their generated blocks, and
+    what the conflict check starts from (`related`)."""
+    out, seen = [], set()
+    feature = next((p for p in item.ancestors() if p.type == "feature"), None)
+    for doc in (item.parent, feature):
+        if doc is None or doc.id in seen:
+            continue
+        seen.add(doc.id)
+        body = "\n".join(doc.text.split("\n")[doc.body_start:])
+        body = re.sub(r"\n{3,}", "\n\n", strip_blocks(body)).strip()
+        out.append(f"## {doc.type.capitalize()} — `{project.rel(doc.doc)}`\n\n````markdown\n{body}\n````\n")
+    found = related(project, item.doc)
+    out.append("## Related — the conflict check starts here\n\n" + re.sub(r"^## ", "### ", found, flags=re.M))
+    return "\n".join(out)
+
+
+def brief_close(project: Project, base: str) -> str:
+    """The first facts of a close, so step 1 costs no call of its own: whether the tree is committed,
+    and how far the main branch has moved since the branch left it (after a fetch; quiet offline)."""
+    main = base.split("/", 1)[1]
+    git(project.root, "fetch", "-q", REMOTE, main)
+    dirty = [line for line in git(project.root, "status", "--porcelain").stdout.split("\n") if line.strip()]
+    behind = git(project.root, "rev-list", "--count", f"HEAD..{base}").stdout.strip()
+    rows = [f"- working tree: {len(dirty)} uncommitted file{'s' if len(dirty) != 1 else ''} — commit first" if dirty
+            else "- working tree: committed",
+            f"- `{base}` has {behind} commit{'s' if behind != '1' else ''} this branch lacks — `git rebase {base}`"
+            if behind.isdigit() and int(behind) else f"- `{base}` has not moved: no rebase"]
+    return "## Before the close\n\n" + "\n".join(rows) + "\n"
 
 
 # ---------------------------------------------------------------- GitHub issues: requests from outside the repository
@@ -4340,6 +4379,32 @@ def proc(project: Project, name: str, sections: list, listing: bool = False) -> 
         end = next((j for j, lv, _ in heads[k + 1:] if lv <= level), len(lines))
         chunks.append("\n".join(lines[i:end]).strip("\n"))
     return "\n\n".join(c for c in chunks if c) + "\n"
+
+
+# What each skill reads before it starts — `proc --for <skill>` prints it in one call, and
+# `brief <slice> --as <skill>` ends with it. `Steps` joins the slicing sections for a steps slice.
+PROC_FOR = {
+    "slice-open": [("slicing", ["When to stop", "What a slice", "Open", "Plan", "Build", "While building"]),
+                   ("conflicts", []), ("writing", []), ("chat", [])],
+    "slice-plan": [("slicing", ["When to stop", "What a slice", "Plan"]), ("conflicts", []), ("writing", []), ("chat", [])],
+    "slice-build": [("slicing", ["When to stop", "Build", "While building"]), ("chat", [])],
+    "slice-close": [("slicing", ["Close", "When to stop", "While building"]), ("writing", []), ("chat", [])],
+    "merge": [("merging", ["Merge"]), ("chat", [])],
+}
+
+
+def proc_for(project: Project, skill: str, item: Item | None = None) -> str:
+    """Everything `skill` reads before it starts, in one call: the sections of its process file, then
+    the files it reads beside it, whole. A steps slice — `slices.mode: steps`, or `item` with
+    `### Steps` — adds *Steps*."""
+    if skill not in PROC_FOR:
+        raise SystemExit(f"no skill `{skill}` — proc --for takes: " + ", ".join(PROC_FOR))
+    steps = (project.config.get("slices") or {}).get("mode") == "steps" or bool(item and slice_steps(item.text))
+    out = []
+    for name, wanted in PROC_FOR[skill]:
+        wanted = wanted + ["Steps"] if name == "slicing" and steps else wanted
+        out.append(proc(project, name, wanted).rstrip("\n"))
+    return "\n\n".join(out) + "\n"
 
 
 # ---------------------------------------------------------------- find
@@ -10706,7 +10771,8 @@ def main(argv=None) -> int:
     p = sub.add_parser("brief", help="a slice in one call: work order, criteria in words, files changed — and the diff, for a reviewer")
     p.add_argument("slice")
     p.add_argument("--diff", action="store_true", help="add the branch's whole diff, and leave out the context check (a reviewer is a fresh agent)")
-    p.add_argument("--as", dest="skill", choices=BRIEF_SKILLS, help="the skill this session runs — the one the context check names; default: by the slice's state")
+    p.add_argument("--as", dest="skill", choices=BRIEF_SKILLS, help="the skill this session runs: the context check names it, and the brief ends with what it reads "
+                   "before it starts — its procedure, and for a plan the parent, the feature and `related`; default: by the slice's state, and no procedure")
     p = sub.add_parser("pr-body", help="a slice's work order and close summary, for its pull request")
     p.add_argument("slice")
     p.add_argument("--base", help="git ref the PR merges into, to show criteria the branch changed")
@@ -10720,6 +10786,8 @@ def main(argv=None) -> int:
     p.add_argument("file", help="e.g. slicing (spry/process/slicing.md)")
     p.add_argument("section", nargs="*", help="`##` headings to print, by their first words; none prints the whole file")
     p.add_argument("--list", action="store_true", help="the headings and their sizes")
+    p.add_argument("--for", dest="skill", action="store_true",
+                   help="`file` is a skill: everything it reads before it starts, in one call (" + ", ".join(PROC_FOR) + ")")
     p = sub.add_parser("find", help="search spry/ and AGENTS.md")
     p.add_argument("query", nargs="+")
     p.add_argument("--limit", type=int, default=10)
@@ -11045,7 +11113,7 @@ def main(argv=None) -> int:
             else "; commit it"))
         return 0
     if args.command == "proc":
-        print(proc(project, args.file, args.section, args.list), end="")
+        print(proc_for(project, args.file) if args.skill else proc(project, args.file, args.section, args.list), end="")
         return 0
     if args.command == "find":
         hits = find(project, " ".join(args.query), args.limit, args.rebuild)
@@ -11121,7 +11189,10 @@ def main(argv=None) -> int:
                           "name a test file if one guards it")
                 for note in notes:
                     print(note)
-                print("then: falsify run " + project.rel(out))
+                if plan:
+                    print("keep every control — `merge-check` blocks one with no row; narrow each `expect` to the criteria "
+                          "it serves; one that cannot run (a clock, a network) gets the row `skipped — <reason>`")
+                print(f"then: falsify run {project.rel(out)} --dry-run, and with --record {args.slice}")
                 return 0
             started = time.time()
             results = falsify_run(project, args.plan, dry=args.dry_run, jobs=args.jobs)
@@ -11153,7 +11224,13 @@ def main(argv=None) -> int:
                     return 1
             survivors = sum(1 for _, r, _ in results if r == "survived")
             if survivors:
-                print(f"{survivors} survived — each needs a new test or a written reason before the slice closes")
+                print(f"{survivors} survived — each needs a new test or a written reason before the slice closes: "
+                      "write the test and run a plan of only the survivors (`--record` keeps the other rows), or, when "
+                      "no test should catch it, write the reason after `survived` in its row for a person to accept")
+            unreliable = sum(1 for _, r, _ in results if r == "unreliable")
+            if unreliable:
+                print(f"{unreliable} unreliable — the tests were red, timed out or broke before the control was tried "
+                      "(each row's note says which): fix that first, then run those controls again")
         return 0
     if args.command == "scrub":
         hits = scrub(project, args.file)

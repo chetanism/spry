@@ -1,6 +1,6 @@
 ---
 name: prelaunch
-description: A go / no-go review before a release — every story proven, no blocker bugs, a recent security audit, manual rule checks done, production configuration, data, alerting and build contents checked — written as a report with a verdict. Never deploys.
+description: A go / no-go review before a release, written as a report with a verdict. Never deploys.
 argument-hint: "[milestone ID or release name]"
 disable-model-invocation: true
 ---

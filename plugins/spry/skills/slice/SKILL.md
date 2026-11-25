@@ -1,6 +1,6 @@
 ---
 name: slice
-description: Split a ready story, task or bug into planned slices — each one reviewable in one sitting and showing one visible change — and record which acceptance criteria each covers. Use when a story is ready to be built.
+description: Split a ready story, task or bug into planned slices, each covering named acceptance criteria. Use when a story is ready to be built.
 argument-hint: "<story, task or bug ID>"
 ---
 

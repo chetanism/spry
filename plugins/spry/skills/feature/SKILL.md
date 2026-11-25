@@ -1,6 +1,6 @@
 ---
 name: feature
-description: Define one feature with the product owner — how it works step by step and its numbered rules — in plain words, then check it for conflicts. Does not write its stories.
+description: Define one feature with the product owner: how it works and its numbered rules. Does not write its stories.
 argument-hint: "[#issue] [parent ID] [title]"
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: story
-description: Write the stories of one feature with the product owner and QA — each with acceptance criteria a person can check — then check them for conflicts. Use when a feature is ready to be broken into stories.
+description: Write the stories of one feature with the product owner and QA, each with acceptance criteria a person can check.
 argument-hint: "[#issue] [parent ID] [title]"
 ---
 

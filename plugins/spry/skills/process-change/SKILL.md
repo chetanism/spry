@@ -1,6 +1,6 @@
 ---
 name: process-change
-description: Change how this project runs spry — a rule, a template, a step — in every file the change touches at once, recorded so a later /spry:update keeps it. Use when part of the process does not fit the team.
+description: Change how this project runs spry — a rule, a template, a step — in every file it touches, recorded for a later /spry:update.
 argument-hint: "[the change, in a sentence]"
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: epic
-description: Define one epic under a milestone with the product owner — why, who it is for, done-when and scope — in plain words, then check it for conflicts. Does not define its features.
+description: Define one epic under a milestone with the product owner, in plain words. Does not define its features.
 argument-hint: "[#issue] [parent ID] [title]"
 ---
 

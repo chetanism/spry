@@ -1,6 +1,6 @@
 ---
 name: retro
-description: Look back at how the project is running — where slices' time went and what the agent's memory keeps repeating — and propose what to change in the process, the config, spry or the project, one proposal per finding with its evidence. Runs the pace and memory-check readings together; report only, and a proposal starts its skill only on the person's yes. Use for a regular look back, or when slices feel slow and the agent seems to keep relearning a rule.
+description: Look back at how the project runs — pace and memory-check together — and propose changes with evidence. Report only.
 argument-hint: "[--since YYYY-MM-DD | --last N | --compare POINT, optional — passed to spry pace]"
 ---
 

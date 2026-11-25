@@ -1,6 +1,6 @@
 ---
 name: bug
-description: Record a bug against the feature or story it breaks — what happens, what should, how to reproduce it, its impact and severity — checked against open bugs for duplicates. Use when someone reports something not working as the plan says.
+description: Record a bug against the feature or story it breaks. Use when something does not work as the plan says.
 argument-hint: "[#issue] [feature or story ID] [what goes wrong]"
 ---
 

@@ -1,6 +1,6 @@
 ---
 name: compact
-description: Bring a file back under its line budget — AGENTS.md first — by moving whole sections to the knowledge, plan or process files that own them, leaving a one-line pointer and losing no fact. Use when spry check reports a file over budget, or when AGENTS.md has grown long or repetitive.
+description: Bring a file back under its line budget, losing no fact. Use when spry check reports one over budget or AGENTS.md has grown long.
 argument-hint: "[file, optional — default: every file spry check reports over budget]"
 ---
 

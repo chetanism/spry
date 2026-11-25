@@ -1,6 +1,6 @@
 ---
 name: test-all
-description: Run the whole test suite on purpose — spry check, each test part in order, the stack brought up and down around the parts that need it — timing each part and naming failures, slow tests and flaky ones. Report only; never fixes, skips or retries. Use when a person asks to run all the tests — for example after a dependency or configuration change; never as a routine step of a slice.
+description: Run the whole test suite on purpose, timing each part. Report only. Use only when a person asks to run all the tests.
 argument-hint: "[part name, optional]"
 ---
 

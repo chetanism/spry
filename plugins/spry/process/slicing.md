@@ -80,11 +80,12 @@ open:
    the main branch and pushes; refused when someone
    holds it, naming the branch — then offer the next ready row. Either way it makes the branch
    `sl-<n>-<slug>` and switches to it. Not opened after all → `spry.py release SL-<n>`.
-1. **Read:** `spry.py brief SL-<n> --as <skill>` first — the slice and the criteria it covers in one
-   call; `<skill>` is the one running, `slice-plan` or `slice-open`. When it says the session's
-   context is past `slices.fresh_context`, stop: `[Run] /clear`, then that skill again — a session that built and merged the last slice would carry it into
-   every request of this one. Then the parent and its feature, every knowledge file the change could touch (conventions,
-   decisions, external behaviour, security, performance), and the code.
+1. **Read:** `spry.py brief SL-<n> --as <skill>` first (`<skill>` is the one running, `slice-plan`
+   or `slice-open`) — one call for the slice, the criteria it covers, its parent and feature, what
+   the conflict check starts from, and this procedure. Do not open those again. When it says the
+   session's context is past `slices.fresh_context`, stop: `[Run] /clear`, then that skill again.
+   Then every knowledge file the change could touch (conventions, decisions, external behaviour,
+   security, performance) and the code — the files you already know you need in one call.
 2. **Write the work order** — every `###` under `## Work order`:
    - `Summary` first: 2–4 bullets, readable by anyone — what will be done and what a person will see.
    - `Plan`: one bullet per file, concrete enough to build without this session — what changes in
@@ -93,7 +94,8 @@ open:
      no `Plan`: each step under `### Steps` gets its plan bullets (*Steps* → *Work order*).
    - `Tests`: one per criterion at least, each name containing `<story>/AC-<n>`.
    - `Demo`: copy-pasteable; no value to fill in by hand.
-3. **Conflict check** — `conflicts.md`, including open slices on the same files (`spry.py related`).
+3. **Conflict check** — `conflicts.md`, from the brief's *Related*; once the `Plan` names its
+   files, `spry.py related <slice file>` again for open slices on the same ones.
 4. **Design review** — always under `slice-plan`; under `slice-open` only with
    `slices.design_review` on. A plan another session builds from gets its second reading here or
    nowhere. The review at close asks whether the
@@ -164,8 +166,9 @@ Run on whichever model the person chose; the work order holds what this session 
     one.
   - Read only the part of a file or an output you need (`sed -n`, `grep -n`), never a whole log.
   - Let the tool wait (`gate` in the background, `merge-ready --wait`), never a polling loop.
-  - `spry.py brief SL-<n>` gives the work order, the criteria in words and the files changed in
-    one call; `backlog --section … --rows … --plain` only the rows needed.
+  - `spry.py brief SL-<n> --as <skill>` gives the slice, what its skill reads first and this
+    procedure in one call; `proc --for <skill>` the procedure alone; `backlog --section … --rows …
+    --plain` only the rows needed.
 - **A slice built in steps** is built one step at a time and never committed by hand — *Steps* →
   *Build*.
 - **Check each change with `spry.py gate --fast`:** `spry check`, then the fast checks
@@ -203,12 +206,12 @@ Run on whichever model the person chose; the work order holds what this session 
 The review comes first and the slow proof last, so falsify and the gate each run once, on the code
 that merges.
 
-0. **Brief:** `spry.py brief SL-<n>` — the slice in one call. When it says the session's context is
-   past `slices.fresh_context`, stop: `[Run] /clear`, then `/spry:slice-close SL-<n>` — the slice
-   file is the hand-off, and every request of the close would otherwise re-read the build.
-1. **Rebase:** working tree committed; `git fetch`, and when `origin/<main>` has moved, rebase onto
-   it — the gate stands for the code that merges, so a rebase after it means a second gate.
-   `spry.py gate --fast` passes.
+0. **Brief:** `spry.py brief SL-<n> --as slice-close` — the slice, what the branch changed, and
+   under *Before the close* whether the tree is committed and the main branch has moved. When it
+   says the session's context is past `slices.fresh_context`, stop: `[Run] /clear`, then
+   `/spry:slice-close SL-<n>`.
+1. **Rebase:** working tree committed; when the brief says `origin/<main>` has moved, rebase onto
+   it — a rebase after the gate means a second gate. `spry.py gate --fast` passes.
 2. **What changed:** compare the diff (`git diff <main>...HEAD`) with `Plan` (a steps slice: each
    step's plan under `### Steps`); write only the
    differences and why. Delete the section if none.
@@ -229,51 +232,26 @@ that merges.
      <n> fixed` — the findings that stood once verified, every reviewer of a steps slice counted
      together, and how many were fixed. Another review after the fixes adds its own line.
      `spry pace` reads the counts; `merge-check` shows them.
-6. **Falsify** — prove the tests notice each safeguard the slice added:
-   - `python3 spry/tool/spry.py falsify suggest SL-<n>` drafts `.spry/falsify/SL-<n>.json` from the
-     source lines the branch added: one candidate per line that refuses, stops or decides — an `if`,
-     a `throw` or `raise`, an error return, an `assert`, a clause of a condition, a `WHERE` — each
-     with a mutation that removes it (a guard made *never true*, a boundary flipped, a `throw`
-     deleted) and `expect` taken from `covers` — or, for a bug's or a task's slice, the bug or the task
-     (`["B-4"]`, `["T-7"]`), which its tests name, since neither has criteria. **No guard added** — the slice changes a value, a key, a digest —
-     it offers up to five lines that compute or store something, each deleted: keep the ones a test
-     must notice. **No source line added** — only tests or documents — it says so, and there is
-     nothing to falsify: `merge-check --base` accepts the empty table. A line that only builds a
-     value (a default, a pass-through) and a guard the branch only moved are not drafted; `suggest`
-     says how many it left out as moved.
-   - **`mutation: write one`** — deleting that line would not parse (it is part of a longer
-     expression). Set `with` to what the line becomes with the control gone, and `mutation` to a
-     few words saying so; the run refuses the plan until then.
-   - **`files`** lists the tests that cite `expect` *and* name the control's source file: only
-     those run. `files: []` means none does — the run reports `survived — no test names <file>`
-     without running, and `merge-check` blocks on it: write a test that names the file, or remove
-     `files` from the control to run every test citing its `expect`.
-   - **Keep every control the draft lists** — `merge-check` blocks when one has no row. Narrow
-     each `expect` to the criteria that control serves, and add any the draft missed (same
-     `find` / `with` form). A guard that a test no ID names already covers — common in a task's
-     slice — takes that test file's path as its `expect` (`["tests/db/pool.test.ts"]`). A control that cannot run (it needs a clock, a network) gets the row
-     `skipped — <reason>`, for a person to accept at the merge.
-   - Rename a `control` in plain words if it helps the reader — before the run or in the table
-     after. The `<!-- f:… -->` in each row names the control by its file and line, so keep it.
-   - `falsify run .spry/falsify/SL-<n>.json --dry-run`, then
-     `falsify run .spry/falsify/SL-<n>.json --record SL-<n>` — it runs each control's `files`,
-     stops at the first failure, restores every file, and writes the table. A control with no
-     `files` runs every test citing its `expect` — those naming its source file first — and is
-     named `wide:` when they are many. With
-     `falsify.parallel` set (or `--jobs N`) it spreads controls over git worktrees and never
-     touches this tree; commit first, or it runs serially and says why.
-   - `survived` → a new test, then run again until `caught` — a plan of only the survivors will do:
-     `--record` replaces their rows and keeps the rest. A control whose line changed since has a new
-     key, so its old row stays: run the whole plan with `--record SL-<n> --replace` to drop it. Only when no test should catch it,
-     write the reason after `survived` in that row (`survived — logged only; no rule depends on it`):
-     a person accepts it at the merge. A bare `survived` blocks the merge.
-     `unreliable` → the baseline was red or timed out, or the run broke before any test failed
-     (its note says `failed, but no test did`): fix that first.
-     `slot <n> left out` → that worktree's baseline was red while another's was green; the other
-     slots ran its controls. The line names the command and its last line: fix it for the next run.
-   - Falsify comes after the review and before the gate: a review fix changes code falsify would
-     have proved, and a test added for a survivor changes code a gate already passed. It runs its
-     own baseline, so it needs no gate first.
+6. **Falsify** — prove the tests notice each safeguard the slice added. The tool says what each
+   other case needs as it meets it — a control to write by hand, one no test names, a wide one,
+   `survived`, `unreliable`, a slot left out, a row kept from an earlier run: do what it prints.
+   - `python3 spry/tool/spry.py falsify suggest SL-<n>` drafts `.spry/falsify/SL-<n>.json`: one
+     control per source line the branch added that refuses, stops or decides, each with the
+     mutation that removes it and `expect` from `covers` (a bug's or a task's slice: its ID).
+     No source line added → it says so, and there is nothing to falsify.
+   - **Keep every control the draft lists.** Narrow each `expect` to the criteria that control
+     serves, and add any the draft missed (same `find` / `with` form). A guard covered by a test
+     no ID names takes that test file's path as its `expect`. A control that cannot run (a clock,
+     a network) gets the row `skipped — <reason>`, for a person to accept at the merge.
+   - A `control` may be renamed in plain words; keep the `<!-- f:… -->` in its row.
+   - `falsify run .spry/falsify/SL-<n>.json --dry-run`, then the same with `--record SL-<n>` — it
+     runs each control's tests, restores every file, and writes the table. Commit first: with
+     `falsify.parallel` it runs in worktrees of its own.
+   - `survived` → a new test, then run again until `caught`. Only when no test should catch it,
+     write the reason after `survived` in that row (`survived — logged only; no rule depends on
+     it`). A bare `survived` blocks the merge.
+   - Falsify comes after the review and before the gate, and needs no gate first: it runs its own
+     baseline.
 7. **Gate:** working tree committed, falsify's new tests included — in a steps slice, as fixups,
    folded in first with `spry.py step SL-<n> --squash`; `spry.py gate` passes. Otherwise
    fix what fails and run it again — it repeats only what the fix could change. A branch that

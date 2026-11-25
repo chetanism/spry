@@ -371,10 +371,15 @@ and for a slice, every open slice and the files its plan touches.</p>
 order), then the files the branch changed. A session reads it instead of opening the slice, the story and
 <code>git diff</code> one by one. Every request to the model reads the whole session again, so one call in
 place of ten saves nine readings of it.</p>
-<pre><code>spry brief [--diff] slice</code></pre>
+<pre><code>spry brief [--diff] [--as skill] slice</code></pre>
 <p><code>--diff</code> — add the branch's whole diff: what a slice's reviewer starts with. Without it,
 <code>brief</code> first says when this checkout's session carries more context than
 <code>slices.fresh_context</code> — the cue to <code>/clear</code> before the close.</p>
+<p><code>--as slice-plan | slice-open | slice-build | slice-close</code> — the skill this session runs.
+The brief then ends with everything that skill reads before it starts, so the session asks for none of
+it in calls of its own: the procedure (<code>proc --for</code>, below); for a plan, the slice's parent
+and its feature and the output of <code>related</code>; for a close, whether the working tree is
+committed and how far the main branch has moved since the branch left it (it fetches first).</p>
 
 <h3 id="pr-body">pr-body</h3>
 <p>A slice's pull request body: <em>For the reviewer</em> first (covered criteria in words, criteria
@@ -480,8 +485,14 @@ including on an error, Ctrl-C or SIGTERM.</p>
 section named, with everything under it. A name matches a heading it starts, ignoring case. Skills
 use it so the agent reads, say, <em>Open</em> and <em>While building</em> of <code>slicing.md</code> — about
 120 lines — instead of all 360.</p>
-<pre><code>spry proc [--list] file [section ...]</code></pre>
+<pre><code>spry proc [--list] file [section ...]
+spry proc --for skill</code></pre>
 <p><code>--list</code> — the headings and their sizes. With no section, the whole file.</p>
+<p><code>--for slice-open | slice-plan | slice-build | slice-close | merge</code> — everything that skill
+reads before it starts, in one call: the sections of its process file, then the files it reads beside it
+(<code>chat.md</code>, <code>writing.md</code>, <code>conflicts.md</code>). A project with
+<code>slices.mode: steps</code> gets <em>Steps</em> too. The list lives in the tool, so a skill no longer
+names sections that a process file might rename.</p>
 
 <h3 id="find">find</h3>
 <p>Full-text search over <code>spry/</code> and <code>AGENTS.md</code>, best sections first. Uses
