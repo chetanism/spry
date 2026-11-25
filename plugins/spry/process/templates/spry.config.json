@@ -1,6 +1,6 @@
 {
-  "spry": "0.73.0",
-  "spry_baseline": "CH-84",
+  "spry": "0.74.0",
+  "spry_baseline": "CH-85",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
