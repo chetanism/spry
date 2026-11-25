@@ -101,6 +101,44 @@ session, on the model you pick with <code>/model</code>:</p>
   <li>Run <code>/clear</code> between them. spry never picks the model for you.</li>
 </ul>
 
+<h2 id="run-a-slice-unattended">Run a slice unattended</h2>
+
+<p>Typing <code>/clear</code> and the next skill is easy to skip, and a session that carries the plan into
+the build, or the build into the close, pays to read all of it again on every request. One command does the
+hand-over for you:</p>
+
+<pre data-label="Terminal"><code><span class="p">$ </span>python3 spry/tool/spry.py run SL-2
+→ plan · /spry:slice-plan SL-2 · a fresh session · planned
+✓ plan session · 6m10, 41 turns
+→ build · /spry:slice-build SL-2 · a fresh session · 0 of 2 steps
+✓ build session · 14m02, 87 turns
+→ close · /spry:slice-close SL-2 · a fresh session · not reviewed, 0 falsify rows
+? close · 9m40, 52 turns
+! the close session needs you
+
+ASK
+1. Post the review and fix its 2 findings?
+   …
+
+answer it: spry.py run SL-2 --answer "&lt;your answer&gt;"</code></pre>
+
+<ul>
+  <li><strong>Each skill gets a session of its own,</strong> started headless. Between them the tool reads
+  the slice file and the branch's commits to see what comes next; it never takes a session's word for it.</li>
+  <li><strong>It stops whenever a session asks.</strong> The three decisions that are yours stay yours: a plan
+  that does something hard to undo, a question the work order cannot answer, the review's findings. Answer with
+  <code>--answer</code> and the same session carries on, then the run does.</li>
+  <li><strong>It never merges.</strong> The run ends at a pull request ready for review and tells you to run
+  <code>/spry:merge</code>. The merge hook refuses a merge from any session the run started.</li>
+  <li><strong>You give it its permissions.</strong> Nobody is there to approve a command, so a session can only
+  run what you have allowed — in <code>.claude/settings.json</code>, or in
+  <a href="../reference/config.html#run"><code>run.args</code></a>. spry adds none. A session refused a call
+  stops the run and names the command.</li>
+  <li><strong>Start small.</strong> Try it on a slice of one step, with <code>run.review</code> left at
+  <code>ask</code>. Set <code>run.review</code> to <code>b</code> once you trust the review's fixes; a clean
+  slice then runs from <code>planned</code> to ready without stopping.</li>
+</ul>
+
 <h2>The work order</h2>
 
 <div class="table-wrap"><table>

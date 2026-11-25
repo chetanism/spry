@@ -1,6 +1,6 @@
 {
-  "spry": "0.77.0",
-  "spry_baseline": "CH-88",
+  "spry": "0.78.0",
+  "spry_baseline": "CH-89",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -87,6 +87,7 @@
   },
   "memory": {"index_lines": 60, "index_bytes": 8000, "line_chars": 200, "stale_days": 30},
   "planning": {"review": "always"},
+  "run": {"command": ["claude"], "args": [], "models": {}, "review": "ask", "timeout": 90, "max_sessions": 12},
   "rigor": 1,
   "slices": {
     "pick": "offer",

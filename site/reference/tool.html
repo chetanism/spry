@@ -101,6 +101,24 @@ run in another worktree to finish.</p>
 </ul>
 <p>More: <a href="../design/gate.html">The gate and test speed</a>.</p>
 
+<h3 id="run">run</h3>
+<p>A slice from <code>planned</code> to a ready pull request, with each skill in a session of its own:
+<code>/spry:slice-plan</code>, <code>/spry:slice-build</code>, <code>/spry:slice-close</code>, each started
+headless (<code>claude -p</code>). Between sessions it reads the slice file and the branch's commits to pick
+the next one. See <a href="../guides/building.html#run-a-slice-unattended">Run a slice unattended</a>.</p>
+<pre><code>spry run [--answer TEXT] [--dry-run] slice</code></pre>
+<ul>
+  <li>It stops — exit 3 — when a session's reply ends in <code>ASK</code> or <code>BLOCKED</code>, when a session
+  was refused a call it had no permission for, or when a session ended with the slice where it was. The reply is
+  printed whole.</li>
+  <li><code>--answer TEXT</code> — your answer to the session that asked. That session is resumed with it, and the
+  run goes on.</li>
+  <li><code>--dry-run</code> — which phase is next, and the command it would start.</li>
+  <li>It never merges. It ends at a closed slice and names <code>/spry:merge</code>; in a session it started, the
+  <code>merge</code> hook refuses <code>gh pr merge</code> and <code>merge-finish</code> refuses to run.</li>
+</ul>
+<p>Configured under <a href="config.html#run"><code>run</code></a>. Claude Code only.</p>
+
 <h3 id="step">step</h3>
 <p>Every slice is built in steps: which step comes next, worked out from the
 commits already on the branch, and the commit that finishes it.</p>
