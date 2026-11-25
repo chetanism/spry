@@ -196,6 +196,8 @@ Tone (§7) sets the vocabulary; these set the shape, at every level.
 - The recommendation rests on the merits alone — the project's correctness, goal, rules, risk and
   cost — never the agent's convenience: less work, a smaller diff, no rerun, a deferral, sunk work or
   the person's apparent lean. Its line names the merit; a costlier best option is still recommended.
+  A new dependency, a migration, more work or an approval is a cost stated on the option's line,
+  never by itself a reason against it.
 
 ## 9. Writing rules (`process/writing.md`)
 
@@ -1566,6 +1568,12 @@ in `spry/history/writ.md`, then retires `canon/`.
   `owner: <name>` on main for the backlog to print. It now resolves the owner as `--owner` does
   and refuses before writing; `<name>` reads as no one wherever an owner is shown. Rejected: a
   warning and a claim without an owner — the backlog is how others see who holds a slice.
+- 2026-11-25 — a cost is stated, not avoided (CH-91, 0.80.0), from a project's process change. An
+  agent passed over the right option because it added a dependency: the rule said what a
+  recommendation may not rest on, and a cost to the project read as a reason. A dependency, a
+  migration, more work or an approval is now named as a cost on the option's line, never by
+  itself a reason against it. Rejected: a list of costs that may never count — a dependency still
+  weighs, beside what it gives.
 
 ## 24. Worktrees and progress
 
