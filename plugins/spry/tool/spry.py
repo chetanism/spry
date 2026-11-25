@@ -34,6 +34,7 @@
     python3 spry/tool/spry.py draw <seed> <n> --pick < choices   # the same choice for ever, per (seed, n)
     python3 spry/tool/spry.py merge-check <slice> [--base origin/main]   # ready to merge? exit 1 if not
     python3 spry/tool/spry.py publish <slice> open|review|ready   # a slice's PR: draft opened, body refreshed, marked ready — with the commits and pushes
+    python3 spry/tool/spry.py run <slice> [--answer TEXT] [--dry-run]   # plan, build and close, each in a fresh headless session; stops when one needs you, and before the merge
     python3 spry/tool/spry.py brief <slice> [--diff]   # one call: work order, criteria in words, files changed (--diff: the diff and the reviewer's checks, for a reviewer); --as <skill> adds what that skill reads first — its procedure, a plan's parent, feature and `related`, a close's rebase facts; warns when this session's context is past slices.fresh_context
     python3 spry/tool/spry.py backlog [--section NAME]… [--rows N] [--plain]   # the backlog, or only the rows asked for, links as text
     python3 spry/tool/spry.py merge-ready [<pr>|<slice>] [--wait [MIN]]   # merging.md steps 1–5 in one report, then the ask; --wait waits for pending checks here
@@ -93,7 +94,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.77.0"
+VERSION = "0.78.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -1016,6 +1017,13 @@ def check(project: Project):
     if fresh is not None and (isinstance(fresh, bool) or not isinstance(fresh, int) or fresh < 0):
         project.problem(os.path.join(project.spry, "spry.config.json"), 1,
                         f"`slices.fresh_context` is `{fresh}` — tokens of context, a whole number; 0 turns the check off")
+    run_conf = project.config.get("run")
+    if run_conf is not None and (not isinstance(run_conf, dict) or run_conf.get("review", "ask") not in ("ask", *RUN_REVIEW)
+                                 or not isinstance(run_conf.get("command", ["x"]), list) or not run_conf.get("command", ["x"])
+                                 or not isinstance(run_conf.get("args", []), list)):
+        project.problem(os.path.join(project.spry, "spry.config.json"), 1,
+                        "`run` is `{\"command\": [the agent's command], \"args\": [more arguments], \"models\": {phase: model}, "
+                        "\"review\": \"ask\", \"b\", \"c\" or \"d\"}` — never `a`: the merge is the person's")
     rigor = project.config.get("rigor")
     if rigor is not None and (isinstance(rigor, bool) or rigor not in RIGOR_LEVELS):
         project.problem(os.path.join(project.spry, "spry.config.json"), 1,
@@ -6407,6 +6415,9 @@ def merge_finish(project: Project, given: str | None, ci_local: str | None, say=
     """merging.md → Merge, steps 7–8, on the person's yes: squash with the slice's commit, bring this tree
     to the main branch, wait for CI there when the main branch moved under the PR, the progress tables,
     the request issues, and what is unblocked. Refuses what `merge-ready` would."""
+    if os.environ.get(RUN_ENV):
+        say(f"✗ {RUN_NO_MERGE}")
+        return 1
     item, pr = merge_slice_pr(project, given)
     main = main_branch(project)
     view = gh_json(project, "pr", "view", pr, "--json", "state,isDraft,headRefName,headRefOid")
@@ -6619,6 +6630,160 @@ def publish(project: Project, slice_id: str, stage: str, owner: str | None = Non
     say(f"✓ PR #{pr} ready for review")
     progress_event(project, "close", f"closed, PR #{pr} ready", slice_id)
     return 0
+
+
+# ---------------------------------------------------------------- run (§26): a slice across fresh sessions
+
+RUN_ENV = "SPRY_RUN"   # set for every session `run` starts; the merge hook and `merge-finish` refuse under it
+RUN_NO_MERGE = "this session was started by `spry.py run`, with nobody at the keyboard: the merge is the person's — they run /spry:merge"
+RUN_DEFAULTS = {"command": ["claude"], "args": [], "models": {}, "review": "ask", "timeout": 90, "max_sessions": 12}
+RUN_SKILL = {"plan": "slice-plan", "build": "slice-build", "close": "slice-close"}
+RUN_ASKS = re.compile(r"^\W*(ASK|BLOCKED)\W*$", re.M)
+RUN_NOTE = ("This session was started by `spry.py run`: nobody is at the keyboard, and each skill runs in a session of "
+            "its own. Where the procedure has you ask the person or wait for an answer, end your reply with that ASK "
+            "and stop — never answer it yourself, and never take the recommended option for them. Where it says "
+            "`[Run] /clear` and then a skill, just stop: the runner starts that skill in a fresh session. Never "
+            "merge: the merge is the person's.")
+RUN_REVIEW = {"b": "post the findings and fix every Blocker and Should as found", "c": "post the findings only",
+              "d": "neither post nor fix"}
+
+
+def run_config(project: Project) -> dict:
+    given = project.config.get("run")
+    conf = {**RUN_DEFAULTS, "models": {}}
+    if isinstance(given, dict):
+        for key in ("command", "args"):
+            if isinstance(given.get(key), list) and all(isinstance(v, str) for v in given[key]) and (given[key] or key == "args"):
+                conf[key] = list(given[key])
+        if isinstance(given.get("models"), dict):
+            conf["models"] = {k: v for k, v in given["models"].items() if k in RUN_SKILL and isinstance(v, str) and v}
+        if given.get("review") in ("ask", *RUN_REVIEW):
+            conf["review"] = given["review"]
+        for key in ("timeout", "max_sessions"):
+            if isinstance(given.get(key), int) and not isinstance(given.get(key), bool) and given[key] > 0:
+                conf[key] = given[key]
+    return conf
+
+
+def run_phase(project: Project, item: Item) -> tuple:
+    """(the phase a slice is in — `plan`, `build`, `close`, or None once it is closed — and how far it
+    has got), read from the slice file and the branch's commits, never from what a session said."""
+    if item.state in ("closed", "dropped"):
+        return None, item.state
+    if item.state == "planned" or "## Work order" not in item.text or not str(item.fm.get("pr", "")).isdigit():
+        return "plan", item.state
+    steps = [s for s in slice_steps(item.text) if s["n"]]
+    if not steps:
+        raise PlanError(f"{item.id} has no `### Steps` — a work order from before CH-88: run its skills by hand")
+    head = step_head(project, item, None)
+    if head is None:
+        raise PlanError(f"cannot find {item.id}'s branch here or on {REMOTE} — `git fetch {REMOTE}`")
+    done = len(step_state(project, item, step_base(project), head)["done"])
+    if done < len(steps):
+        return "build", f"{done} of {len(steps)} steps"
+    review = "reviewed" if close_review(item.text) else "not reviewed"
+    return "close", f"{review}, {len(falsify_table(item))} falsify rows"
+
+
+def run_session(project: Project, conf: dict, phase: str, prompt: str, resume: str | None = None) -> dict:
+    """One headless session, start to end: {reply, session, denied, turns, seconds, error}."""
+    note = RUN_NOTE
+    if phase == "close" and conf["review"] in RUN_REVIEW:
+        note += (f" The review's Ask 1 is answered in advance, in `run.review`: {conf['review']} — "
+                 f"{RUN_REVIEW[conf['review']]}; stop before the merge. Do not stop for Ask 1. Every other ask still stops.")
+    command = conf["command"] + ["-p", prompt, "--output-format", "json", "--append-system-prompt", note]
+    if resume:
+        command += ["--resume", resume]
+    if conf["models"].get(phase):
+        command += ["--model", conf["models"][phase]]
+    command += conf["args"]
+    started = time.time()
+    try:
+        done = subprocess.run(command, cwd=native(project.root), stdin=subprocess.DEVNULL, capture_output=True, text=True,
+                              timeout=conf["timeout"] * 60, env={**os.environ, RUN_ENV: "1"})
+    except FileNotFoundError:
+        return {"error": f"`{conf['command'][0]}` is not on the PATH — `run.command` names the agent's command"}
+    except subprocess.TimeoutExpired:
+        return {"error": f"the session ran past `run.timeout` ({conf['timeout']} min) and was stopped"}
+    out = {"seconds": time.time() - started}
+    try:
+        result = json.loads(done.stdout.strip().split("\n")[-1])
+    except (ValueError, IndexError):
+        return {**out, "error": f"the agent's command gave no JSON result (exit {done.returncode}): "
+                                + (done.stderr.strip() or done.stdout.strip())[-400:]}
+    if not isinstance(result, dict):
+        return {**out, "error": "the agent's command gave no JSON result"}
+    denied = [str((d.get("tool_input") or {}).get("command") or d.get("tool_name") or "?")
+              for d in result.get("permission_denials") or [] if isinstance(d, dict)]
+    return {**out, "reply": str(result.get("result") or "").strip(), "session": result.get("session_id"),
+            "denied": denied, "turns": result.get("num_turns"),
+            "error": "the session ended in an error" if result.get("is_error") else None}
+
+
+def run_slice(project: Project, slice_id: str, answer: str | None = None, dry_run: bool = False, say=print) -> int:
+    """`spry.py run SL-n`: plan, build and close, each in a session of its own, until the slice is
+    closed or a session needs the person. 0 closed and ready for /spry:merge · 3 stopped for the
+    person · 1 it could not go on."""
+    conf = run_config(project)
+    kept = os.path.join(project.root, ".spry", "run", f"{slice_id}.json")
+    try:
+        last = json.loads(read(kept))
+    except (OSError, ValueError):
+        last = {}
+
+    def stop(code: int, why: str, session: dict | None = None) -> int:
+        say(f"! {why}")
+        if session and session.get("reply"):
+            say("\n" + session["reply"] + "\n")
+        if session and session.get("session"):
+            say(f"answer it: spry.py run {slice_id} --answer \"<your answer>\" · or talk it through: "
+                f"{conf['command'][0]} --resume {session['session']} · or start the phase afresh: spry.py run {slice_id}")
+        return code
+
+    before = None
+    for count in range(conf["max_sessions"]):
+        fresh = Project(project.root)
+        item = fresh.items.get(slice_id)
+        if item is None or item.type != "slice":
+            raise SystemExit(f"no slice {slice_id}")
+        try:
+            phase, progress = run_phase(fresh, item)
+        except PlanError as e:
+            return stop(1, str(e))
+        if phase is None:
+            if item.state == "dropped":
+                return stop(1, f"{slice_id} is dropped")
+            say(f"✓ {slice_id} is closed and its pull request is ready — the merge is yours: /spry:merge {slice_id}")
+            return 0
+        resume = last.get("session") if answer and count == 0 else None
+        if answer and count == 0 and not resume:
+            return stop(1, f"no session of {slice_id} is waiting for an answer — `spry.py run {slice_id}` starts the {phase}")
+        prompt = answer if resume else f"/spry:{RUN_SKILL[phase]} {slice_id}"
+        if dry_run:
+            say(f"{slice_id} · next: {phase} ({progress}) · " + shlex.join(conf["command"] + ["-p", prompt] + conf["args"]))
+            return 0
+        if before == (phase, progress):
+            return stop(3, f"the {phase} session ended with {slice_id} where it was ({progress}) and no question", last)
+        before = (phase, progress)
+        say(f"→ {phase} · {'the answer, to the session that asked' if resume else prompt + ' · a fresh session'} · {progress}")
+        session = run_session(fresh, conf, phase, prompt, resume)
+        last = {"phase": phase, "session": session.get("session"), "at": time.time()}
+        os.makedirs(native(os.path.dirname(kept)), exist_ok=True)
+        write(kept, json.dumps(last) + "\n")
+        pace_log(fresh, "run", session.get("seconds") or 0, slice=slice_id, phase=phase, turns=session.get("turns"))
+        took = f"{pace_time(session.get('seconds') or 0)}" + (f", {session['turns']} turns" if session.get("turns") else "")
+        if session.get("error") and not session.get("reply"):
+            return stop(1, f"{phase}: {session['error']}")
+        if session.get("denied"):
+            say(f"✗ {phase} · {took}")
+            return stop(3, f"the session was refused {len(session['denied'])} call{'s' if len(session['denied']) != 1 else ''} it "
+                           f"had no permission for — the first: `{session['denied'][0][:160]}`. Allow what a slice needs in "
+                           "`.claude/settings.json`, or in `run.args` (`--allowedTools`, `--permission-mode`)", session)
+        if RUN_ASKS.search(session["reply"]):
+            say(f"? {phase} · {took}")
+            return stop(3, f"the {phase} session needs you", session)
+        say(f"✓ {phase} session · {took}")
+    return stop(3, f"{conf['max_sessions']} sessions (`run.max_sessions`) and {slice_id} is not closed", last)
 
 
 # ---------------------------------------------------------------- steps (§15 *Steps mode*)
@@ -10866,6 +11031,8 @@ def hook_merge(project: Project, payload: dict) -> dict | None:
     target = merge_target((payload.get("tool_input") or {}).get("command") or "")
     if target is False:
         return None
+    if os.environ.get(RUN_ENV):
+        return deny(RUN_NO_MERGE)
     full = Project(project.root)
     slices = full.of_type("slice")
     if target.isdigit():
@@ -11146,7 +11313,11 @@ def main(argv=None) -> int:
     p = sub.add_parser("merge-finish", help="on the person's yes: squash, the main branch, CI there, tables, issues, unblocked")
     p.add_argument("target", nargs="?", help="PR number or slice ID (default: the current branch's slice)")
     p.add_argument("--ci-local", metavar="REASON", help="CI never ran, for this reason; merge-ready's gate stood in")
-    p = sub.add_parser("step", help="steps mode: a slice's next step, or --commit it after the fast checks")
+    p = sub.add_parser("run", help="plan, build and close a slice, each in a fresh headless session; stops when one needs you, and before the merge")
+    p.add_argument("slice")
+    p.add_argument("--answer", metavar="TEXT", help="your answer to the session that stopped with a question; the run goes on from there")
+    p.add_argument("--dry-run", action="store_true", help="say which phase is next and the command it would start")
+    p = sub.add_parser("step", help="a slice's next step, or --commit it after the fast checks")
     p.add_argument("slice")
     p.add_argument("--commit", action="store_true", help="run `gate --fast` — and, with `slices.steps.tests`, the test files the step touched — then commit the step with its `Step:` trailer")
     p.add_argument("--ranges", action="store_true", help="each committed step's diff, and the whole one, for the review")
@@ -11476,6 +11647,8 @@ def main(argv=None) -> int:
             pace_on_merge_check(project, args.slice)
         print("ready to merge" if not blocks else f"{blocks} thing{'s block' if blocks != 1 else ' blocks'} the merge")
         return 1 if blocks else 0
+    if args.command == "run":
+        return run_slice(project, args.slice, args.answer, args.dry_run)
     if args.command == "step":
         return step_command(project, args.slice, args.base, args.commit, args.ranges, args.squash, head=args.head)
     if args.command == "gate":

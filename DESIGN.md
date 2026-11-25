@@ -935,6 +935,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
 | `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean; with `slices.design_review`, a warning when the work order has no design review or a Blocker went unasked A light slice's missing design review is `ok`; one that outgrew light without one is a warning (§25). |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
+| `run <slice> [--answer] [--dry-run]` | a slice across fresh sessions (§26): plan, build and close, each a headless session of its own, the next chosen from the slice file and its commits; stops when a session asks, is refused a call or changes nothing; never merges |
 | `step <slice> [--commit] [--ranges [--head]] [--squash] [--base]` | steps (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` — and, with `slices.steps.tests`, the test files the step added or changed — and commits it with its `Step:` trailer, first running every `fix` in `checks.fast` on the step's files (CH-84); `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps `--ranges` prints one `light` line for a light slice (§25). |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
@@ -1552,6 +1553,14 @@ in `spry/history/writ.md`, then retires `canon/`.
   default and only merging the text (two procedures in one text is what cost the asides);
   refusing a work order without `### Steps` in `check` (hundreds of closed slices have none);
   one reviewer for the seams of a one-step slice (there are none).
+- 2026-11-25 — one command runs a slice across fresh sessions (CH-89, 0.78.0, §26):
+  `spry.py run SL-n` starts `slice-plan`, `slice-build` and `slice-close` each in a headless
+  session of its own and reads the slice file between them. The hand-over between skills was a
+  person typing `/clear`, so builds and closes shared long sessions, and re-reading those was
+  73% of all spend. It stops when a session asks, and never merges: sessions it starts carry
+  `SPRY_RUN=1`, under which the merge hook and `merge-finish` refuse. Headless sessions were
+  tested against the hooks first; they run. Rejected: answering asks from the recommended
+  option, a default permission mode, a flag that merges.
 
 ## 24. Worktrees and progress
 
@@ -1743,3 +1752,60 @@ pulse-v2. One close reviewer costs ~260k and ~190k. The median slice costs 7.6M 
 
 - Whether level 5's competing designs are worth their cost compared with level 4 plus a spike.
   This should be decided once there are slices at level 4.
+
+## 26. Run — a slice across fresh sessions
+
+> **Status:** built in CH-89 (0.78.0). Opt-in: a command a person runs. Claude Code only.
+
+Purpose: a slice is three skills, and between them a person types `/clear` and the next one. That
+hand-over is the only reason many builds and closes run in one long session instead — and a
+session's cost is its size times its requests (§17: 73% of spend was the session read again; the
+average request carried 148k tokens). `spry.py run SL-<n>` does the hand-over: each skill in a
+session of its own, started with nothing but the skill's name.
+
+- **One headless session per skill.** `claude -p "/spry:slice-plan SL-n" --output-format json`,
+  then `slice-build`, then `slice-close`. Tested before it was designed (2026-11-25): a headless
+  session resolves the plugin's skills, runs every spry hook, writes the same session log `pace`
+  reads, and names in its result each call it was refused.
+- **The plan says where the slice is, not the session.** After each session the runner reads the
+  slice again: `planned`, or no work order or PR → *plan*; `open` with steps uncommitted →
+  *build*; every step committed → *close*; `closed` → done. A session's reply is never taken as
+  proof. A build that stopped between steps because the session had grown (§15, CH-83) is simply
+  followed by another build session.
+- **It stops for the person, and says why:**
+  - a reply that ends in `ASK` or `BLOCKED` (`chat.md`) — a plan that does something hard to
+    undo, a design-review Blocker, a work order that turned out wrong, the review's first
+    question. The reply is printed whole; `spry.py run SL-n --answer "…"` resumes that same
+    session with the answer and goes on;
+  - a call the session had no permission for — named, with where to allow it;
+  - a session that ended with the slice where it was, and no question;
+  - `run.max_sessions` (12) sessions without a close.
+- **It never merges.** The run ends at a closed slice and a ready pull request, and prints
+  `/spry:merge SL-n`. Every session it starts carries `SPRY_RUN=1`; under it the `merge` hook
+  refuses any `gh pr merge` and `merge-finish` refuses to run. The rule is the tool's, not the
+  session's.
+- **What each session is told,** beyond the skill: nobody is at the keyboard; where the procedure
+  asks, end the reply with the ask and stop — never answer it, never take the recommended option;
+  where it says `/clear` and a skill, stop; never merge.
+- **`run` in the config:**
+  - `command` (`["claude"]`) and `args` (`[]`) — what starts a session. Permissions are the
+    project's: spry adds none. A headless session with none is refused its first shell call, and
+    the run stops saying so.
+  - `models` — a model for `plan`, `build` or `close`; spry still never picks one.
+  - `review` (`ask`) — the answer to the close review's Ask 1, given ahead: `b` post and fix, `c`
+    post only, `d` neither. With one set, a clean slice runs from `planned` to ready without a
+    stop. Never `a`, which merges.
+  - `timeout` (90 minutes a session), `max_sessions` (12).
+- **`.spry/run/SL-n.json`** keeps the last session's id and phase, for `--answer`. Never committed.
+- **Pace** reads these sessions as any others; each also logs a `run` line with its phase and turns.
+
+### Rejected
+
+- **One long headless session for the whole slice.** It is the thing being removed.
+- **The runner answering asks from the recommended option.** The three decisions that are a
+  person's (§15, *When to stop and ask*) are exactly the ones that end in an ask.
+- **Setting a permission mode by default.** What an unattended agent may run is not spry's call.
+- **Running the merge with a flag.** A yes given before the review is read is not a yes.
+- **Parsing the reply for the next step.** The slice file and the commits already say it.
+- **Other agent tools.** Each has its own headless form and result; one is built, with the
+  command and arguments in the config for the next.

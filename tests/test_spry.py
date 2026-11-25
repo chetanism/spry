@@ -4799,6 +4799,122 @@ class Steps(Base):
         self.assertIn("not SL-1's branch", out)
         self.assertIn("not SL-1's branch", self.say(False, False, True)[1])
 
+    FAKE_AGENT = r'''
+import json, os, subprocess, sys
+args, root, here = sys.argv[1:], os.getcwd(), os.path.dirname(os.path.abspath(__file__))
+prompt = args[args.index("-p") + 1]
+mode = open(os.path.join(here, "mode")).read().strip()
+calls = os.path.join(here, "calls")
+seen = [json.loads(line) for line in open(calls)] if os.path.exists(calls) else []
+with open(calls, "a") as handle:
+    handle.write(json.dumps({"args": args, "run": os.environ.get("SPRY_RUN")}) + "\n")
+def git(*a):
+    subprocess.run(["git", *a], cwd=root, check=True, capture_output=True)
+reply, denied = "DONE\n- [Built] one step", []
+if mode == "idle":
+    reply = "DONE\n- [Checked] nothing to do"
+elif mode == "denied":
+    reply, denied = "I could not run it.", [{"tool_name": "Bash", "tool_input": {"command": "pnpm test"}}]
+elif prompt.startswith("/spry:slice-build"):
+    k = sum(1 for c in seen if "/spry:slice-build SL-1" in c["args"]) + 1
+    os.makedirs(os.path.join(root, "src"), exist_ok=True)
+    open(os.path.join(root, "src", f"f{k}.ts"), "w").write("export const x = 1\n")
+    git("add", "-A")
+    git("commit", "-qm", f"SL-1 step {k}: t\n\nStep: SL-1/{k}")
+elif "--resume" in args:
+    doc = os.path.join(root, open(os.path.join(here, "doc")).read().strip())
+    text = open(doc).read().replace("state: open", "state: closed")
+    open(doc, "w").write(text)
+    git("commit", "-qam", "docs(slice): SL-1 close summary")
+    reply = "DONE\n- [Closed] SL-1"
+else:
+    reply = "DONE\n- [Reviewed] 1 Should\nASK\n1. Fix it?\n   a. Yes (recommended): it is the finding's own suggestion\n   b. No"
+print(json.dumps({"result": reply, "session_id": f"sess-{len(seen) + 1}", "num_turns": 2, "permission_denials": denied}))
+'''
+
+    def fake_agent(self, mode="normal", **run):
+        folder = tempfile.mkdtemp()
+        self.addCleanup(shutil.rmtree, folder)
+        for name, text in (("agent.py", self.FAKE_AGENT), ("mode", mode), ("doc", f"{S}/SL-1-a.md")):
+            with open(os.path.join(folder, name), "w") as handle:
+                handle.write(text)
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "main_branch": "main",
+                                                        "run": {"command": [sys.executable, os.path.join(folder, "agent.py")], **run}}))
+        if not os.path.isdir(os.path.join(self.t.root, ".git")):
+            self.on_branch()
+            self.run_git("update-ref", "refs/remotes/origin/main", "main")
+
+        def calls():
+            with open(os.path.join(folder, "calls")) as handle:
+                return [json.loads(line) for line in handle]
+
+        def go(**given):
+            lines = []
+            return spry.run_slice(self.t.project(), "SL-1", say=lines.append, **given), "\n".join(lines)
+        return go, calls
+
+    def test_run_takes_a_slice_through_fresh_sessions_and_stops_when_one_asks(self):
+        go, calls = self.fake_agent(models={"build": "small"}, args=["--permission-mode", "acceptEdits"])
+        code, out = go(dry_run=True)
+        self.assertEqual(code, 0)
+        self.assertIn("SL-1 · next: build (0 of 2 steps)", out)
+        code, out = go()
+        self.assertEqual(code, 3, out)
+        self.assertIn("→ build · /spry:slice-build SL-1 · a fresh session · 0 of 2 steps", out)
+        self.assertIn("→ build · /spry:slice-build SL-1 · a fresh session · 1 of 2 steps", out)
+        self.assertIn("→ close · /spry:slice-close SL-1 · a fresh session · not reviewed, 0 falsify rows", out)
+        self.assertIn("! the close session needs you", out)
+        self.assertIn("1. Fix it?", out, "the question is shown whole")
+        self.assertIn('spry.py run SL-1 --answer "<your answer>"', out)
+        made = calls()
+        self.assertEqual([c["run"] for c in made], ["1", "1", "1"], "every session knows a runner started it")
+        self.assertIn("--model", made[0]["args"])
+        self.assertNotIn("--model", made[2]["args"], "only the build was given a model")
+        self.assertEqual(made[0]["args"][-2:], ["--permission-mode", "acceptEdits"])
+        note = made[0]["args"][made[0]["args"].index("--append-system-prompt") + 1]
+        self.assertIn("never answer it yourself", note)
+        self.assertIn("Never merge", note)
+        code, out = go(answer="1a")
+        self.assertEqual(code, 0, out)
+        self.assertIn("→ close · the answer, to the session that asked", out)
+        self.assertIn("✓ SL-1 is closed and its pull request is ready — the merge is yours: /spry:merge SL-1", out)
+        last = calls()[-1]["args"]
+        self.assertEqual((last[last.index("-p") + 1], last[last.index("--resume") + 1]), ("1a", "sess-3"))
+
+    def test_run_stops_on_a_refused_call_a_session_that_did_nothing_and_a_missing_answer(self):
+        go, calls = self.fake_agent("denied")
+        code, out = go()
+        self.assertEqual(code, 3)
+        self.assertIn("was refused 1 call it had no permission for — the first: `pnpm test`", out)
+        self.assertIn("`run.args`", out)
+        go, calls = self.fake_agent("idle")
+        code, out = go()
+        self.assertEqual(code, 3)
+        self.assertEqual(len(calls()), 1, "one session that changed nothing is enough")
+        self.assertIn("the build session ended with SL-1 where it was (0 of 2 steps) and no question", out)
+        os.remove(os.path.join(self.t.root, ".spry/run/SL-1.json"))
+        code, out = go(answer="yes")
+        self.assertEqual(code, 1)
+        self.assertIn("no session of SL-1 is waiting for an answer", out)
+
+    def test_a_run_session_never_merges_and_a_review_answer_can_be_given_ahead(self):
+        go, calls = self.fake_agent(review="b")
+        self.assertEqual(self.t.problems(), [])
+        project = self.t.project()
+        payload = {"tool_input": {"command": "gh pr merge 1 --squash"}}
+        with unittest.mock.patch.dict(os.environ, {"SPRY_RUN": "1"}):
+            denied = spry.hook_merge(project, payload)
+            said = []
+            self.assertEqual(spry.merge_finish(project, "SL-1", None, say=said.append), 1)
+        self.assertIn("the merge is the person's", json.dumps(denied, ensure_ascii=False))
+        self.assertIn("the merge is the person's", said[0])
+        go()
+        close = [c["args"] for c in calls() if "/spry:slice-close SL-1" in c["args"]][0]
+        note = close[close.index("--append-system-prompt") + 1]
+        self.assertIn("answered in advance, in `run.review`: b", note)
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "run": {"review": "a"}}))
+        self.assertProblem(self.t.problems(), "never `a`: the merge is the person's")
+
     def test_ranges_read_the_branch_without_checking_it_out(self):
         self.on_branch()
         self.write("src/lend.ts", "a\n")

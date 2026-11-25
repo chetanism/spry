@@ -1919,3 +1919,29 @@ Entry format:
   `steps`, nothing else. Until then the tool reads `split` as `max: 1` and `check` warns. Slices
   already written with `### Plan` need no change, open or closed. `spry/process/templates/slice.md`
   → take the new `### Steps` section.
+
+## CH-89 · One command runs a slice across fresh sessions
+
+- **Date:** 2026-11-25 · **Version:** 0.78.0
+- **Touches:** `tool/spry.py` (`run`, the `merge` hook, `merge-finish`), config template (`run`)
+- **Why:** a slice is three skills with a `/clear` typed between them. That hand-over is why
+  builds and closes often share one long session — and across two projects 73% of all spend was
+  sessions being read again, at 148k tokens a request on average.
+  - `python3 spry/tool/spry.py run SL-n` starts `/spry:slice-plan`, `/spry:slice-build` and
+    `/spry:slice-close`, each in a headless session of its own (`claude -p`). Between sessions
+    it reads the slice file and the branch's commits to choose the next one; a reply is never
+    taken as proof.
+  - **It stops when a session needs you** — a reply ending in `ASK` or `BLOCKED`, a call the
+    session had no permission for, a session that changed nothing — and prints the reply whole.
+    `run SL-n --answer "1a"` resumes that session with your answer and goes on.
+  - **It never merges.** It ends at a ready pull request and names `/spry:merge`. Sessions it
+    starts carry `SPRY_RUN=1`; the `merge` hook and `merge-finish` refuse under it.
+  - `run.models` gives a phase its model; `run.review` (`b`, `c` or `d`) answers the close
+    review's first question ahead, so a clean slice runs through without a stop.
+- **Adapt:** nothing changes until someone runs it. It needs permissions for a session with
+  nobody to approve calls: allow what a slice runs — `python3 spry/tool/spry.py`, `git`, `gh`,
+  your checks and tests — in `.claude/settings.json`, or pass `--allowedTools` /
+  `--permission-mode` in `run.args`. spry sets none. Try it first on a small slice, with
+  `run.review` left at `ask`.
+- **Migrate:** nothing. Claude Code only; another agent tool needs its own headless command in
+  `run.command`, and a JSON result with `result`, `session_id` and `permission_denials`.

@@ -111,6 +111,7 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
   "slices": { "pick": "offer", "design_review": false, "fresh_context": 150000, "light": { "max_lines": 300, "never": ["**/migrations/**", "**/*.sql"] }, "steps": { "max": 5, "max_lines": 800, "step_lines": 0, "tests": false, "tests_skip": [] } },
   "worktrees": { "dir": ".claude/worktrees", "home_branch": "alt{index}", "max": 4, "setup": "", "share": [], "stale_after": 12 },
   "progress": { "transcripts": false, "quiet": 15, "keep": 400 },
+  "run": { "command": ["claude"], "args": [], "models": {}, "review": "ask", "timeout": 90, "max_sessions": 12 },
   "main_branch": "main",
   "mint": "local"
 }</code></pre>
@@ -334,6 +335,23 @@ else changes; the progress log and <code>spry.py watch</code> work either way. S
     <tr><td><code>slices.steps.tests_skip</code></td><td>Globs for test files a step's commit does not run — the ones that need the local services up. The gate runs them at close.</td><td><code>[]</code></td></tr>
     <tr><td><code>main_branch</code></td><td>The repository's default branch — read from the repository at setup, never assumed.</td><td><code>main</code></td></tr>
     <tr><td><code>mint</code></td><td>Where IDs are taken and slices claimed. <code>local</code>: the next number in this tree; two branches can collide, and <code>check --base</code> names it before the merge. <code>main</code>: taken on the main branch on the remote, pushed at once — two sessions never take one number or one slice. Needs a main branch that accepts a direct commit of documents.</td><td><code>local</code></td></tr>
+  </tbody>
+</table>
+
+<h2 id="run">Run</h2>
+
+<p>All optional. For <a href="tool.html#run"><code>spry.py run</code></a>, which takes a slice through plan, build
+and close in separate headless sessions.</p>
+
+<table>
+  <thead><tr><th>Key</th><th>Means</th><th>Default</th></tr></thead>
+  <tbody>
+    <tr><td><code>run.command</code></td><td>The command that starts one headless session. spry adds <code>-p "&lt;the skill&gt;"</code>, <code>--output-format json</code> and a note that nobody is at the keyboard.</td><td><code>["claude"]</code></td></tr>
+    <tr><td><code>run.args</code></td><td>More arguments for every session — where permissions go: <code>["--permission-mode", "acceptEdits", "--allowedTools", "Bash(python3 spry/tool/spry.py *)"]</code>. spry sets none.</td><td><code>[]</code></td></tr>
+    <tr><td><code>run.models</code></td><td>A model for a phase: <code>{"plan": "opus", "build": "sonnet", "close": "opus"}</code>. A phase left out uses your default.</td><td><code>{}</code></td></tr>
+    <tr><td><code>run.review</code></td><td>The answer to the close review's first question, given ahead. <code>ask</code>: the run stops for it. <code>b</code>: post the findings and fix every Blocker and Should. <code>c</code>: post only. <code>d</code>: neither. Never <code>a</code>, which merges.</td><td><code>ask</code></td></tr>
+    <tr><td><code>run.timeout</code></td><td>Minutes one session may take before it is stopped.</td><td><code>90</code></td></tr>
+    <tr><td><code>run.max_sessions</code></td><td>Sessions one <code>run</code> may start before it stops and says so.</td><td><code>12</code></td></tr>
   </tbody>
 </table>
 
