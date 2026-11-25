@@ -16,6 +16,8 @@ is the source of truth for every decision; read the section you are changing fir
 - **The site** (`site/`, published to GitHub Pages) explains spry to newcomers in full. A change to
   how spry works updates the page that describes it. Plain HTML, CSS and JS — no build step; the
   navigation lives once, in `site/assets/site.js`.
+- **Process files have line budgets** (`Kit.PROCESS_BUDGETS` in `tests/test_spry.py`). Over budget, cut or merge a
+  rule before adding one; raise a number only with the reason in the commit message.
 - Replies follow `plugins/spry/process/chat.md`.
 
 ## Before committing
