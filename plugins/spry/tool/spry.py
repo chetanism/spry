@@ -94,7 +94,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.78.0"
+VERSION = "0.79.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -1478,7 +1478,7 @@ def backlog_block(project: Project, doc: str) -> str:
                 waiters.setdefault(ref, []).append(i)
 
     def owner(item):
-        return item.fm.get("owner") or "—"
+        return owner_of(item) or "—"
 
     def under(item):
         yield item
@@ -1494,7 +1494,7 @@ def backlog_block(project: Project, doc: str) -> str:
         else:
             labels = [where[n.id] for n in under(item) if n.id in where]
             label = min(labels, key=rank.index) if labels else "built, not yet proven"
-        who = item.fm.get("owner")
+        who = owner_of(item)
         return f"{link(doc, item)} · {label}" + (f" ({who})" if who else "")
 
     def unblocks(item):
@@ -1570,10 +1570,15 @@ def done_block(project: Project, doc: str) -> str:
 
 # ---------------------------------------------------------------- owners and work
 
+def unset_if_template(owner) -> str:
+    """An `owner:` value — empty while it is still the template's `<name>`."""
+    owner = str(owner or "").strip()
+    return "" if owner.startswith("<") else owner
+
+
 def owner_of(item: Item) -> str:
     """An item's `owner:` — empty while it is still the template's `<name>`. A slice's is who built it."""
-    owner = str(item.fm.get("owner") or "").strip()
-    return "" if owner.startswith("<") else owner
+    return unset_if_template(item.fm.get("owner"))
 
 
 def members(project: Project) -> list:
@@ -2550,7 +2555,7 @@ def branch_of(item: Item) -> str:
 def holder(item: Item) -> str | None:
     """Who holds a slice, in words — None when it is free to open."""
     branch = branch_of(item)
-    owner = f" by {item.fm['owner']}" if item.fm.get("owner") else ""
+    owner = f" by {owner_of(item)}" if owner_of(item) else ""
     if item.state == "open":
         return f"open on `{branch}`{owner}" if branch else "open"
     if item.state in ("closed", "dropped"):
@@ -6046,7 +6051,7 @@ def criteria_and_code(project: Project, item: Item, base: str) -> list:
     if not edits or not code_changed(project, base):
         return []
     approved = str(item.fm.get("criteria_approved_by") or "").strip()
-    owners = {str(story.fm.get("owner") or "").strip() for story, *_ in edits} - {""}
+    owners = {owner_of(story) for story, *_ in edits} - {""}
     said = "; ".join(f"{story.id}/{ac}: \"{old}\" → " + (f"\"{new}\"" if new is not None else "removed")
                      for story, ac, old, new in edits)
     if approved and (not owners or approved in owners):
@@ -10872,7 +10877,8 @@ def hook_session(project: Project, payload: dict) -> dict | None:
         if named:
             ident, doc = named[0]
             fm = parse_front_matter(names.read(doc) or "")[0] or {}
-            owner = f", owner {fm['owner']}" if fm.get("owner") else ""
+            who = unset_if_template(fm.get("owner"))
+            owner = f", owner {who}" if who else ""
             lines.append(f"This branch builds {ident} {fm.get('title', '')} — {fm.get('state', '?')}{owner}: "
                          f"{doc}. Its work order is the plan; spry/process/slicing.md says what comes next.")
             steps = [st for st in slice_steps(names.read(doc) or "") if st["n"]]
@@ -10954,7 +10960,8 @@ def hook_cited_criteria(project: Project, payload: dict) -> dict | None:
         return None
     where = "; ".join(f"{story}/{ac} by {', '.join(files[:3])}{' …' if len(files) > 3 else ''}"
                       for ac, files in cited.items())
-    owner = f" ({fm['owner']})" if fm.get("owner") else ""
+    who = unset_if_template(fm.get("owner"))
+    owner = f" ({who})" if who else ""
     return {"hookSpecificOutput": {
         "hookEventName": "PreToolUse", "permissionDecision": "ask",
         "permissionDecisionReason": f"This changes criteria that tests already cite — {where}. The story's owner{owner} "
@@ -11591,11 +11598,12 @@ def main(argv=None) -> int:
         print("\n".join(project.rel(p) for p in paths))
         return 0
     if args.command == "claim":
-        # Only `mint: main` writes the claim; with `local`, slice-open's `link --owner` sets it.
-        owner = None if mint_mode(project) != "main" else \
-            resolve_owner(project, args.owner) if args.owner else whoami(project)
+        # Only `mint: main` writes the claim; with `local`, slice-open's `link --owner` sets it. A claim
+        # always names its owner: resolve_owner refuses, before anything is written, when no one resolves.
+        owner = resolve_owner(project, args.owner or "") if mint_mode(project) == "main" else None
         branch = claim(project, args.slice, owner, switch=not args.no_switch)
-        print(f"{args.slice} claimed" + (f" on {main_branch(project)}" if mint_mode(project) == "main" else "")
+        print(f"{args.slice} claimed" + (f" by {owner}" if owner else "")
+              + (f" on {main_branch(project)}" if mint_mode(project) == "main" else "")
               + f"; branch `{branch}`" + ("" if args.no_switch else ", checked out"))
         return 0
     if args.command == "release":

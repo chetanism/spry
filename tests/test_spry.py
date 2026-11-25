@@ -600,6 +600,20 @@ class Backlog(Base):
         self.assertIn("| [M-1 Title of M-1](plan/M-1-m/README.md) › [E-1 Title of E-1](plan/M-1-m/E-1-e/README.md) › "
                       "[F-1 Title of F-1](plan/M-1-m/E-1-e/F-1-f/README.md) › [S-1 Title of S-1]", page)
 
+    def test_an_owner_still_the_template_shows_as_unset(self):
+        """CH-90: `owner: <name>` is no one — the backlog, a blocker and a holder never name `<name>`."""
+        waits = slice_("SL-2", state="planned", covers="[]").replace("pr: 1\n", "pr: 1\nblocked_by: [SL-1]\n")
+        t = self.tree(**{self.key(f"{S}/SL-1-a.md"): owned(slice_("SL-1", state="planned"), "<name>"),
+                         self.key(f"{self.T}/README.md"): item("T-1"),
+                         self.key(f"{self.T}/SL-2-b.md"): waits})
+        page = spry.backlog_block(t.project(), os.path.join(t.root, "spry/BACKLOG.md"))
+        self.assertNotIn("<name>", page)
+        row = next(line for line in page.splitlines() if line.startswith("| 1 | [SL-1"))
+        self.assertIn("| — |", row)
+        self.assertIn("[SL-1 Slice SL-1](plan/M-1-m/E-1-e/F-1-f/S-1-s/SL-1-a.md) · ready to build |", page)
+        held = owned(slice_("SL-1", state="open"), "<name>")
+        self.assertEqual(spry.holder(self.tree(**{self.key(f"{S}/SL-1-a.md"): held}).project().items["SL-1"]), "open")
+
     def test_needs_slicing_names_criteria_no_slice_covers(self):
         t = self.tree(**{self.key(f"{S}/README.md"): story("S-1", acs=("AC-1", "AC-2")),
                          self.key(f"{S}/SL-1-a.md"): slice_("SL-1", state="planned"),
@@ -1515,6 +1529,25 @@ class Shared(unittest.TestCase):
         self.assertEqual(spry.release(project, "SL-2"), "sl-2-b")
         self.assertEqual(spry.claim(spry.Project(self.b), "SL-2", switch=False), "sl-2-b")
         self.assertEqual(self.git(self.b, "branch", "--show-current"), "main")
+
+    def test_a_bare_claim_names_its_owner_or_writes_nothing(self):
+        """CH-90: a claim on the main branch always names who holds it."""
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out):
+            spry.main(["--root", self.a, "claim", "SL-2", "--no-switch"])
+        self.assertEqual(out.getvalue().strip(), "SL-2 claimed by a on main; branch `sl-2-b`")
+        self.assertIn("owner: a\n", self.git(self.remote, "show", f"main:{S}/SL-2-b.md"))
+        self.git(self.b, "pull", "-q", "--ff-only")
+        spry.release(spry.Project(self.b), "SL-2")
+        self.git(self.b, "branch", "-D", "sl-2-b") if self.git(self.b, "branch", "--list", "sl-2-b") else None
+        self.git(self.a, "branch", "-D", "sl-2-b")
+        config = os.path.join(self.a, "spry", "spry.config.json")
+        with open(config, "w") as handle:
+            handle.write(json.dumps({**TEAM, "mint": "main"}))
+        head = self.remote_head()
+        said = self.refused(lambda: spry.main(["--root", self.a, "claim", "SL-2", "--no-switch"]))
+        self.assertIn("match no one in team.members — pass --owner <name>, one of: Asha, Ravi", said)
+        self.assertEqual(self.remote_head(), head)
 
     def test_claim_reads_the_main_branch_and_refuses_an_existing_branch_before_pushing(self):
         spry.mint(spry.Project(self.b), "slice", "S-1", "Fresh")

@@ -1945,3 +1945,21 @@ Entry format:
   `run.review` left at `ask`.
 - **Migrate:** nothing. Claude Code only; another agent tool needs its own headless command in
   `run.command`, and a JSON result with `result`, `session_id` and `permission_denials`.
+
+## CH-90 · A claim always names its owner
+
+- **Date:** 2026-11-25 · **Version:** 0.79.0
+- **Touches:** `tool/spry.py` (`claim`, `backlog`, the holder in a refusal, the session-start
+  line, the criteria-approval check)
+- **Why:** with `mint: main`, a bare `claim SL-n` — the one `slice-open` and `slice-plan` run —
+  wrote only `branch:` when git's `user.name` and `user.email` matched no one in `team.members`.
+  The slice kept the template's `owner: <name>` on the main branch, nothing warned, and the backlog
+  listed `<name>` as its owner. Reported from a project (#60).
+  - A bare `claim` resolves its owner as `--owner` does, and refuses — naming the members, before
+    anything is written or pushed — when no one resolves. Its output names the owner.
+  - `owner: <name>` reads as no one everywhere it is shown: the backlog's Owner column and blocker
+    lines, "taken: open by …", the session-start line, and who approves changed criteria.
+- **Adapt:** nothing. A clone whose git identity is not in `team.members` now sees the refusal
+  until the member is added or `--owner` is passed; the message names both.
+- **Migrate:** a slice already on the main branch with `owner: <name>`: `python3 spry/tool/spry.py
+  link SL-n --owner <name>` once. Until then the backlog shows `—`.

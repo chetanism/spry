@@ -362,7 +362,7 @@ spry new --batch FILE</code></pre>
 <code>mint: main</code> the claim is made on the main branch and refused when someone already holds it.</p>
 <pre><code>spry claim [--owner OWNER] [--no-switch] slice</code></pre>
 <ul>
-  <li><code>--owner OWNER</code> — who is building it: a <code>team.members</code> name or GitHub login. Left out, the person git says is at this clone. With <code>mint: main</code> it is written on the main branch with the claim.</li>
+  <li><code>--owner OWNER</code> — who is building it: a <code>team.members</code> name or GitHub login. Left out, the person git says is at this clone. With <code>mint: main</code> it is written on the main branch with the claim, and the claim is refused — nothing written — when git's name and email match no one in <code>team.members</code>.</li>
   <li><code>--no-switch</code> — make the branch without switching to it, for a separate worktree.</li>
 </ul>
 
