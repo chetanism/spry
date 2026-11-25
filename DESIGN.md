@@ -920,11 +920,11 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `claim <slice>` · `release <slice>` | take a slice before opening it — on the main branch with `mint: main`, refused when someone holds it, with its `owner` — and cut its branch; give it back |
 | `link <slice> [--branch] [--pr] [--owner [name]]` · `link <item> --issue <n>` | set them in the slice's front-matter; a bare `--owner` is the person at this clone. On a plan item, add an issue to its `issues:` |
 | `issues [--sync [--dry-run]] [--offline] [--json]` · `issues --legacy [--close]` | each issue plan items name, its stage (§14) and whether its label shows it; `--sync` sets the label and comments when the stage changes, never closing one; `--legacy` the per-slice issues from before CH-52 still open, `--close` closes them with a comment |
-| `brief <slice> [--diff] [--as <skill>]` | a slice in one call: `pr-body`'s page (a planned slice: the slice as written, with its criteria in words), then the files the branch changed (`--stat`); `--diff` adds the whole diff and `proc --for review-slice`, for a reviewer (CH-85). Without `--diff`, a `!` first when this checkout's session carries more context than `slices.fresh_context` (150k; 0 turns it off) — the open or the close starts in a fresh session; `step --commit` says the same after a step's commit, for the next step (CH-83); `merge-ready` says the same before its ask. `--as <skill>` (CH-82) ends the brief with what that skill reads before it starts: `proc --for <skill>`; for `slice-plan` and `slice-open` the parent and its feature, whole but for generated blocks, and `related`; for `slice-close` whether the tree is committed and how far the main branch moved (after a fetch); for `slice-build` and `slice-open` the rules that failed the checks most (CH-84) |
+| `brief <slice> [--diff] [--as <skill>]` | a slice in one call: `pr-body`'s page (a planned slice: the slice as written, with its criteria in words), then the files the branch changed (`--stat`); `--diff` adds the whole diff and `proc --for review-slice`, for a reviewer (CH-85). Without `--diff`, a `!` first when this checkout's session carries more context than `slices.fresh_context` (150k; 0 turns it off) — the open or the close starts in a fresh session; `step --commit` says the same after a step's commit, for the next step (CH-83); `merge-ready` says the same before its ask. `--as <skill>` (CH-82) ends the brief with what that skill reads before it starts: `proc --for <skill>`; for `slice-plan` and `slice-open` the parent and its feature, whole but for generated blocks, and `related`; for `slice-close` whether the tree is committed and how far the main branch moved (after a fetch); for `slice-build` and `slice-open` the rules that failed the checks most (CH-84) A slice at `rigor: 0` gets a `## Rigor` section: light or not, and what that leaves out (§25). |
 | `pr-body <slice> [--base]` | *For the reviewer* (covered ACs in words, ACs changed, falsify gaps, manual checks due), then the work order and close summary |
-| `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean; with `slices.design_review`, a warning when the work order has no design review or a Blocker went unasked |
+| `merge-check <slice> [--base]` | ready to merge? closed, an owner, PR number, every control the diff adds falsified, survivors resolved, ACs changed with code approved, covered ACs proven (else a QA follow-up), `check` clean; with `slices.design_review`, a warning when the work order has no design review or a Blocker went unasked A light slice's missing design review is `ok`; one that outgrew light without one is a warning (§25). |
 | `gate [--force] [--fast] [--full] [--failed]` | §15 |
-| `step <slice> [--commit] [--ranges [--head]] [--squash] [--base]` | steps mode (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` — and, with `slices.steps.tests`, the test files the step added or changed — and commits it with its `Step:` trailer, first running every `fix` in `checks.fast` on the step's files (CH-84); `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps |
+| `step <slice> [--commit] [--ranges [--head]] [--squash] [--base]` | steps mode (§15): the next step and its plan, from the branch's commits; `--commit` runs `gate --fast` — and, with `slices.steps.tests`, the test files the step added or changed — and commits it with its `Step:` trailer, first running every `fix` in `checks.fast` on the step's files (CH-84); `--ranges` each step's diff and the whole one, for the review; `--squash` folds `fixup!` commits into their steps `--ranges` prints one `light` line for a light slice (§25). |
 | `changed --base <ref>` | for CI: `code=true` when anything outside `checks.docs` changed |
 | `review-check <payload> --diff [--own]` | would GitHub take this review? every anchor on lines the diff shows, suggestions closed, not overlapping and not a no-op, and only `COMMENT` on your own PR |
 | `merge-message <slice>` | the squash commit: subject, summary, `Slice:` / `Parent:` / `Covers:` trailers |
@@ -940,7 +940,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `install --agent` | §3 |
 | `codeowners` | §14 |
 | `draw` | seeded, replayable choices for `/spry:explore` |
-| `pace [<slice>] [--since] [--last] [--compare] [--summary]` | where slices' time went (§17): the page in `.spry/view/pace.md`, or one slice in detail; `--summary` prints the part a reader judges from — limits loosened, flags counted, the size table, before and after |
+| `pace [<slice>] [--since] [--last] [--compare] [--summary]` | where slices' time went (§17): the page in `.spry/view/pace.md`, or one slice in detail; `--summary` prints the part a reader judges from — limits loosened, flags counted, the size table, light slices against the rest (§25), before and after |
 | `agent-hook <name>` | one Claude Code hook call, its payload on stdin (§18); run by `hooks/hooks.json`, not by hand |
 | `worktree list \| new [name] \| claim <name\|index> \| release [name] [--force] \| home [name] \| prune [--kept]` | the worktrees sessions build in (§24) |
 | `say "<text>" [--slice]` · `watch [-n s] [--once]` | a milestone line in the progress log; a panel per worktree drawn from it (§24) |
@@ -1519,6 +1519,18 @@ in `spry/history/writ.md`, then retires `canon/`.
   agent read the whole page before, mostly rows it never cited. Rejected: a JSON form of the page
   (one more thing to keep in step with it; the 2026-10-31 decision stands) and judging the limits
   in the tool (whether 2,500 lines suits a project is its call — `pace` puts the bugs beside it).
+- 2026-11-25 — a light level for small slices (CH-87, 0.76.0): §25's `rigor:` field, built with
+  one new rung below today's and none of the draft's upper ones. A slice under 300 lines cost
+  three times as much per line as a large one, and its design review and close review each left
+  0.05 Blockers a slice; level 0 drops the design review and reads the diff once. It is the first
+  change that removes a reading, and the project's stated priority is reliability, so: a person
+  asks for it, the tool measures whether a slice fits (`slices.light`), a slice that outgrows it
+  is reviewed in full with a warning at the merge, and `pace` sets light slices against level 1
+  slices of the same size, bugs filed later included. Rejected: the agent proposing light when
+  the work "looks small" (the judgement nobody checks, §15 *Design review*); light by default
+  (a project that changes nothing must lose no reading); an estimate of size at plan time (no
+  slice has one, and the diff is exact); dropping falsify or the gate at level 0 (they are proof,
+  not readings).
 
 ## 24. Worktrees and progress
 
@@ -1577,8 +1589,10 @@ what each is doing, without a token spent on telling it.
 
 ## 25. Rigor — how hard the agent works on one item
 
-> **Status:** draft for review, not built. Costs estimated 2026-11-24 from `pace --last 15` on two
-> projects (connect, pulse-v2), both with `slices.design_review` on.
+> **Status:** level 0 (*light*) built in CH-87 (0.76.0), with the `rigor:` field, its inheritance
+> and `pace`'s table by level. Levels 2–5 are a draft for review, not built: `check` refuses them.
+> Costs estimated 2026-11-24 from `pace --last 15` on two projects (connect, pulse-v2), both with
+> `slices.design_review` on.
 
 Purpose: let the owner of an item ask the agent to dig deeper on that item, using the same model
 and effort: research before designing, ask better questions about scope and about the technical
@@ -1615,6 +1629,38 @@ an item where a mistake costs the most.
 - **A counterweight at every level from 2 up.** Every reviewer started because of the level is
   also asked for "a simpler option that still meets the criteria". Without this, the top levels
   gold-plate.
+
+### Level 0 — light (built, CH-87)
+
+The ladder below only adds. The review of two projects (2026-11-25, 195 slices) showed the other
+end mattered more: a slice under 300 changed lines cost 1.0–1.1M input-token equivalents per 100
+lines, three times what a slice of 1,300–2,500 lines cost, because the readings cost the same
+whatever the size. On those small slices the design review left 0.05 Blockers a slice, and the
+review at close 0.05.
+
+- **What level 0 leaves out:** the design review, under `slice-plan` too; and the reviewer for
+  each step and for the seams — one reviewer reads the whole diff. Nothing else: *When to stop
+  and ask*, the criteria and their tests, falsify, the gate and the person's merge all hold.
+- **A person asks for it, the tool decides whether a slice fits.** `rigor: 0` on an item, or
+  `"rigor": 0` in the config, with the nearest value winning as for every level. A slice at
+  level 0 is light only while it changes at most `slices.light.max_lines` lines of code (300 —
+  the size the numbers above are for) and no file under `slices.light.never` (migrations and SQL
+  by default), named in its plan or changed on its branch. The agent is never asked to judge
+  "small" or "easy to undo": light leaves a reading out, so its limits are measured.
+- **Where it shows:** `brief SL-n --as <skill>` has a `## Rigor` section for a level 0 slice and
+  none otherwise, so a project that never asks pays nothing; `step SL-n --ranges` prints one
+  `light` line in place of the steps and the seams; `merge-check` says `design review: not asked
+  — light`.
+- **Outgrown:** past either limit the close reviews in full, the seams reviewer also runs the
+  design checks, and `merge-check` warns that nobody read the design before the code. The
+  reading that was skipped cannot be had back, which is why the limit is small.
+- **Not written into the slice.** The rule below, that a slice records the level it resolved to,
+  waits for the upper levels: level 0 is recomputed from the limits, and `pace` reads a slice as
+  light when it is at level 0 and within `max_lines`.
+- **`pace`: *By level*** sets the light slices against the level 1 slices no bigger than the
+  largest of them: slices, spend, spend per 100 lines, review agents, the close review's Blockers
+  and Shoulds, and bugs filed later. Absent until a slice is light. This table decides whether
+  light stays.
 
 ### The ladder
 

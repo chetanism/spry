@@ -1,6 +1,6 @@
 {
-  "spry": "0.75.0",
-  "spry_baseline": "CH-86",
+  "spry": "0.76.0",
+  "spry_baseline": "CH-87",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -87,11 +87,13 @@
   },
   "memory": {"index_lines": 60, "index_bytes": 8000, "line_chars": 200, "stale_days": 30},
   "planning": {"review": "always"},
+  "rigor": 1,
   "slices": {
     "pick": "offer",
     "mode": "split",
     "design_review": false,
     "fresh_context": 150000,
+    "light": {"max_lines": 300, "never": ["**/migrations/**", "**/*.sql"]},
     "steps": {"max": 5, "max_lines": 800, "step_lines": 0, "tests": false, "tests_skip": []}
   },
   "worktrees": {

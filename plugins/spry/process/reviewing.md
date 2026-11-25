@@ -57,7 +57,8 @@ together. With no argument, the current branch's PR.
   opens a file only for what the diff does not show. Never paste the brief into its prompt — the
   session would pay to write it.
 - **A slice built in steps** (`slicing.md` *Steps*) gets one new agent per step and one for the
-  seams, all in parallel (§3a).
+  seams, all in parallel (§3a). When `spry.py step SL-<n> --ranges` prints one `light` line, it is
+  a light slice (`slicing.md` *Light*): one agent, started with `brief SL-<n> --diff` like any slice's.
 - **An agent with no subagents:** ask the person to run `/spry:review <target>` in a new session.
 - **Another review after fixes** gets another new agent. It writes its own findings before it reads
   the earlier ones. Then it says which of the earlier ones still stand.

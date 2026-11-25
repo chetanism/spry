@@ -116,7 +116,7 @@ commits already on the branch, and the commit that finishes it.</p>
   Before the checks it runs every <code>fix</code> in <code>checks.fast</code> — the formatter's write mode — on
   the step's files and names the files it changed, so formatting never turns a check red and the checks
   run once. A lint or type failure still refuses the commit; the files are already formatted.</li>
-  <li><code>--ranges</code> — each step's <code>git diff</code>, and the whole branch's, for the reviewers.
+  <li><code>--ranges</code> — each step's <code>git diff</code>, and the whole branch's, for the reviewers. For a <a href="../guides/building.html#light-slices">light</a> slice it prints one line — the whole diff, for one reviewer.
   Off the slice's branch it reads <code>origin/&lt;branch&gt;</code>, so nothing is checked out;
   <code>--head REF</code> names another place.</li>
   <li><code>--squash</code> — folds <code>fixup!</code> commits (review fixes, falsify's new tests) into
@@ -132,6 +132,7 @@ commits already on the branch, and the commit that finishes it.</p>
 <h3 id="merge-check">merge-check</h3>
 <p>Is a closed slice ready to merge? Exits 1 if anything blocks it.</p>
 <pre><code>spry merge-check [--base BASE] slice</code></pre>
+<p>A light slice shows <code>design review: not asked — light</code>. One planned at <code>rigor: 0</code> that outgrew <code>slices.light</code> with no design review is a warning: nobody read its design before the code.</p>
 <p>It blocks (<code>✗</code>) when the slice is not closed or has no <code>closed:</code> date, owner or PR
 number, when a control the diff adds has no falsify row, when a survivor has no reason, when the branch
 changed a criterion and code together without <code>criteria_approved_by:</code> the story's owner,
@@ -245,6 +246,7 @@ search is <code>find</code>; the <a href="#pace">pace</a> page is at <code>/-/pa
   <li>flags, counted by kind — one on more than a third of the slices is in bold — and then listed by slice</li>
   <li>a row per slice, with its lines changed — and, apart from them, the lines in <code>checks.generated</code> files</li>
   <li>by size: the medians of active time and spend for slices of each size, each per 100 changed lines as p25 / median / p75, and the bugs filed later</li>
+  <li>by level, once a slice is <a href="../guides/building.html#light-slices">light</a>: the light slices against the level 1 slices of the same size — spend, review agents, the close review's Blockers and Shoulds, bugs filed later</li>
   <li>tokens per slice: the spend in input-token equivalents, the subagents' share, the spend by phase (subagents in the phase they started in), the share of requests that called one tool, the largest context, and the context when the close started</li>
   <li>subagents, by what each was started for (build, design review, review, fix, tests, other): how many, their own working time and their spend</li>
   <li>findings per slice, from the slice file: the design review's Blockers, Shoulds and asks; the close review's Blockers, Shoulds, Nits and fixes (<em>Review</em>); the questions the agent asked; the bullets under <em>Choices taken</em>, where a project keeps that section; and the bugs filed later against the slice — each bug whose <code>introduced_by</code> names it</li>
@@ -374,6 +376,7 @@ order), then the files the branch changed. A session reads it instead of opening
 <code>git diff</code> one by one. Every request to the model reads the whole session again, so one call in
 place of ten saves nine readings of it.</p>
 <pre><code>spry brief [--diff] [--as skill] slice</code></pre>
+<p>For a slice at <code>rigor: 0</code>, a <em>Rigor</em> section says whether it is <a href="../guides/building.html#light-slices">light</a> — within <code>slices.light</code> — and what that leaves out for the skill named. A slice at level 1 has no such section.</p>
 <p><code>--diff</code> — add the branch's whole diff and the reviewer's part of <code>reviewing.md</code>: what a slice's reviewer starts with. Without it,
 <code>brief</code> first says when this checkout's session carries more context than
 <code>slices.fresh_context</code> — the cue to <code>/clear</code> before the close.</p>

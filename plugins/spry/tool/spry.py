@@ -93,7 +93,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.75.0"
+VERSION = "0.76.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -131,7 +131,7 @@ PLACEHOLDER = re.compile(r"<([a-zA-Z][a-zA-Z0-9 ,/|.'_-]*)>")
 FENCE = re.compile(r"^\s*(```|~~~)")
 HEADING = re.compile(r"^(#{1,6})\s+(.*?)\s*#*\s*$")
 DATE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
-SCALAR_KEYS = {"id", "title", "summary", "state", "owner", "audience", "branch", "pr", "issue", "closed"}
+SCALAR_KEYS = {"id", "title", "summary", "state", "owner", "audience", "branch", "pr", "issue", "closed", "rigor"}
 # A citation on one of these lines proves nothing: the test is skipped or not written yet.
 NOT_RUN = re.compile(r"\b(?:it|test|describe|context)\.(?:skip|todo)\b|\bx(?:it|test|describe)\s*\(|"
                      r"@pytest\.mark\.(?:skip|xfail)\b|@unittest\.skip|\bt\.Skip\(")
@@ -1013,6 +1013,20 @@ def check(project: Project):
     if fresh is not None and (isinstance(fresh, bool) or not isinstance(fresh, int) or fresh < 0):
         project.problem(os.path.join(project.spry, "spry.config.json"), 1,
                         f"`slices.fresh_context` is `{fresh}` — tokens of context, a whole number; 0 turns the check off")
+    rigor = project.config.get("rigor")
+    if rigor is not None and (isinstance(rigor, bool) or rigor not in RIGOR_LEVELS):
+        project.problem(os.path.join(project.spry, "spry.config.json"), 1,
+                        f"`rigor` is `{rigor}` — 0 (light where a slice fits `slices.light`) or 1; levels 2–5 are not built (§25)")
+    light_conf = (project.config.get("slices") or {}).get("light")
+    if light_conf is not None and (not isinstance(light_conf, dict)
+                                   or not isinstance(light_conf.get("max_lines", 1), int) or isinstance(light_conf.get("max_lines", 1), bool)
+                                   or light_conf.get("max_lines", 1) < 1 or not isinstance(light_conf.get("never", []), list)):
+        project.problem(os.path.join(project.spry, "spry.config.json"), 1,
+                        "`slices.light` is `{\"max_lines\": <lines of code, 1 or more>, \"never\": [globs]}`")
+    for item in project.items.values():
+        level = str(item.fm.get("rigor", "")).strip()
+        if level and level not in {str(n) for n in RIGOR_LEVELS}:
+            project.problem(item.doc, 1, f"`rigor: {level}` — 0 (light where a slice fits `slices.light`) or 1; levels 2–5 are not built (§25)")
     review = (project.config.get("slices") or {}).get("design_review")
     if review not in (None, True, False):
         project.problem(os.path.join(project.spry, "spry.config.json"), 1,
@@ -2668,6 +2682,84 @@ def context_stop(project: Project, then: str) -> str | None:
             f"then `{then}`; the slice file holds everything it needs")
 
 
+# ---------------------------------------------------------------- rigor (§25): level 0, light
+
+RIGOR_LEVELS = (0, 1)   # 1 is spry as it was; 0 is light; 2–5 are a draft
+LIGHT_DEFAULTS = {"max_lines": 300, "never": ["**/migrations/**", "**/*.sql"]}
+
+
+def rigor_of(project: Project, item: Item) -> int:
+    """The level an item works at: its own `rigor:`, else the nearest one above it, else `rigor` in the
+    config, else 1."""
+    for node in [item] + item.ancestors():
+        level = str(node.fm.get("rigor", "")).strip()
+        if level in ("0", "1"):
+            return int(level)
+    level = project.config.get("rigor")
+    return 0 if level == 0 and not isinstance(level, bool) else 1
+
+
+def light_config(project: Project) -> dict:
+    given = (project.config.get("slices") or {}).get("light")
+    conf = {**LIGHT_DEFAULTS, "never": list(LIGHT_DEFAULTS["never"])}
+    if isinstance(given, dict):
+        lines = given.get("max_lines")
+        if isinstance(lines, int) and not isinstance(lines, bool) and lines > 0:
+            conf["max_lines"] = lines
+        if isinstance(given.get("never"), list):
+            conf["never"] = [str(g) for g in given["never"]]
+    return conf
+
+
+def light(project: Project, item: Item, base: str | None = None, head: str | None = None) -> tuple | None:
+    """None for a slice at level 1. At level 0, (True, why) while it fits the light limits and
+    (False, why) once it does not: a file its plan names or its branch changed is under
+    `slices.light.never`, or the branch changed more code than `slices.light.max_lines`. The tool
+    decides this, never the agent — light skips a reading, so its limits are not a judgement call."""
+    if item.type != "slice" or rigor_of(project, item) != 0:
+        return None
+    conf = light_config(project)
+    never = [glob_regex(g) for g in conf["never"]]
+    paths, lines = set(plan_paths(item.text)), None
+    if base and head and item.state != "planned":
+        fork = git(project.root, "merge-base", base, head).stdout.strip()
+        if fork:
+            done = git(project.root, "diff", "--name-only", "--no-renames", "--relative", f"{fork}..{head}")
+            paths |= {p for p in done.stdout.split("\n") if p.strip()}
+            lines = span_lines(project, f"{fork}..{head}")[0]
+    kept = sorted(p for p in paths if any(g.match(p) for g in never))
+    if kept:
+        return False, f"`{kept[0]}`" + (f" and {len(kept) - 1} more" if len(kept) > 1 else "") + " is under `slices.light.never`"
+    if lines is not None and lines > conf["max_lines"]:
+        return False, f"{lines} lines of code changed, over `slices.light.max_lines` ({conf['max_lines']})"
+    return True, (f"{lines} lines of code changed, " if lines is not None else "") + f"`slices.light.max_lines` is {conf['max_lines']}"
+
+
+def brief_rigor(project: Project, item: Item, skill: str, base: str | None, head: str | None) -> str:
+    """What level 0 changes for the skill about to start — printed only for a slice at level 0."""
+    state = light(project, item, base, head)
+    if state is None:
+        return ""
+    fits, why = state
+    conf = light_config(project)
+    limits = (f"at most {conf['max_lines']} lines of code changed (`slices.light.max_lines`)"
+              + (", and no file under `slices.light.never` (" + ", ".join(f"`{g}`" for g in conf["never"]) + ")" if conf["never"] else ""))
+    if skill in ("slice-plan", "slice-open", "slice-build"):
+        rows = ([f"- **Light (level 0):** no design review — skip *Plan* step 4 and write no `### Design review`. "
+                 f"Everything else in the procedure holds, *When to stop and ask* first.",
+                 f"- It stays light with {limits}. The tool measures both; past either, the close reviews it in full. "
+                 f"A plan that needs more is not light: say so in the summary, and run step 4."]
+                if fits else
+                [f"- **Level 0 asked, not light:** {why}. The design review runs (*Plan* step 4), and the close reviews it in full."])
+    else:
+        rows = ([f"- **Light (level 0):** {why}. One reviewer reads the whole diff at step 5 — `spry.py step {item.id} "
+                 f"--ranges` prints the one diff — not one for each step and one for the seams."]
+                if fits else
+                [f"- **No longer light:** {why}. Step 5 reviews it in full, one reviewer for each step and one for the seams. "
+                 f"No design review was done: tell the seams reviewer, who also runs the four checks of *Plan* step 4."])
+    return "## Rigor\n\n" + "\n".join(rows) + "\n"
+
+
 BRIEF_SKILLS = ("slice-open", "slice-plan", "slice-build", "slice-close")
 
 
@@ -2705,6 +2797,9 @@ def brief(project: Project, slice_id: str, diff: bool = False, skill: str | None
     if diff:   # a reviewer: the checks it runs, in the call that gave it the diff
         out.append("## Procedure\n\n" + proc_for(project, "review-slice", item))
     if named and not stop:
+        rigor = brief_rigor(project, item, named, base if known else None, head)
+        if rigor:
+            out.append(rigor)
         if named in ("slice-plan", "slice-open"):
             out.append(brief_plan(project, item))
         if named == "slice-close" and known:
@@ -5786,7 +5881,7 @@ def merge_check(project: Project, slice_id: str, base: str | None = None) -> lis
                else ("block", f"no `owner:` — who built it: `link {item.id} --owner`"))
     out.append(("ok", f"PR #{item.fm['pr']}") if str(item.fm.get("pr", "")).isdigit()
                else ("block", "no `pr:` number in the slice"))
-    out += design_review_lines(project, item)
+    out += design_review_lines(project, item, base)
     if close_review(item.text):
         out.append(("ok", f"review: {close_review_said(close_review(item.text))}"))
     rows = falsify_table(item)
@@ -5885,12 +5980,20 @@ def design_review_said(found: dict) -> str:
     return f"{found['blockers']} Blocker, {found['shoulds']} Should — {found['asked']} asked"
 
 
-def design_review_lines(project: Project, item: Item) -> list:
+def design_review_lines(project: Project, item: Item, base: str | None = None) -> list:
     """With `slices.design_review` on, a work order nobody read before the code is a warning, and so is
-    a Blocker that was not asked. Never a block: the review is a reading, and the merge is the person's."""
+    a Blocker that was not asked. Never a block: the review is a reading, and the merge is the person's.
+    A light slice (level 0) is not read before the code; one that outgrew light with no design review
+    is a warning whatever the config says."""
+    found = design_review(item.text)
+    state = light(project, item, base, step_head(project, item, None) if base else None)
+    if state is not None and found is None:
+        fits, why = state
+        return [("ok", f"design review: not asked — light (level 0): {why}") if fits else
+                ("warn", f"design review: none — planned light (level 0), and it is not: {why}. Nobody read its "
+                         "design before the code; the review at close is in full and reads the design too")]
     if not (project.config.get("slices") or {}).get("design_review"):
         return []
-    found = design_review(item.text)
     if found is None:
         return [("warn", "design review: none recorded — `slices.design_review` is on and the work order has no "
                          "`### Design review` with `<n> Blocker, <n> Should — <n> asked` (slicing.md *Open* step 4); "
@@ -6931,6 +7034,13 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
     if ranges:
         fork = git(project.root, "merge-base", base, head).stdout.strip() or base
         tip = git(project.root, "rev-parse", "--short=12", head).stdout.strip() or head
+        lit = light(project, item, base, head)
+        if lit is not None and lit[0]:
+            say(f"light · one reviewer reads the whole diff · git diff {fork[:12]} {tip} · {lit[1]}")
+            return 0
+        if lit is not None:
+            say(f"not light: {lit[1]} — a reviewer for each step and one for the seams; no design review was done, "
+                "so the seams reviewer also runs the checks of slicing.md *Plan* step 4")
         for n, sha, title, covers in step_ranges(project, item, base, head):
             say(f"step {n} · git diff {sha[:12]}^ {sha[:12]} · {title} · " + (", ".join(covers) or "—"))
         if not state["done"]:
@@ -8333,6 +8443,9 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
         item = project.items.get(slice_id)
         if item is not None:   # what the plan records: read on every run, so a kept summary follows the files
             s["bugs"] = None if bugs is None else bugs.get(slice_id, [])
+            # light as planned and as built: level 0, and no more code than the light limit
+            s["rigor"] = 0 if (item.type == "slice" and rigor_of(project, item) == 0
+                               and (s.get("lines") or 0) <= light_config(project)["max_lines"]) else 1
             for key, read_it in (("design", design_review), ("review", close_review), ("choices", choices_taken)):
                 found = read_it(item.text)
                 if found is not None:
@@ -8570,6 +8683,32 @@ def pace_flag_pairs(project: Project, s: dict) -> list:
 
 def pace_flags(project: Project, s: dict) -> list:
     return [line for _kind, line in pace_flag_pairs(project, s)]
+
+
+def pace_by_level(chosen: list, numbers: dict) -> list:
+    """Light slices against the rest of their size (§25): what skipping the design review and reading
+    the diff once saved, and what it let through. Absent until a slice is light."""
+    if not any(s.get("rigor") == 0 for s in chosen):
+        return []
+    cap = max((s.get("lines") or 0) for s in chosen if s.get("rigor") == 0)
+    rows = ["", "## By level", "", f"Light slices (level 0) against the level 1 slices no bigger than the largest of them "
+            f"({cap} lines). Fewer than 10 on a side is a reading, not a difference.", "",
+            "| level | slices | spend | spend per 100 lines | review agents | review at close: Blocker | Should | bugs filed later |",
+            "|---|---:|---:|---:|---:|---:|---:|---:|"]
+    for level, name in ((0, "0 · light"), (1, "1")):
+        group = [s for s in chosen if s.get("rigor", 1) == level and s.get("lines") and s["lines"] <= cap]
+        if not group:
+            continue
+        tokens = [numbers.get(s["id"]) or {} for s in group]
+        reviews = [s["review"] for s in group if s.get("review")]
+        later = [len(s["bugs"]) for s in group if s.get("bugs") is not None]
+        def mean(values):
+            return f"{sum(values) / len(values):.2f}" if values else "–"
+        rows.append(f"| {name} | {len(group)} | {pace_tokens(pace_median([t.get('spend') for t in tokens]))} | "
+                    f"{pace_tokens(pace_median([t.get('per100') for t in tokens]))} | {mean([len(s.get('reviews', [])) for s in group])} | "
+                    f"{mean([r.get('blockers', 0) for r in reviews])} | {mean([r.get('shoulds', 0) for r in reviews])} | "
+                    + (f"{sum(later)} ({sum(later) / len(later):.2f} a slice)" if later else "–") + " |")
+    return rows
 
 
 PACE_OFTEN = (6, 1 / 3)   # with this many slices, a flag in more than this share of them is marked
@@ -8857,6 +8996,8 @@ def pace_check_lines(s: dict, conf: dict) -> list:
         rows.append(f"- subagents: {sum(n for _k, n, _t, _c in subs)}, {pace_time(sum(t for _k, _n, t, _c in subs))} of their own work — "
                     + ", ".join(f"{kind} {n} ({pace_time(seconds)}" + (f", {pace_tokens(spend)}" if spend else "") + ")"
                                 for kind, n, seconds, spend in subs))
+    if s.get("rigor") == 0:
+        rows.append("- rigor: light (level 0) — no design review, one reviewer at close")
     if s.get("design"):
         rows.append(f"- design review: {design_review_said(s['design'])}")
     if s.get("review"):
@@ -9010,6 +9151,7 @@ def pace_page(project: Project, slices: dict, since: str | None = None, last: in
                             f"{spread('spend per 100 lines', [t.get('per100') for t in tokens])} | "
                             f"{pace_tokens(pace_median([t.get('peak') for t in tokens]))} | "
                             + (f"{sum(later)} ({sum(later) / len(later):.2f} a slice)" if later else "–") + " |")
+    rows += pace_by_level(chosen, numbers)
     if counted or any(s.get("falsify") or pace_reruns(s)["retries"] for s in chosen):
         rows += ["", "## Tokens, falsify and reruns, newest first", "",
                  "Spend is in input-token equivalents (`pace.token_weights`). *Same code*: full gates that ran tests "
@@ -9088,7 +9230,7 @@ def pace_page(project: Project, slices: dict, since: str | None = None, last: in
     return "\n".join(rows) + "\n"
 
 
-PACE_SUMMARY = ("Limits loosened or off", "Flags, counted", "By size", "Before and after each change")
+PACE_SUMMARY = ("Limits loosened or off", "Flags, counted", "By size", "By level", "Before and after each change")
 
 
 def pace_summary(page: str) -> str:

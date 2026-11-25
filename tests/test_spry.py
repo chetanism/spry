@@ -4268,6 +4268,26 @@ class Pace(Base):
         self.assertIn("`slices.fresh_context` is off (0)", page)
         self.assertIn("`slices.steps.max_lines` is off (0)", page)
 
+    def test_light_slices_are_set_against_the_rest_of_their_size(self):
+        t = self.tree()
+
+        def one(n, lines, rigor, blockers, bugs):
+            return {"id": f"SL-{n}", "kinds": {"agent": 600}, "phases": {}, "first": T0 + n, "last": T0 + 100 + n, "sessions": 1,
+                    "prompts": 1, "questions": 0, "compactions": 0, "reviews": [1] * (1 if rigor == 0 else 3), "limit": 0,
+                    "slowest": [], "suite": 0, "gates": [], "lines": lines, "tokens": {"input": lines * 5000}, "requests": 9,
+                    "peak": 100_000, "bugs": bugs, "rigor": rigor, "review": {"blockers": blockers, "shoulds": 1, "nits": 0, "fixed": 1}}
+        slices = {s["id"]: s for s in [one(1, 100, 0, 0, []), one(2, 200, 0, 1, [["B-1", "minor"]]), one(3, 200, 1, 0, []),
+                                       one(4, 900, 1, 2, [])]}
+        page = spry.pace_page(t.project(), slices)
+        self.assertIn("## By level", page)
+        self.assertIn("no bigger than the largest of them (200 lines)", page)
+        self.assertIn("| 0 · light | 2 | 750k | 500k | 1.00 | 0.50 | 1.00 | 1 (0.50 a slice) |", page)
+        self.assertIn("| 1 | 1 | 1.0M | 500k | 3.00 | 0.00 | 1.00 | 0 (0.00 a slice) |", page)
+        self.assertIn("## By level", spry.pace_summary(page))
+        for s in slices.values():
+            s["rigor"] = 1
+        self.assertNotIn("## By level", spry.pace_page(t.project(), slices), "absent until a slice is light")
+
     def test_flags_are_counted_and_one_on_a_third_of_the_slices_is_marked(self):
         t = self.tree()
 
@@ -4374,6 +4394,85 @@ class Steps(Base):
         code, out = self.say(False, True, False)
         self.assertRegex(out, r"step 1 · git diff \w+\^ \w+ · Refuse a fifth book · AC-1")
         self.assertIn("seams · git diff", out)
+
+    def set_rigor(self, level, **light):
+        path = os.path.join(self.t.root, "spry/spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["rigor"] = level
+        config.setdefault("slices", {})["light"] = light
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+
+    def test_a_light_slice_skips_the_design_review_and_is_read_once(self):
+        self.on_branch()
+        project = self.t.project()
+        self.assertIsNone(spry.light(project, project.items["SL-1"], "main", "HEAD"), "level 1 unless asked")
+        self.assertNotIn("## Rigor", spry.brief(project, "SL-1", skill="slice-build"))
+        self.set_rigor(0, max_lines=3)
+        self.assertEqual(self.t.problems(), [])
+        project = self.t.project()
+        self.assertEqual(spry.rigor_of(project, project.items["SL-1"]), 0)
+        said = spry.brief(project, "SL-1", skill="slice-build")
+        self.assertIn("**Light (level 0):** no design review — skip *Plan* step 4", said)
+        self.assertIn("at most 3 lines of code changed", said)
+        self.write("src/lend.ts", "export const limit = 4\n")
+        self.say(True, False, False)
+        self.write("src/page.ts", "export const shown = true\n")
+        self.say(True, False, False)
+        project = self.t.project()
+        self.assertEqual(spry.light(project, project.items["SL-1"], "main", "HEAD"),
+                         (True, "2 lines of code changed, `slices.light.max_lines` is 3"))
+        code, out = self.say(False, True, False)
+        self.assertRegex(out, r"^light · one reviewer reads the whole diff · git diff \w+ \w+ · 2 lines")
+        self.assertNotIn("step 1 ·", out)
+        self.assertIn("One reviewer reads the whole diff at step 5", spry.brief(project, "SL-1", skill="slice-close"))
+        self.assertIn(("ok", "design review: not asked — light (level 0): 2 lines of code changed, `slices.light.max_lines` is 3"),
+                      spry.design_review_lines(project, project.items["SL-1"], "main"))
+
+    def test_a_slice_that_outgrows_light_is_reviewed_in_full(self):
+        self.on_branch()
+        self.set_rigor(0, max_lines=1)
+        self.write("src/lend.ts", "export const limit = 4\nexport const more = 1\n")
+        self.say(True, False, False)
+        project = self.t.project()
+        self.assertEqual(spry.light(project, project.items["SL-1"], "main", "HEAD"),
+                         (False, "2 lines of code changed, over `slices.light.max_lines` (1)"))
+        code, out = self.say(False, True, False)
+        self.assertIn("not light: 2 lines of code changed", out)
+        self.assertIn("step 1 · git diff", out)
+        self.assertIn("seams · git diff", out)
+        self.run_git("update-ref", "refs/remotes/origin/main", "main")   # the brief measures against the remote's main
+        self.assertIn("**No longer light:** 2 lines of code changed", spry.brief(project, "SL-1", skill="slice-close"))
+        status, line = spry.design_review_lines(project, project.items["SL-1"], "main")[0]
+        self.assertEqual(status, "warn")
+        self.assertIn("planned light (level 0), and it is not", line)
+        self.set_rigor(0, max_lines=300, never=["src/lend.*"])   # the plan names a file light never takes
+        project = self.t.project()
+        self.assertEqual(spry.light(project, project.items["SL-1"]), (False, "`src/lend.ts` is under `slices.light.never`"))
+        self.assertIn("**Level 0 asked, not light:**", spry.brief(project, "SL-1", skill="slice-build"))
+
+    def test_the_nearest_rigor_wins_and_only_built_levels_are_taken(self):
+        self.set_rigor(0)
+        project = self.t.project()
+        self.assertEqual(spry.rigor_of(project, project.items["SL-1"]), 0)
+        story_doc = os.path.join(self.t.root, S, "README.md")
+        with open(story_doc) as handle:
+            text = handle.read()
+        self.write(f"{S}/README.md", text.replace("\nstate:", "\nrigor: 1\nstate:", 1))
+        project = self.t.project()
+        self.assertEqual(spry.rigor_of(project, project.items["SL-1"]), 1, "the story above it says 1")
+        self.assertIsNone(spry.light(project, project.items["SL-1"]))
+        self.write(f"{S}/SL-1-a.md", self.text.replace("\nstate:", "\nrigor: 0\nstate:", 1))
+        project = self.t.project()
+        self.assertEqual(spry.rigor_of(project, project.items["SL-1"]), 0, "the slice's own value is nearest")
+        self.write(f"{S}/SL-1-a.md", self.text.replace("\nstate:", "\nrigor: 3\nstate:", 1))
+        self.assertProblem(self.t.problems(), "`rigor: 3` — 0 (light")
+        self.write(f"{S}/SL-1-a.md", self.text)
+        self.set_rigor(4)
+        self.assertProblem(self.t.problems(), "`rigor` is `4`")
+        self.set_rigor(0, max_lines=0)
+        self.assertProblem(self.t.problems(), "`slices.light` is")
 
     def test_merge_check_wants_every_step_once_in_order_and_nothing_left_to_fold(self):
         self.on_branch()
