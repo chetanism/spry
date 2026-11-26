@@ -48,6 +48,7 @@ the mistake is one edit old. spry ships six, and you turn each one on or off by 
 <tr><td><code>check_edit</code></td><td>After an edit of a document <code>check</code> reads</td><td>Checks that one file: front-matter, budget, leftover placeholders, links, banned words. Any errors go straight back to the agent.</td></tr>
 <tr><td><code>merge</code></td><td><code>gh pr merge</code>, from the slice's branch</td><td>Runs <code>merge-check</code> for the slice whose pull request or branch it names, and refuses the merge if anything blocks it. It does not look at CI: <code>/spry:merge</code> still checks that first. Run from another branch, it says nothing, because the files there hold another copy of the slice.</td></tr>
 <tr><td><code>session_end</code></td><td>A session ends</td><td>Gives back the worktree the session claimed, so the next session can take it at once. A <code>/clear</code> keeps it. See <a href="../guides/team.html#worktrees">Worktrees</a>.</td></tr>
+<tr><td><code>long_checks</code></td><td>A Bash call running <code>spry.py gate</code> (not <code>--fast</code>), <code>falsify run</code> or <code>step --commit</code> in the foreground</td><td>Refuses it and says to run the same command in the background: a run waiting on the check lock or the affected tests can pass the agent's 10-minute limit on one call, and the agent then starts it again or polls. In the background it is told when the run ends. Sessions <code>spry.py run</code> started are let through.</td></tr>
 <tr><td><code>step_commit</code></td><td><code>git commit</code>, on a branch whose slice is built in steps</td><td>Refuses a commit of code and names <code>spry.py step --commit</code>, which runs the fast checks first and marks the commit as its step. A <code>--fixup</code>, an amend, or a commit of staged documents goes through. See <a href="../guides/slicing.html#built-in-steps">Built in steps</a>.</td></tr>
 <tr><td><code>check_stop</code></td><td>The agent is about to finish</td><td>If documents changed (uncommitted, or on the branch), runs <code>check</code>. On errors the agent goes back once to fix them or say why they stay. The same documents are not checked twice, whether they passed or not.</td></tr>
 </tbody>
@@ -61,7 +62,7 @@ project set up before 0.34.0 sees nothing until <code>/spry:update</code> offers
 <pre><code>"hooks": {
   "session": true, "link_fields": true, "cited_criteria": true,
   "check_edit": true, "merge": true, "check_stop": false,
-  "step_commit": true, "session_end": true
+  "step_commit": true, "session_end": true, "long_checks": true
 }</code></pre>
 <p>To turn every hook off for one session, start Claude Code with <code>SPRY_HOOKS=off</code> in its
 environment.</p>

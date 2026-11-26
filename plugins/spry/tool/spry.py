@@ -94,7 +94,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.83.0"
+VERSION = "0.84.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -9026,7 +9026,8 @@ def pace_flags_counted(project: Project, chosen: list) -> list:
     return rows + [""]
 
 
-PACE_HOOKS_ON = ("session", "link_fields", "cited_criteria", "check_edit", "merge", "check_stop", "step_commit", "session_end")
+PACE_HOOKS_ON = ("session", "link_fields", "cited_criteria", "check_edit", "merge", "check_stop", "step_commit", "session_end",
+                 "long_checks")
 
 
 def pace_guards(project: Project, chosen: list, numbers: dict) -> list:
@@ -10922,7 +10923,7 @@ def hook_session_end(project: Project, payload: dict) -> dict | None:
 # `SPRY_HOOKS=off` turns all of them off. A hook's own failure lets the call through: `check`, CI and
 # `merge-check` stay the authority, and a hook only says it sooner.
 AGENT_HOOKS = ("session", "link_fields", "cited_criteria", "check_edit", "merge", "check_stop", "step_commit",
-               "session_end")
+               "session_end", "long_checks")
 HOOKS_SINCE = (0, 34, 0)
 LINK_FIELDS = ("branch", "pr", "owner")
 IN_PLACE = re.compile(r"\b(?:g?sed|perl)\b[^|;&\n]*\s-[a-zA-Z]*i")
@@ -11176,6 +11177,35 @@ FOLDS = re.compile(r"\s--(?:fixup(?!=(?:amend|reword):)|amend)\b")
 COMMIT_TAKES_MORE = re.compile(r"(?:^|\s)-(?:[a-zA-Z]*[aio][a-zA-Z]*|-all|-include|-only)(?=\s|$)|\s--(?:\s|$)|\bgit\s+add\b")
 
 
+# A spry command that runs the tests: `gate` (not `--fast`), `falsify run`, `step <slice> --commit`.
+LONG_CHECK = re.compile(r"spry\.py\b(?:\s+--root\s+\S+)?\s+(gate|falsify\s+run|step)\b([^;&|\n]*)")
+
+
+def long_check(command: str) -> str | None:
+    """The spry command in `command` that runs tests and can outlast a tool call's 10 minutes, or None."""
+    for m in LONG_CHECK.finditer(command):
+        verb, rest = m.group(1), m.group(2)
+        if (verb == "gate" and "--fast" not in rest) or verb.startswith("falsify") or (verb == "step" and "--commit" in rest):
+            return re.sub(r"\s+", " ", f"{verb}{rest}").strip()
+    return None
+
+
+def hook_long_checks(project: Project, payload: dict) -> dict | None:
+    """A gate, a falsify run or a step's commit run in the foreground can pass the agent's 10-minute
+    limit on one call — waiting on the check lock, or on the affected tests — and the agent starts it
+    again or polls. In the background, it is told when the run ends. A session `run` started is let
+    through: it has no one to come back to, so it waits in the foreground."""
+    given = payload.get("tool_input") or {}
+    if given.get("run_in_background") or os.environ.get(RUN_ENV):
+        return None
+    found = long_check(str(given.get("command") or ""))
+    if not found:
+        return None
+    return deny(f"`spry.py {found}` runs the tests and can pass the 10-minute limit on a tool call: run the same "
+                "command with `run_in_background: true` — you are told when it ends, so never poll it. "
+                "`gate --fast` needs no background. (`hooks.long_checks: false` turns this off.)")
+
+
 def hook_step_commit(project: Project, payload: dict) -> dict | None:
     """On a slice built in steps, code is committed by `spry.py step --commit`, so each step is one
     commit that passed the fast checks and carries its trailer. A fixup, an amend and a commit of
@@ -11246,7 +11276,7 @@ def hook_check_stop(project: Project, payload: dict) -> dict | None:
 
 AGENT_HOOK_RUN = {"session": hook_session, "link_fields": hook_link_fields, "cited_criteria": hook_cited_criteria,
                   "check_edit": hook_check_edit, "merge": hook_merge, "check_stop": hook_check_stop,
-                  "step_commit": hook_step_commit, "session_end": hook_session_end}
+                  "step_commit": hook_step_commit, "session_end": hook_session_end, "long_checks": hook_long_checks}
 
 
 def agent_hook(name: str, stdin: str, root: str | None = None) -> tuple:

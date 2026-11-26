@@ -900,6 +900,7 @@ CH-26). Before `merge`, only the agent's memory of `merging.md` step 2 ran `merg
 | `check_edit` | after an Edit or Write of a document `check` reads | `check` of that one file by its text — front-matter, budget, placeholders, links, glossary — errors sent back to the agent |
 | `merge` | `gh pr merge`, from the slice's branch | runs `merge-check` against `origin/<main>` for the slice whose `pr` or branch it names; refuses the merge on a block. From another branch the tree holds another copy of the slice, so it says nothing |
 | `step_commit` | `git commit`, on a branch whose slice has `### Steps` | refuses a commit of code that is not a `--fixup` or `--amend`, naming `spry.py step --commit`; a commit of what is staged is judged by what is staged, so documents alone go through |
+| `long_checks` | a Bash call running `spry.py gate` (not `--fast`), `falsify run` or `step --commit` | refuses it in the foreground, naming `run_in_background`: a run behind the check lock or the affected tests passes the 10-minute limit on a call, and the agent starts it again or polls. A session `run` started is let through (CH-95) |
 | `check_stop` | the agent is about to stop | with documents changed (uncommitted, or on the branch), `check`; errors send it back once; each state checked is stamped in `.spry/hooks/` and not checked again, passing or not |
 
 - **One switch each**, `hooks.<key>` in `spry.config.json`, off when missing — a project that has
@@ -1604,6 +1605,13 @@ in `spry/history/writ.md`, then retires `canon/`.
   still expecting the old value. `slices.steps.related` names the runner's related-tests command;
   the step runs it on its source files. Rejected: spry finding related tests itself — only the
   runner knows the import graph; a cap on files — the runner's own options set one.
+- 2026-11-26 — a long check runs in the background (CH-95, 0.84.0, §18), from a project's `pace`
+  (#63). Calls ran to the 10-minute limit in 46 of 214 slices, most of them a foreground
+  `spry.py gate | tail`; a rule in the project's `AGENTS.md` did not stop it. The `long_checks`
+  hook refuses a foreground gate, falsify run or step commit, on by default. A session `run`
+  started is let through: it has no person to come back to. Rejected: a stamp that lets a gate
+  skip the tests after a non-test red (#63, 2) — the fix to the red step changes code the tests
+  cover nearly every time, so the stamp would almost never hold; and spry cannot know coverage.
 
 ## 24. Worktrees and progress
 

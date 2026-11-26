@@ -80,7 +80,7 @@ document both work. Everything after is drafted from it, so read it twice.
    or a pull that changed the plan or a test, it refreshes the backlog, coverage and done pages in
    `.spry/view/` and says so. The committed pages show the main branch as of CI's last run.
 5. The agent hooks are on in the config (`hooks`), for Claude Code with the plugin. Name each in a
-   line — `session`, `link_fields`, `cited_criteria`, `check_edit`, `merge`, `check_stop`, `step_commit`, `session_end` — and ask
+   line — `session`, `link_fields`, `cited_criteria`, `check_edit`, `merge`, `check_stop`, `step_commit`, `session_end`, `long_checks` — and ask
    which to turn off; a team often keeps all. Other agents ignore them.
 6. `NEXT`: `/spry:milestone M-1` to define the first milestone.
 
