@@ -46,6 +46,20 @@
           },
           {
             "type": "command",
+            "if": "Bash(python3 *)",
+            "command": "py=\"$(command -v python3 || command -v python)\" && \"$py\" \"${CLAUDE_PLUGIN_ROOT}/tool/spry.py\" agent-hook long_checks",
+            "timeout": 10,
+            "onFailure": "continue"
+          },
+          {
+            "type": "command",
+            "if": "Bash(python *)",
+            "command": "py=\"$(command -v python3 || command -v python)\" && \"$py\" \"${CLAUDE_PLUGIN_ROOT}/tool/spry.py\" agent-hook long_checks",
+            "timeout": 10,
+            "onFailure": "continue"
+          },
+          {
+            "type": "command",
             "if": "Bash(sed *)",
             "command": "py=\"$(command -v python3 || command -v python)\" && \"$py\" \"${CLAUDE_PLUGIN_ROOT}/tool/spry.py\" agent-hook link_fields",
             "timeout": 10,

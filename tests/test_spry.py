@@ -3697,6 +3697,25 @@ class AgentHooks(Base):
             handle.write('import json, sys\nVERSION = "9.0.0"\nprint(json.dumps({"from": sys.argv[1:]}))\n')
         self.assertEqual(self.edit("link_fields", self.slice, "pr: 1", "pr: 7"), {"from": ["agent-hook", "link_fields"]})
 
+    def test_a_long_check_runs_in_the_background(self):
+        """CH-95: a gate, a falsify run or a step's commit in the foreground is refused; fast ones and
+        background ones go through, and so does a session `run` started, which has no one to come back to."""
+        def bash(command, **more):
+            return self.decision(self.hook("long_checks", tool_name="Bash", tool_input={"command": command, **more}))
+        for command in ("python3 spry/tool/spry.py gate 2>&1 | tail -5", "python3 spry/tool/spry.py gate --failed",
+                        "cd app && python3 spry/tool/spry.py --root .. falsify run SL-1",
+                        "python3 spry/tool/spry.py step SL-1 --commit"):
+            self.assertEqual(bash(command), "deny", command)
+        reason = self.hook("long_checks", tool_name="Bash", tool_input={"command": "python3 spry/tool/spry.py gate"})
+        self.assertIn("run_in_background: true", reason["hookSpecificOutput"]["permissionDecisionReason"])
+        for command in ("python3 spry/tool/spry.py gate --fast", "python3 spry/tool/spry.py step SL-1",
+                        "python3 spry/tool/spry.py step SL-1 --ranges", "python3 spry/tool/spry.py falsify plan SL-1",
+                        "python3 spry/tool/spry.py check"):
+            self.assertIsNone(bash(command), command)
+        self.assertIsNone(bash("python3 spry/tool/spry.py gate", run_in_background=True))
+        with unittest.mock.patch.dict(os.environ, {spry.RUN_ENV: "1"}):
+            self.assertIsNone(bash("python3 spry/tool/spry.py gate"))
+
     def test_hooks_file_names_only_hooks_the_tool_has(self):
         with open(os.path.join(REPO, "plugins", "spry", "hooks", "hooks.json")) as handle:
             text = handle.read()

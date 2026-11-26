@@ -2037,3 +2037,21 @@ Entry format:
   runner's own options. Empty (the default) changes nothing.
 - **Migrate:** `spry/spry.config.json` → add `"related": ""` under `slices.steps`, or the command;
   `spry/process/slicing.md` → take the new *Steps* line.
+
+## CH-95 · A long check runs in the background
+
+- **Date:** 2026-11-26 · **Version:** 0.84.0
+- **Touches:** `tool/spry.py` (the `long_checks` hook), `hooks/hooks.json`, config template
+  (`hooks.long_checks`), `process/setup.md` (step 5)
+- **Why:** in one project (#63) calls ran to the agent's 10-minute limit in 46 of 214 slices, and
+  still did on the latest. The slowest were a foreground `spry.py gate 2>&1 | tail`: a gate that
+  waits on the check lock, or runs the affected tests, passes ten minutes, the call times out, and
+  the agent starts it again or polls. A rule written in the project's `AGENTS.md` did not stop it.
+  - The `long_checks` hook refuses a Bash call that runs `spry.py gate` (not `--fast`),
+    `falsify run` or `step --commit` without `run_in_background`, and says to run the same
+    command in the background — the agent is told when it ends.
+  - A session `spry.py run` started is let through: it has no one to come back to.
+- **Adapt:** a project whose gates always finish in a minute or two can turn it off with
+  `hooks.long_checks: false`.
+- **Migrate:** `spry/spry.config.json` → add `"long_checks": true` under `hooks`;
+  `spry/process/setup.md` → take the new name in step 5's list.
