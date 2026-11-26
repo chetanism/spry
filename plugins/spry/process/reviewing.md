@@ -54,7 +54,7 @@ together. With no argument, the current branch's PR.
 - **Leave out why the work was written as it was.** That reasoning is what the review is testing.
 - **A slice's reviewer starts with `spry.py brief SL-<n> --diff`:** the work order, the criteria in
   words, the whole diff and its checks in one call, rather than piece by piece with `git show` and `sed`. It
-  opens a file only for what the diff does not show. Never paste the brief into its prompt — the
+  opens a file only for what the diff does not show; `checks.generated` files are left out of it. Never paste the brief into its prompt — the
   session would pay to write it.
 - **A slice of more than one step** gets one new agent per step and one for the seams, all in
   parallel (§3a). When `spry.py step SL-<n> --ranges` prints one line — a slice of one step, a

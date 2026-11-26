@@ -1995,3 +1995,23 @@ Entry format:
 - **Adapt:** nothing.
 - **Migrate:** nothing. The log cache is read again once (its version changed), so subagent hours
   on the page drop for slices whose subagents were resumed after a pause.
+
+## CH-93 · A reviewer's diff leaves generated files out
+
+- **Date:** 2026-11-26 · **Version:** 0.82.0
+- **Touches:** `tool/spry.py` (`brief --diff`, `step --ranges`), `process/reviewing.md` (§2)
+- **Why:** `brief --diff` appended the branch's whole diff, though `checks.generated` already
+  kept generated files out of a slice's size. In one project (#63) a contract generator added
+  about 860 lines to an average slice — an OpenAPI document, SDK clients, reference pages — and
+  every review agent read them, five or six a slice.
+  - `brief --diff` leaves `checks.generated` out of the diff and says beneath it what it left:
+    `generated (checks.generated), left out of the diff: 4 files, 861 lines — git diff
+    <span> -- <path> reads one`. The `--stat` above still lists every file.
+  - Each `git diff` that `step --ranges` prints carries the same exclusions, so a step's or the
+    seams' reviewer reads the same.
+  - A generated file's own `--check` command proves it matches its source; a reviewer that needs
+    one still reads it.
+- **Adapt:** the saving is as good as `checks.generated`: list there every file a command writes.
+  A project with none set sees no change.
+- **Migrate:** `spry/process/reviewing.md` → take the end of the *A slice's reviewer starts with*
+  line.

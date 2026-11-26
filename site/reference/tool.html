@@ -395,7 +395,7 @@ order), then the files the branch changed. A session reads it instead of opening
 place of ten saves nine readings of it.</p>
 <pre><code>spry brief [--diff] [--as skill] slice</code></pre>
 <p>For a slice at <code>rigor: 0</code>, a <em>Rigor</em> section says whether it is <a href="../guides/building.html#light-slices">light</a> — within <code>slices.light</code> — and what that leaves out for the skill named. A slice at level 1 has no such section.</p>
-<p><code>--diff</code> — add the branch's whole diff and the reviewer's part of <code>reviewing.md</code>: what a slice's reviewer starts with. Without it,
+<p><code>--diff</code> — add the branch's whole diff and the reviewer's part of <code>reviewing.md</code>: what a slice's reviewer starts with. Files under <code>checks.generated</code> are left out of the diff and counted on one line beneath it; the list of changed files still names them. Without it,
 <code>brief</code> first says when this checkout's session carries more context than
 <code>slices.fresh_context</code> — the cue to <code>/clear</code> before the close.</p>
 <p><code>--as slice-plan | slice-open | slice-build | slice-close</code> — the skill this session runs.
