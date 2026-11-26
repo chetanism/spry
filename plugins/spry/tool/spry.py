@@ -94,7 +94,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.80.0"
+VERSION = "0.81.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -7913,7 +7913,7 @@ def review_check(payload, diff: str, own: bool = False) -> list:
 
 # ---------------------------------------------------------------- pace (§17)
 
-PACE_VERSION = 4
+PACE_VERSION = 5
 # Every second of active time gets one of these; `away` is left out of every total.
 PACE_KINDS = (("agent", "the agent, thinking and writing"), ("gate", "gate"), ("falsify", "falsify"),
               ("tests", "tests outside the gate"), ("fast", "fast checks outside the gate"),
@@ -8061,6 +8061,15 @@ def pace_tool_kind(block: dict) -> str:
     return "tool"
 
 
+def pace_lone_kind(block: dict) -> str:
+    """What a tool call is, finer than its kind: a file tool by its name (Read, Edit, Grep), a shell
+    line by the kind of command in it — so the lone calls that most need batching can be named."""
+    name = str(block.get("name", "") or "tool")
+    if name == "Bash":
+        return "Bash " + pace_bash_kind(str((block.get("input") or {}).get("command", "")))
+    return name
+
+
 def pace_is_review(block: dict) -> bool:
     given = block.get("input") or {}
     text = f"{given.get('description', '')} {given.get('subagent_type', '')} {str(given.get('prompt', ''))[:400]}"
@@ -8124,7 +8133,8 @@ def pace_records(path: str):
 def pace_branch_entry() -> dict:
     return {"kinds": {}, "phases": {}, "first": None, "last": None, "prompts": 0, "questions": 0,
             "compactions": 0, "gates": [], "limit": 0, "slowest": [], "suite": 0,
-            "tokens": {}, "phase_tokens": {}, "requests": 0, "peak": 0, "close": None, "tool_requests": 0, "lone": 0}
+            "tokens": {}, "phase_tokens": {}, "requests": 0, "peak": 0, "close": None, "tool_requests": 0, "lone": 0,
+            "lone_kinds": {}}
 
 
 def pace_usage(record: dict, seen: set) -> dict | None:
@@ -8159,12 +8169,12 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
     pending = {}    # tool_use id → (start, kind, head, gate fast flag or None, review, agent: is it a review, or None)
     background = set()  # background tasks started and not yet reported finished, by tool_use id
     own, started = {}, set()   # subagents this session started: {id: is a review} still working, and every id
-    agents = pace_subagents(path)
+    agents = pace_subagents(path, away)
     worked_until = {a[5]: a[6] for a in agents}   # a subagent that never reported stops counting where its own log ends
     prev, branch, ended, phase = None, "", True, "other"
     turn = phase_turn = 0   # a phase set in this turn follows the agent to a new branch; an older one does not
     requests = set()
-    calls = {}       # request → [branch, tool calls it made]
+    calls = {}       # request → [branch, tool calls it made, the first call's kind]
     timeline = []    # [time, phase] each time the phase changed — the phase a subagent started in
 
     def entry(name):
@@ -8224,7 +8234,9 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
         if kind_of_record == "assistant":
             made = sum(1 for b in content if b.get("type") == "tool_use") if isinstance(content, list) else 0
             if made:
-                calls.setdefault(record.get("requestId") or message.get("id") or id(record), [branch, 0])[1] += made
+                first = next(b for b in content if b.get("type") == "tool_use")
+                calls.setdefault(record.get("requestId") or message.get("id") or id(record),
+                                 [branch, 0, pace_lone_kind(first)])[1] += made
             for block in content if isinstance(content, list) else []:
                 if block.get("type") != "tool_use":
                     continue
@@ -8330,9 +8342,11 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
         if not timeline or timeline[-1][1] != phase:
             timeline.append([t, phase])
         prev = t if prev is None else max(prev, t)  # a record a few ms out of order is not counted twice
-    for name, made in calls.values():
+    for name, made, kind in calls.values():
         entry(name)["tool_requests"] += 1
         entry(name)["lone"] += made == 1
+        if made == 1:
+            entry(name)["lone_kinds"][kind] = entry(name)["lone_kinds"].get(kind, 0) + 1
     import bisect
     starts = [at for at, _ in timeline]
     phases = {a[5]: timeline[bisect.bisect_right(starts, a[7]) - 1][1] if a[7] is not None and starts and a[7] >= starts[0]
@@ -8341,10 +8355,11 @@ def pace_read_log(path: str, away: float, suite: list) -> dict:
             "agent_phases": phases}
 
 
-def pace_subagents(path: str) -> list:
+def pace_subagents(path: str, away: float) -> list:
     """[branch, seconds, review, tokens, kind, id, last record's time, first's] for each subagent this session
-    started. Its kind comes from the description in its `.meta.json`; without one, a review agent is
-    one whose first prompt says review, and any other is `other`."""
+    started. Its seconds leave out each gap over `away`, as the session's do: a subagent resumed hours
+    later did not work in between. Its kind comes from the description in its `.meta.json`; without
+    one, a review agent is one whose first prompt says review, and any other is `other`."""
     found = []
     for sub in sorted(glob.glob(os.path.join(glob.escape(path[:-6]), "subagents", "*.jsonl"))):
         first = last = None
@@ -8352,13 +8367,15 @@ def pace_subagents(path: str) -> list:
             said = str(json.loads(read(sub[:-6] + ".meta.json")).get("description") or "")
         except (OSError, ValueError, AttributeError):
             said = ""
-        branch, review, tokens, requests = "", False, {}, set()
+        branch, review, tokens, requests, worked = "", False, {}, set(), 0.0
         for record in pace_records(sub):
             t = record["_t"]
             if first is None:
                 first = t
                 review = bool(re.search(r"\breview", pace_text(record["message"]["content"])[:3000], re.I))
-            last = t
+            elif away >= t - last > 0:
+                worked += t - last
+            last = t if last is None else max(last, t)
             branch = branch or record.get("gitBranch") or ""
             used = pace_usage(record, requests) if record["type"] == "assistant" else None
             if used:
@@ -8366,7 +8383,7 @@ def pace_subagents(path: str) -> list:
         if first is not None:
             kind = pace_agent_kind(said) if said else "review" if review else "other"
             ident = re.sub(r"^agent-", "", os.path.basename(sub)[:-6])
-            found.append([branch, round(last - first, 1), kind == "review", tokens, kind, ident, last, first])
+            found.append([branch, round(worked, 1), kind == "review", tokens, kind, ident, last, first])
     return found
 
 
@@ -8498,6 +8515,15 @@ def pace_add(into: dict, more: dict) -> None:
         into[key] = into.get(key, 0) + value
 
 
+def pace_lone_line(s: dict, top: int = 4) -> str:
+    """The calls that went alone, by what they were, the most first: `Read 41%, Bash git 22%, …`."""
+    kinds, lone = s.get("lone_kinds") or {}, s.get("lone", 0)
+    if not kinds or not lone:
+        return "by kind: not recorded"
+    ranked = sorted(kinds.items(), key=lambda kv: (-kv[1], kv[0]))
+    return "alone: " + ", ".join(f"{k} {pace_share(n, lone)}" for k, n in ranked[:top]) + (", …" if len(ranked) > top else "")
+
+
 def pace_lock_wait(s: dict, waits: list, start: float, end: float, phase: str, kind: str) -> None:
     """Move a gate or falsify call's wait for the check lock from its kind to `lock`. The call is
     matched to the first unmatched step-log line of its slice that ended inside it; a call with no
@@ -8524,7 +8550,7 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
                                             "sessions": 0, "prompts": 0, "questions": 0, "compactions": 0,
                                             "reviews": [], "limit": 0, "slowest": [], "suite": 0, "gates": [],
                                             "log_gates": [], "tokens": {}, "phase_tokens": {}, "sub_phase_tokens": {}, "sub_tokens": {},
-                                            "tool_requests": 0, "lone": 0, "requests": 0,
+                                            "tool_requests": 0, "lone": 0, "lone_kinds": {}, "requests": 0,
                                             "peak": 0, "close": None, "agents": 0, "falsify": [], "subs": {}})
     steps = pace_steps(project)
     waits = {}   # (slice ID, command) → [[at, seconds waited for the lock, matched]]
@@ -8549,6 +8575,7 @@ def pace_slices(project: Project, logs: dict, only: str | None = None) -> dict:
             s["sessions"] += 1
             for key in ("prompts", "questions", "compactions", "limit", "suite", "tool_requests", "lone"):
                 s[key] += d.get(key, 0)
+            pace_add(s["lone_kinds"], d.get("lone_kinds") or {})
             s["slowest"] = sorted(s["slowest"] + d["slowest"], reverse=True)[:5]
             s["log_gates"] += d["gates"]
             pace_add(s["tokens"], d.get("tokens") or {})
@@ -8833,8 +8860,9 @@ def pace_flag_pairs(project: Project, s: dict) -> list:
         add("calls ran to the 10-minute limit", f"{s['limit']} call{'s' if s['limit'] != 1 else ''} ran to the agent's 10-minute limit — a wait that belonged in the background, or a hung test")
     asked = s.get("tool_requests", 0)
     if asked >= PACE_LONE_MIN and s.get("lone", 0) / asked > conf["lone_share"]:
-        add("one tool call a request", f"{pace_share(s['lone'], asked)} of {asked} requests that called a tool called one — each re-reads "
-                   "the whole session: independent reads and commands go in one call (slicing.md *While building*)")
+        add("one tool call a request", f"{pace_share(s['lone'], asked)} of {asked} requests that called a tool called one — "
+                   + pace_lone_line(s) + " — each re-reads the whole session: independent reads and commands go in one call "
+                   "(slicing.md *While building*)")
     session = s["kinds"].get("session", 0)
     if session / active > conf["session_share"]:
         add("waiting on another session", f"waiting on another session took {pace_share(session, active)} ({pace_time(session)})")
@@ -9168,7 +9196,7 @@ def pace_check_lines(s: dict, conf: dict) -> list:
                 for p, m, u in phases if m + u))
         if s.get("tool_requests"):
             rows.append(f"- requests that called a tool: {s['tool_requests']}, {pace_share(s.get('lone', 0), s['tool_requests'])} "
-                        "of them called one")
+                        "of them called one" + (f" — {pace_lone_line(s)}" if s.get("lone_kinds") else ""))
     if s.get("lines"):
         rows.append(f"- size: {pace_bucket(s['lines'], conf['buckets'])} lines; {pace_time(pace_active(s) / s['lines'] * 100)} active per 100 lines")
     subs = pace_subs(s, conf["weights"])

@@ -731,7 +731,9 @@ it never changes anything.
   - **Subagents by what they were started for:** build, design review, review, fix, tests or
     other — the first such word in the description Claude Code keeps beside each subagent's log
     (`subagents/*.meta.json`). Each kind has its count, its own working time and its spend. That
-    time is beside the session's, not part of it: the session's part is the wait above.
+    time is beside the session's, not part of it: the session's part is the wait above. A gap over
+    `pace.away` in a subagent's own log is left out of its time, as in the session's — a subagent
+    resumed hours later did not work in between (CH-92).
   - **Context** is everything one request sent, cached or not. A slice keeps its peak, and the
     context of the first request after `slice-close` started — what every turn of the close then
     carries.
@@ -740,7 +742,9 @@ it never changes anything.
     spend goes to the phase the session was in when it started (CH-77).
   - **One call a request:** of the requests that called a tool, the share that called one. Each
     request reads the whole session again, so a share over `pace.flags.lone_share` (0.9, from 20
-    such requests) is flagged (CH-77).
+    such requests) is flagged (CH-77). The calls that went alone are counted by what they were — a
+    file tool by its name, a shell line by its kind (`Read`, `Bash git`) — and the flag names the
+    largest, so a fix can aim at it (CH-92).
   - **Size:** spend and active time are also shown per 100 changed lines, and each slice falls in
     a size bucket (`pace.buckets`: 300, 700, 1300, 2500 lines) so that it is set against slices
     of its own size.
@@ -1574,6 +1578,12 @@ in `spry/history/writ.md`, then retires `canon/`.
   migration, more work or an approval is now named as a cost on the option's line, never by
   itself a reason against it. Rejected: a list of costs that may never count — a dependency still
   weighs, beside what it gives.
+- 2026-11-26 — `pace` reads subagents and lone calls truer (CH-92, 0.81.0), from a project's
+  `pace` (#62). Two slices showed 57 hours of subagent work each — a review resumed days later —
+  and held 66 of the 83 hours counted against review agents: a subagent's time now leaves out
+  gaps over `pace.away`, as the session's does. The one-call flag was on 78% of slices with
+  nothing to aim at; it now names the kinds of call that went alone. Rejected: folding spry's own
+  command sequences into one command before the split shows which ones go alone.
 
 ## 24. Worktrees and progress
 

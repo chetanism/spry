@@ -217,7 +217,8 @@ tests to change.</p>
   <li><strong>Subagents' share</strong> of that spend, kept apart from the main session.</li>
   <li><strong>Spend by phase</strong> — open, build, close, review, fixes, merge, a subagent counted in the
   phase it started in — so a change aimed at one phase shows there.</li>
-  <li><strong>Requests that called one tool</strong>, as a share of those that called any. Every request
+  <li><strong>Requests that called one tool</strong>, as a share of those that called any, and what those
+  lone calls were — <code>Read 41%, Bash git 22%</code> — so the largest is the one to batch. Every request
   reads the whole session again, so one call where three would fit costs two readings of it.</li>
   <li><strong>Peak context</strong>, and the <strong>context entering close</strong> — what every turn of the
   close then carries.</li>
@@ -236,7 +237,9 @@ tests to change.</p>
 <ul>
   <li><strong>Subagents</strong>, by what each was started for — build, design review, review, fix, tests
   or other, read from the few words the session gave it. Each kind has its count, its own working time
-  and its spend. That time runs beside the session's; the session's share is the wait above.</li>
+  and its spend. That time runs beside the session's; the session's share is the wait above. A
+  subagent resumed hours later is not counted as working in between: gaps over <code>pace.away</code>
+  are left out, as they are for the session.</li>
   <li><strong>Findings</strong>, a row per slice, from the slice file: what the
   <a href="building.html#the-design-review">design review</a> found before any code, what the review at
   close found and how much of it was fixed (the slice's <em>Review</em> section), how many questions
