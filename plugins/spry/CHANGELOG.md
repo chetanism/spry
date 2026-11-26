@@ -2015,3 +2015,25 @@ Entry format:
   A project with none set sees no change.
 - **Migrate:** `spry/process/reviewing.md` → take the end of the *A slice's reviewer starts with*
   line.
+
+## CH-94 · A step runs the tests related to its code
+
+- **Date:** 2026-11-26 · **Version:** 0.83.0
+- **Touches:** `tool/spry.py` (`step --commit`, `check`), `process/slicing.md` (*Steps*), config
+  template (`slices.steps.related`)
+- **Why:** `step --commit` runs the test files the step added or changed, never the existing tests
+  of the code it changed. Those broke silently and surfaced at the full gate or the close review:
+  in one project (#62) 43 of 53 red full gates were such tests, and two close-review Blockers were
+  a test file outside the diff still expecting the old value.
+  - `slices.steps.related` takes the runner's related-tests command with `{files}`:
+    `npx vitest related --run {files}`, `npx jest --findRelatedTests {files}`.
+  - `step --commit` runs it on the step's changed source files — test files, documents and
+    `checks.generated` left out — after the step's own tests, as the step `related tests`. A red
+    one refuses the commit, as a red fast check does.
+  - Its time is logged apart, so `pace` can set what it costs against the full gates it saves.
+  - `check` refuses a `related` without `{files}`.
+- **Adapt:** set `slices.steps.related` for your runner; pytest needs a plugin that selects by
+  changed module. When a widely imported module selects most of the suite, cap it with the
+  runner's own options. Empty (the default) changes nothing.
+- **Migrate:** `spry/spry.config.json` → add `"related": ""` under `slices.steps`, or the command;
+  `spry/process/slicing.md` → take the new *Steps* line.

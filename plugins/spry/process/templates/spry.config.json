@@ -1,6 +1,6 @@
 {
-  "spry": "0.82.0",
-  "spry_baseline": "CH-93",
+  "spry": "0.83.0",
+  "spry_baseline": "CH-94",
   "product": "<product name>",
   "levels": ["milestone", "epic", "feature", "story"],
   "ids": {
@@ -94,7 +94,7 @@
     "design_review": false,
     "fresh_context": 150000,
     "light": {"max_lines": 300, "never": ["**/migrations/**", "**/*.sql"]},
-    "steps": {"max": 5, "max_lines": 800, "step_lines": 0, "tests": false, "tests_skip": []}
+    "steps": {"max": 5, "max_lines": 800, "step_lines": 0, "tests": false, "tests_skip": [], "related": ""}
   },
   "worktrees": {
     "dir": ".claude/worktrees",

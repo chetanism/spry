@@ -173,8 +173,8 @@ Run on whichever model the person chose; the work order holds what this session 
    step only, as *While building* says, then `spry.py step SL-<n> --commit`:
    - it runs every `fix` in `checks.fast` (the formatter) on the step's files and says which
      changed — never format by hand — then `gate --fast`, and with `slices.steps.tests` on, the
-     test files the step added or changed (not those in `slices.steps.tests_skip`). Red → fix it
-     in this step and run it again;
+     test files the step added or changed (not those in `slices.steps.tests_skip`), and with
+     `slices.steps.related` set, the existing tests of the code it changed. Red → fix it in this step;
    - then one commit, `SL-<n> step <k>: <title>`, with the trailer `Step: SL-<n>/<k>`. **Never
      `git commit` code by hand** — the `step_commit` hook refuses it. Documents (the work order,
      the close summary) are committed as usual;

@@ -4667,6 +4667,40 @@ class Steps(Base):
         self.assertEqual(code, 2, out)
         self.assertIn("`slices.steps.tests` is on, but spry.config.json has no falsify.runners", out)
 
+    def test_a_step_runs_the_tests_related_to_its_code(self):
+        """CH-94: `slices.steps.related` runs the project's related-test command on the step's changed
+        source files — not its test files, documents or generated files — and a red one refuses the commit."""
+        self.on_branch()
+        self.write(".spry/related.py", "import sys\nopen('.spry/asked', 'w').write(' '.join(sys.argv[1:]))\n"
+                                       "sys.exit(1 if any('broken' in open(f).read() for f in sys.argv[1:]) else 0)\n")
+        self.write("spry/spry.config.json", json.dumps({**CONFIG, "checks": {"generated": ["gen/**"]},
+                                                        "slices": {"steps": {"related": "python3 .spry/related.py {files}"}}}))
+        self.run_git("commit", "-qam", "docs: related tests")
+        self.assertEqual(self.t.problems(), [])
+        self.assertIn("the tests related to its code", self.say(False, False, False)[1])
+        self.write("src/lend.ts", "export const limit = 4 // broken\n")
+        self.write("src/lend.test.ts", 'test("S-1/AC-1 refuses a fifth", () => {})\n')
+        self.write("gen/client.ts", "export const made = 1\n")
+        self.write("notes.md", "# notes\n")
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 1, out)
+        self.assertEqual(self.read(".spry/asked"), "src/lend.ts", "source files only")
+        self.assertIn("– the tests related to 1 source file (`slices.steps.related`)", out)
+        self.assertIn("✗ related tests", out)
+        self.assertIn("step 1 not committed: tests related to its code are red", out)
+        self.write("src/lend.ts", "export const limit = 4\n")
+        code, out = self.say(True, False, False)
+        self.assertEqual(code, 0, out)
+        self.assertIn("✓ related tests", out)
+        steps = [row for row in spry.pace_steps(self.t.project()) if row.get("command") == "gate"][-1]["steps"]
+        self.assertIn("related tests", [name for name, *_ in steps], "timed apart in the step log")
+        self.write("src/page.test.ts", 'test("S-1/AC-2 shows it", () => {})\n')
+        code, out = self.say(True, False, False)
+        self.assertNotIn("related tests", out, "a step of test files alone has no source to relate")
+        bad = {**CONFIG, "slices": {"steps": {"related": "npx vitest related --run"}}}
+        self.write("spry/spry.config.json", json.dumps(bad))
+        self.assertProblem(self.t.problems(), "`slices.steps.related` is a command with `{files}`")
+
     def fast_checks(self, fix="python3 .spry/fmt.py {files}"):
         """A formatter that minds `UGLY` and can take it out, and a linter that minds `LINT` and cannot."""
         self.write(".spry/fmt.py", "import sys\nfor f in sys.argv[1:]:\n    text = open(f).read()\n"
