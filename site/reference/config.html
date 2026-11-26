@@ -108,7 +108,7 @@ interview; a value still in <code>&lt;…&gt;</code> means that topic has no ans
   },
   "memory": { "index_lines": 60, "index_bytes": 8000, "line_chars": 200, "stale_days": 30 },
   "planning": { "review": "always" },
-  "slices": { "pick": "offer", "design_review": false, "fresh_context": 150000, "light": { "max_lines": 300, "never": ["**/migrations/**", "**/*.sql"] }, "steps": { "max": 5, "max_lines": 800, "step_lines": 0, "tests": false, "tests_skip": [] } },
+  "slices": { "pick": "offer", "design_review": false, "fresh_context": 150000, "light": { "max_lines": 300, "never": ["**/migrations/**", "**/*.sql"] }, "steps": { "max": 5, "max_lines": 800, "step_lines": 0, "tests": false, "tests_skip": [], "related": "" } },
   "worktrees": { "dir": ".claude/worktrees", "home_branch": "alt{index}", "max": 4, "setup": "", "share": [], "stale_after": 12 },
   "progress": { "transcripts": false, "quiet": 15, "keep": 400 },
   "run": { "command": ["claude"], "args": [], "models": {}, "review": "ask", "timeout": 90, "max_sessions": 12 },
@@ -333,6 +333,7 @@ else changes; the progress log and <code>spry.py watch</code> work either way. S
     <tr><td><code>slices.steps.step_lines</code></td><td>Lines of code (counted as for <code>max_lines</code>) one step's commit should change — the size one reviewer reads. Over it, <code>spry.py step --commit</code> warns right after the commit, while the step can still be split, and <code>merge-check</code> lists it for you to accept at the merge. <code>0</code> turns it off.</td><td><code>0</code></td></tr>
     <tr><td><code>slices.steps.tests</code></td><td>When <code>true</code>, <code>spry.py step --commit</code> runs the test files the step added or changed, after the fast checks, through <code>falsify.runners</code>. A failing one stops the commit and is named, so it is fixed in the step that wrote it and not at close. The affected tests still run once, at close.</td><td><code>false</code></td></tr>
     <tr><td><code>slices.steps.tests_skip</code></td><td>Globs for test files a step's commit does not run — the ones that need the local services up. The gate runs them at close.</td><td><code>[]</code></td></tr>
+    <tr><td><code>slices.steps.related</code></td><td>Your runner's related-tests command, with <code>{files}</code> where the step's changed source files go — <code>npx vitest related --run {files}</code>, <code>npx jest --findRelatedTests {files}</code>. A step's commit runs it after its own tests, so an existing test that still expects the old behaviour goes red at the step instead of at the full gate. Test files, documents and <code>checks.generated</code> are not passed. Empty: off.</td><td><code>""</code></td></tr>
     <tr><td><code>main_branch</code></td><td>The repository's default branch — read from the repository at setup, never assumed.</td><td><code>main</code></td></tr>
     <tr><td><code>mint</code></td><td>Where IDs are taken and slices claimed. <code>local</code>: the next number in this tree; two branches can collide, and <code>check --base</code> names it before the merge. <code>main</code>: taken on the main branch on the remote, pushed at once — two sessions never take one number or one slice. Needs a main branch that accepts a direct commit of documents.</td><td><code>local</code></td></tr>
   </tbody>

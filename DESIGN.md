@@ -491,6 +491,13 @@ it grows with the guards a diff adds, not with the number of slices.
   `slices.steps.tests_skip`, where a project lists the tests that need the stack. A file no
   runner takes is left to the gate and named; no runners at all refuses the commit. Off by
   default, so the next bullet holds unless a project chooses otherwise.
+- **The tests related to a step's code, by a command** (CH-94). The step's own tests miss the
+  existing ones of the code it changed: in one project 43 of 53 red full gates were such tests.
+  `slices.steps.related` is the runner's related-tests command with `{files}` (`vitest related
+  --run`, `jest --findRelatedTests`). `step --commit` runs it on the step's changed source files —
+  not test files, documents or `checks.generated` — as the step `related tests`, after the step's
+  tests, timed apart so `pace` can weigh it. A red one refuses the commit. Empty by default: the
+  runner decides what is related, and a widely imported module can select most of the suite.
 - **Tests once per story.** Each step runs `gate --fast` (lint, types, no tests). The affected
   tests run while building only when their answer is needed, as today. The full gate and falsify
   run once, at close, on the whole slice. Pushes happen only at close — for the review, and at its
@@ -1591,6 +1598,12 @@ in `spry/history/writ.md`, then retires `canon/`.
   and keep every file in the `--stat`. A generated file's own `--check` proves it matches its
   source; a reviewer can still read one. Rejected: leaving lock files in — they are in
   `checks.generated` only when a project put them there.
+- 2026-11-26 — a step runs the tests related to its code (CH-94, 0.83.0, §15), from a project's
+  `pace` (#62). `step --commit` ran only the test files the step touched; 43 of 53 red full gates
+  were existing tests of changed code, and two close-review Blockers were a test outside the diff
+  still expecting the old value. `slices.steps.related` names the runner's related-tests command;
+  the step runs it on its source files. Rejected: spry finding related tests itself — only the
+  runner knows the import graph; a cap on files — the runner's own options set one.
 
 ## 24. Worktrees and progress
 

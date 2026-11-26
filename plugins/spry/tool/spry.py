@@ -94,7 +94,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.82.0"
+VERSION = "0.83.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -1008,6 +1008,11 @@ def check(project: Project):
                         "`slices.mode` is gone (CH-88): every slice is built in steps — remove the key"
                         + ("; to keep one change a slice, as `split` did, set `slices.steps.max` to 1 "
                            "(until then the tool reads it as 1)" if mode != "steps" and steps_max is None else ""), "warning")
+    related = ((project.config.get("slices") or {}).get("steps") or {}).get("related")
+    if related and not (isinstance(related, str) and "{files}" in related):
+        project.problem(os.path.join(project.spry, "spry.config.json"), 1,
+                        "`slices.steps.related` is a command with `{files}` where the step's changed source files go, "
+                        "e.g. `npx vitest related --run {files}`", "error")
     conf = (project.config.get("team") or {}).get("approval")
     if conf is not None and (not isinstance(conf, dict) or conf.get("missing", "block") not in ("block", "warn")
                              or not isinstance(conf.get("exempt", []), list)):
@@ -6838,6 +6843,27 @@ def step_tests(project: Project, paths: list) -> tuple:
     return files, [p for p in wanted if p not in files]
 
 
+def step_related_on(project: Project) -> bool:
+    given = ((project.config.get("slices") or {}).get("steps") or {}).get("related")
+    return isinstance(given, str) and "{files}" in given and not PLACEHOLDER.search(given)
+
+
+def step_related(project: Project, paths: list) -> tuple:
+    """(command, [source files]) — `slices.steps.related` run on the step's changed source files: what
+    the project's runner finds of the existing tests that import them (`vitest related`, `jest
+    --findRelatedTests`). A test elsewhere that still asserts the old value goes red here, at the
+    step, not at the full gate. (None, []) when it is not set, or the step changed no source file."""
+    if not step_related_on(project):
+        return None, []
+    given = project.config["slices"]["steps"]["related"]
+    tests, generated = project._test_globs(), generated_globs(project)
+    files = [p for p in paths if not any(g.match(p) for g in tests) and not any(g.match(p) for g in generated)
+             and not documents_only(project, [p]) and os.path.isfile(native(os.path.join(project.root, p)))]
+    if not files:
+        return None, []
+    return given.replace("{files}", " ".join(shell_quote(f) for f in files)), files
+
+
 def fast_fixes(project: Project) -> dict:
     """{check name: command} — the `checks.fast` entries that carry a `fix`: the same tool in write
     mode, as a formatter has. A `fix` still in `<…>` is not set."""
@@ -7300,7 +7326,8 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
         for line in step["plan"]:
             say(line)
         say(f"Build it, then `spry.py step {item.id} --commit`: the fast checks"
-            + (", the test files the step touched," if step_tests_on(project) else "") + " then the step's commit.")
+            + (", the test files the step touched," if step_tests_on(project) else "")
+            + (" the tests related to its code," if step_related_on(project) else "") + " then the step's commit.")
         return 0
     paths = step_paths(project)
     if not paths:
@@ -7314,21 +7341,32 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
     except PlanError as e:
         say(f"step {k} not committed: `slices.steps.tests` is on, but {e}")
         return 2
+    try:
+        related, sources = step_related(project, paths)
+    except PlanError as e:
+        say(f"step {k} not committed: `slices.steps.related` is set, but {e}")
+        return 2
     if files:
         say(f"– the step's tests: {', '.join(files)}")
     if left:
         say(f"– left to the gate, no falsify runner takes them: {', '.join(left)}")
+    if related:
+        say(f"– the tests related to {len(sources)} source file{'s' if len(sources) != 1 else ''} (`slices.steps.related`)")
     step_fix_first(project, paths, say)
     said = []
-    code = gate(project, fast=True, say=lambda line: (said.append(line), say(line))[1], step_tests=files)
+    code = gate(project, fast=True, say=lambda line: (said.append(line), say(line))[1], step_tests=files, related=related)
     if code and step_fix(project, paths, said, say):
         # Only what a `fix` can mend was red, and it changed files: the checks answer for the result.
         said.clear()
-        code = gate(project, fast=True, say=lambda line: (said.append(line), say(line))[1], step_tests=files)
+        code = gate(project, fast=True, say=lambda line: (said.append(line), say(line))[1], step_tests=files, related=related)
     if code:
         if any(line.startswith("✗ " + STEP_TESTS) for line in said):
             named = (gate_failure(project) or {}).get("files") or files
             say(f"step {k} not committed: its tests are red — {', '.join(named)}")
+        elif any(line.startswith("✗ " + STEP_RELATED) for line in said):
+            named = (gate_failure(project) or {}).get("files") or []
+            say(f"step {k} not committed: tests related to its code are red"
+                + (f" — {', '.join(named)}" if named else f" — {GATE_LOG}"))
         else:
             say(f"step {k} not committed: the fast checks are red")
         red = [line[2:].split(" · ")[0] for line in said if line.startswith("✗ ")]
@@ -7398,13 +7436,14 @@ def named_commands(entries, key: str, prefix: str = "") -> list:
 
 
 STEP_TESTS = "step tests"
+STEP_RELATED = "related tests"
 
 
 def step_estimates(project: Project, names: list) -> dict:
     """{step name: seconds} — the median of the last five green runs of each of `names` in the step
     log (§17). Steps that run given files (the changed tests, a step's tests) vary with the files, so
     they get none; nor does a step never timed green."""
-    wanted = {n for n in names if not n.startswith(("changed tests", STEP_TESTS))}
+    wanted = {n for n in names if not n.startswith(("changed tests", STEP_TESTS, STEP_RELATED))}
     times = {}
     for row in reversed(pace_steps(project)):
         if row.get("command") != "gate" or not isinstance(row.get("steps"), list):
@@ -7428,10 +7467,11 @@ def duration(seconds: float) -> str:
 
 
 def gate_steps(project: Project, fast: bool = False, changed_tests: list | None = None,
-               label: str = "changed tests") -> list:
+               label: str = "changed tests", related: str | None = None) -> list:
     """[(name, command, cwd)] — fast checks cheapest first, then, unless `fast`, the affected tests —
     or, given `changed_tests`, those files through their falsify runners — then `tests.always`.
-    `fast` with `changed_tests` is a step's commit (§15): the fast checks, then the step's own tests."""
+    `fast` with `changed_tests` is a step's commit (§15): the fast checks, then the step's own tests,
+    then, given `related`, the tests the project's runner relates to the step's source files."""
     tests = project.config.get("tests", {})
     steps = named_commands(project.config.get("checks", {}).get("fast"), "checks.fast")
     if not fast and changed_tests is None:
@@ -7448,6 +7488,8 @@ def gate_steps(project: Project, fast: bool = False, changed_tests: list | None 
         steps[at:at] = [(f"{label}{'' if cwd == project.root else ' in ' + os.path.relpath(cwd, project.root).replace(os.sep, '/')}",
                          runner_command(project, table[index], cwd, files), cwd)
                         for (index, cwd), files in group_files(project, changed_tests).items()]
+    if related:
+        steps.append((STEP_RELATED, related, project.root))
     return steps
 
 
@@ -7572,7 +7614,7 @@ def gate_keep_going(project: Project) -> str:
 
 
 def gate(project: Project, force: bool = False, say=print, fast: bool = False, full: bool = False,
-         failed: bool = False, step_tests: list | None = None) -> int:
+         failed: bool = False, step_tests: list | None = None, related: str | None = None) -> int:
     """The gate, timed into the step log (§17)."""
     started, seen = time.time(), {"steps": []}
     if failed:
@@ -7581,7 +7623,7 @@ def gate(project: Project, force: bool = False, say=print, fast: bool = False, f
                  failed=True, **seen)
         progress_event(project, "gate", gate_said(code, seen, True, True))
         return code
-    code = run_gate(project, force, say, fast, full, seen, step_tests)
+    code = run_gate(project, force, say, fast, full, seen, step_tests, related)
     # A wait for the lock is another run's time: `waited` records it, `seconds` leaves it out.
     pace_log(project, "gate", time.time() - started - seen.get("waited", 0), ok=code == 0, fast=fast, full=full,
              force=force, **seen)
@@ -7668,7 +7710,7 @@ def rerun_failed(project: Project, say, seen: dict) -> int:
 
 
 def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: dict,
-             step_tests: list | None = None) -> int:
+             step_tests: list | None = None, related: str | None = None) -> int:
     """`spry check`, then the fast checks, then the affected tests, then `tests.always`. A failed fast
     check does not stop the other fast checks (`gate.keep_going`), and the tests do not run after one;
     a failed test step stops the gate. A red gate leaves its output in `.spry/gate/last.log` and does
@@ -7685,7 +7727,7 @@ def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: d
         for p in errors[:10]:
             say(f"  {p}")
         return 1
-    steps = gate_steps(project, fast, changed_tests=step_tests or None, label=STEP_TESTS)
+    steps = gate_steps(project, fast, changed_tests=step_tests or None, label=STEP_TESTS, related=related if fast else None)
     stamp_path = os.path.join(project.root, ".spry", "green")
     fingerprint = code_fingerprint(project)
     try:
@@ -7778,7 +7820,7 @@ def run_gate(project: Project, force: bool, say, fast: bool, full: bool, seen: d
     if fast:
         clear_gate_failure(project, names)
         say("fast checks and the step's tests green — the affected tests not run; `spry.py gate` runs them"
-            if step_tests else "fast checks green — tests not run; `spry.py gate` runs them")
+            if step_tests or related else "fast checks green — tests not run; `spry.py gate` runs them")
         return 0
     clear_gate_failure(project)
     if fingerprint:

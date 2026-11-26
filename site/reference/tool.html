@@ -130,7 +130,9 @@ commits already on the branch, and the commit that finishes it.</p>
   <code>SL-n step k: title</code> with the trailer <code>Step: SL-n/k</code>. It refuses when the fast checks
   are red, when nothing changed, when only documents changed, or when the steps so far are out of order.
   With <code>slices.steps.tests</code> on it also runs the test files the step added or changed, less
-  <code>slices.steps.tests_skip</code>, and refuses when one fails, naming the file.
+  <code>slices.steps.tests_skip</code>, and refuses when one fails, naming the file. With
+  <code>slices.steps.related</code> set it also runs that command on the step's changed source files — the
+  existing tests that import them — as the step <code>related tests</code>, timed apart in the step log.
   Before the checks it runs every <code>fix</code> in <code>checks.fast</code> — the formatter's write mode — on
   the step's files and names the files it changed, so formatting never turns a check red and the checks
   run once. A lint or type failure still refuses the commit; the files are already formatted.</li>
