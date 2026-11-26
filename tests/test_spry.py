@@ -4474,6 +4474,34 @@ class Steps(Base):
         self.assertRegex(out, r"step 1 · git diff \w+\^ \w+ · Refuse a fifth book · AC-1")
         self.assertIn("seams · git diff", out)
 
+    def test_a_reviewer_diff_leaves_generated_files_out(self):
+        """CH-93: `brief --diff` and `step --ranges` leave `checks.generated` out, and say what they left."""
+        path = os.path.join(self.t.root, "spry/spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config.setdefault("checks", {})["generated"] = ["gen/**"]
+        with open(path, "w") as handle:
+            json.dump(config, handle)
+        self.on_branch()
+        self.run_git("update-ref", "refs/remotes/origin/main", "main")
+        self.write("src/lend.ts", "export const limit = 4\n")
+        self.write("gen/client.ts", "export const made = 1\nexport const more = 2\n")
+        self.assertEqual(self.say(True, False, False)[0], 0)
+        out = spry.brief(self.t.project(), "SL-1", diff=True)
+        self.assertIn("gen/client.ts", out.split("## Diff")[0], "the stat still names it")
+        diff = out.split("## Diff")[1].split("## Procedure")[0]
+        self.assertIn("+export const limit = 4", diff)
+        self.assertNotIn("export const made", diff)
+        self.assertIn("left out of the diff: 1 file, 2 lines", diff)
+        code, out = self.say(False, True, False)
+        self.assertIn("step 1 · git diff", out)
+        self.assertIn(" -- :/ ':(exclude,glob)gen/**' · Refuse a fifth book", out)
+        command = re.search(r"step 1 · (git diff .*?) · Refuse", out).group(1)
+        shown = subprocess.run(command, shell=True, cwd=self.t.root, capture_output=True, text=True).stdout
+        self.assertIn("src/lend.ts", shown)
+        self.assertNotIn("gen/client.ts", shown, "the printed command leaves it out too")
+        self.assertIn("left out of the diff: 1 file, 2 lines", out)
+
     def set_rigor(self, level, **light):
         path = os.path.join(self.t.root, "spry/spry.config.json")
         with open(path) as handle:

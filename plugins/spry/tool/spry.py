@@ -94,7 +94,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.81.0"
+VERSION = "0.82.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -2806,8 +2806,9 @@ def brief(project: Project, slice_id: str, diff: bool = False, skill: str | None
         stat = git(project.root, "diff", "--stat", f"{base}...{head}").stdout.rstrip()
         out.append(f"## Changed since {base}\n\n" + (f"```\n{stat}\n```" if stat else "nothing yet") + "\n")
         if diff and stat:
-            text = git(project.root, "diff", f"{base}...{head}").stdout.rstrip()
-            out.append(f"## Diff\n\n```diff\n{text}\n```\n")
+            text = git(project.root, "diff", f"{base}...{head}", *generated_pathspec(project)).stdout.rstrip()
+            left = generated_left_out(project, f"{base}...{head}")
+            out.append(f"## Diff\n\n```diff\n{text}\n```\n" + (f"\n{left}\n" if left else ""))
     else:
         out.append(f"## Changed\n\n{base} is not known here — `git fetch`\n")
     if diff:   # a reviewer: the checks it runs, in the call that gave it the diff
@@ -7052,13 +7053,43 @@ def step_state(project: Project, item: Item, base: str, head: str = "HEAD") -> d
             "next": len(numbers) + 1 if numbers == list(range(1, len(numbers) + 1)) else None}
 
 
-def generated_globs(project: Project) -> list:
+def generated_list(project: Project) -> list:
     """`checks.generated`: files a command writes — a client, a schema dump, a lock file. Their lines
-    are counted apart, so a size reads as what a person wrote."""
+    are counted apart, so a size reads as what a person wrote, and a reviewer's diff leaves them out."""
     given = (project.config.get("checks") or {}).get("generated") or []
     if not isinstance(given, list) or not all(isinstance(g, str) for g in given):
         raise SystemExit("spry.config.json: checks.generated is a list of globs")
-    return [glob_regex(g) for g in given]
+    return given
+
+
+def generated_globs(project: Project) -> list:
+    return [glob_regex(g) for g in generated_list(project)]
+
+
+def generated_pathspec(project: Project) -> list:
+    """The pathspec that leaves `checks.generated` out of a `git diff` — a reviewer reads what a person
+    wrote; a generated file's own `--check` proves it matches its source. Empty with none set. Git's
+    `glob` magic reads `*`, `**/` and `?` as spry does."""
+    given = generated_list(project)
+    return ["--", ":/", *(f":(exclude,glob){g}" for g in given)] if given else []
+
+
+def generated_left_out(project: Project, span: str) -> str | None:
+    """The line under a reviewer's diff that names what it left out, or None when nothing was."""
+    if not generated_list(project):
+        return None
+    done = git(project.root, "diff", "--numstat", "--no-renames", "--relative", span)
+    generated = generated_globs(project)
+    files = lines = 0
+    for row in (done.stdout if done.returncode == 0 else "").split("\n"):
+        parts = row.split("\t")
+        if len(parts) == 3 and any(g.match(parts[2]) for g in generated):
+            files += 1
+            lines += int(parts[0]) + int(parts[1]) if parts[0].isdigit() and parts[1].isdigit() else 0
+    if not files:
+        return None
+    return (f"generated (`checks.generated`), left out of the diff: {files} file{'s' if files != 1 else ''}, "
+            f"{lines} lines — `git diff {span} -- <path>` reads one")
 
 
 def numstat_lines(text: str, generated: list, skip=None) -> tuple:
@@ -7211,21 +7242,30 @@ def step_command(project: Project, slice_id: str, base: str | None, commit: bool
     if ranges:
         fork = git(project.root, "merge-base", base, head).stdout.strip() or base
         tip = git(project.root, "rev-parse", "--short=12", head).stdout.strip() or head
+        # Each range leaves `checks.generated` out, as `brief --diff` does; the last line says what.
+        spec = "".join(" " + shlex.quote(a) if a != "--" else " --" for a in generated_pathspec(project))
+        left = generated_left_out(project, f"{fork[:12]}..{tip}")
         if total == 1 and state["done"]:
-            say(f"one step · one reviewer reads the whole diff · git diff {fork[:12]} {tip} · {state['steps'][0]['title']}")
+            say(f"one step · one reviewer reads the whole diff · git diff {fork[:12]} {tip}{spec} · {state['steps'][0]['title']}")
+            if left:
+                say(left)
             return 0
         lit = light(project, item, base, head)
         if lit is not None and lit[0]:
-            say(f"light · one reviewer reads the whole diff · git diff {fork[:12]} {tip} · {lit[1]}")
+            say(f"light · one reviewer reads the whole diff · git diff {fork[:12]} {tip}{spec} · {lit[1]}")
+            if left:
+                say(left)
             return 0
         if lit is not None:
             say(f"not light: {lit[1]} — a reviewer for each step and one for the seams; no design review was done, "
                 "so the seams reviewer also runs the checks of slicing.md *Plan* step 4")
         for n, sha, title, covers in step_ranges(project, item, base, head):
-            say(f"step {n} · git diff {sha[:12]}^ {sha[:12]} · {title} · " + (", ".join(covers) or "—"))
+            say(f"step {n} · git diff {sha[:12]}^ {sha[:12]}{spec} · {title} · " + (", ".join(covers) or "—"))
         if not state["done"]:
             say(f"no step committed yet on {head}")
-        say(f"seams · git diff {fork[:12]} {tip}")
+        say(f"seams · git diff {fork[:12]} {tip}{spec}")
+        if left:
+            say(left)
         return 0
     if squash:
         if not state["fixups"]:
