@@ -4048,9 +4048,33 @@ class Pace(Base):
         p = t.project()
         s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
         self.assertEqual((s["tool_requests"], s["lone"]), (25, 25))
-        self.assertTrue(any(f.startswith("100% of 25 requests that called a tool called one") for f in spry.pace_flags(p, s)))
+        self.assertTrue(any(f.startswith("100% of 25 requests that called a tool called one — alone: Bash tool 100% —")
+                            for f in spry.pace_flags(p, s)), "CH-92: the flag names what went alone")
         s["lone"] = 20
         self.assertFalse(any("called one" in f for f in spry.pace_flags(p, s)), "80% is under lone_share")
+
+    def test_lone_calls_are_split_by_kind(self):
+        """CH-92: a file tool by its name, a shell line by its kind — the largest is the one to batch."""
+        t = self.tree()
+        records = [said(0, "go")]
+        calls = [("Read", {"file_path": "a"})] * 3 + [("Bash", {"command": "git status"})] * 2 + [("Grep", {"pattern": "x"})]
+        for n, (name, given) in enumerate(calls):
+            records += [used(tool(10 + 2 * n, f"c{n}", name=name, **given), f"r{n}", input_tokens=10), result(11 + 2 * n, f"c{n}")]
+        self.log(t, "a", records + [reply(80)])
+        p = t.project()
+        s = spry.pace_slices(p, spry.pace_logs(p))["SL-1"]
+        self.assertEqual(s["lone_kinds"], {"Read": 3, "Bash git": 2, "Grep": 1})
+        self.assertEqual(spry.pace_lone_line(s), "alone: Read 50%, Bash git 33%, Grep 17%")
+
+    def test_a_subagent_away_is_not_its_own_work(self):
+        """CH-92: a subagent resumed hours later did not work in between — the session's `away` rule holds."""
+        t = self.tree()
+        path = self.log(t, "a", [said(0, "go")] + self.launched(10, "a", "r1", "Review SL-1") + [reply(20), reply(30_000)])
+        self.subagent(path, "r1", "Review SL-1", 11, 611)
+        with open(os.path.join(path[:-6], "subagents", "agent-r1.jsonl"), "a") as handle:
+            handle.write(json.dumps(reply(20_000)) + "\n" + json.dumps(reply(20_300)) + "\n")
+        agents = spry.pace_read_log(path, 1800, [])["agents"]
+        self.assertEqual(agents[0][1], 600 + 300, "the five-hour gap is left out")
 
     def test_a_slice_shows_its_design_review(self):
         text = slice_("SL-1") + "\n### Design review\n\n- 1 Blocker, 4 Should — 1 asked\n"
@@ -4079,8 +4103,10 @@ class Pace(Base):
         folder = os.path.join(path[:-6], "subagents")
         os.makedirs(folder, exist_ok=True)
         with open(os.path.join(folder, f"agent-{agent}.jsonl"), "w") as handle:
-            handle.write("".join(json.dumps(r) + "\n" for r in [
-                said(first, "your task", origin=None), used(reply(last), f"u-{agent}", **usage)]))
+            # A record at least every ten minutes, as a working agent writes: a longer gap is time away.
+            handle.write("".join(json.dumps(r) + "\n" for r in [said(first, "your task", origin=None)]
+                                 + [reply(at) for at in range(first + 600, last, 600)]
+                                 + [used(reply(last), f"u-{agent}", **usage)]))
         if description:
             with open(os.path.join(folder, f"agent-{agent}.meta.json"), "w") as handle:
                 json.dump({"agentType": "general-purpose", "description": description}, handle)
@@ -4115,6 +4141,7 @@ class Pace(Base):
         lines = "\n".join(spry.pace_slice_lines(s, [], spry.pace_config(p)))
         self.assertIn("- subagents: 4, 1h25 of their own work — review 2 (1h24, 2k), fix 1 (1m13, 4k), other 1 (0m10, 10)", lines)
         self.assertIn("| subagents waited on | 43m53 |", lines)
+        self.assertIn("- requests that called a tool: 3, 100% of them called one — alone: Agent 100%", lines)
         page = spry.pace_page(p, {"SL-1": s})
         self.assertIn("| review | 2 | 1 | 1h24 | 42m08 | 2k |", page)
         self.assertIn("| **subagents** | 43m53 |", page)

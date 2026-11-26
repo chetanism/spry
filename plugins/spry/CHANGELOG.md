@@ -1977,3 +1977,21 @@ Entry format:
   the sentence in its own words.
 - **Migrate:** `AGENTS.md` → add the second sentence to the `(recommended)` line under *Replies*;
   `spry/process/chat.md` → take the new *Asks* bullet.
+
+## CH-92 · `pace` reads subagents and lone calls truer
+
+- **Date:** 2026-11-26 · **Version:** 0.81.0
+- **Touches:** `tool/spry.py` (`pace`)
+- **Why:** a project's `pace` over 194 slices (#62) showed two slices with 57 hours of subagent
+  work each, one of them 56h55 of review; together they held 66 of the 83 hours the page counted
+  against review agents. A subagent's own time ran from its first record to its last, so one
+  resumed days later counted the days. And the "one tool call a request" flag was on 78% of
+  slices without saying which calls went alone, so there was nothing to aim a fix at.
+  - A subagent's own time leaves out each gap over `pace.away` in its log, as the session's
+    time always has.
+  - The calls that went alone are counted by what they were — a file tool by its name, a shell
+    line by its kind (`Read`, `Bash git`, `Bash spry`) — on the flag and on each slice's tokens
+    line: `alone: Read 41%, Bash git 22%, Grep 12%, Edit 9%, …`.
+- **Adapt:** nothing.
+- **Migrate:** nothing. The log cache is read again once (its version changed), so subagent hours
+  on the page drop for slices whose subagents were resumed after a pause.
