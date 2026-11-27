@@ -278,7 +278,8 @@ that merges.
      control per source line the branch added that refuses, stops or decides, each with the
      mutation that removes it and `expect` from `covers` (a bug's or a task's slice: its ID).
      No source line added → it says so, and there is nothing to falsify.
-   - **Keep every control the draft lists.** Narrow each `expect` to the criteria that control
+   - **Keep every control the draft lists** (it leaves out `falsify.exclude` and lines marked
+     `// invariant`, which no test can reach). Narrow each `expect` to the criteria that control
      serves, and add any the draft missed (same `find` / `with` form). A guard covered by a test
      no ID names takes that test file's path as its `expect`. A control that cannot run (a clock,
      a network) gets the row `skipped — <reason>`, for a person to accept at the merge.

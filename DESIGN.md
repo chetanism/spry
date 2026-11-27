@@ -577,6 +577,11 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
 - **A guard the branch only moved is not drafted:** an added line whose text the same diff removed
   elsewhere, spaces aside, once per removed copy. Its tests cite another slice's criteria, so it
   could only read `survived`. `suggest` says how many it left out.
+- **Lines a project says are not safeguards are not drafted** (CH-96): files matching
+  `falsify.exclude` (fixtures, seeds, demo data — code the product never ships), and a guard
+  carrying a `// invariant` or `# invariant` comment, one its author says no test can reach. Both
+  are opt-in and seen in the diff; `suggest` counts what each left out. In one slice 53 of 171
+  drafted controls were such lines, and most of its 54 survivors.
 - **Never a mutation that cannot parse.** A line is deleted only when it is a statement by itself:
   its brackets closed, nothing carried over from the line before or on to the line after, not the
   one statement of an `if` without braces. The only statement under a Python `if x:` becomes
@@ -1612,6 +1617,13 @@ in `spry/history/writ.md`, then retires `canon/`.
   started is let through: it has no person to come back to. Rejected: a stamp that lets a gate
   skip the tests after a non-test red (#63, 2) — the fix to the red step changes code the tests
   cover nearly every time, so the stamp would almost never hold; and spry cannot know coverage.
+- 2026-11-27 — a project names the lines falsify leaves out (CH-96, 0.85.0, §16), from #65:
+  53 of a slice's 171 drafted controls were test helpers, demo data, invariant throws and UI null
+  guards, and most of its 54 survivors. `falsify.exclude` and an `invariant` comment leave them
+  out of the draft, so `merge-check` asks no row. Rejected: a UI null-guard pattern (#65, 3) —
+  `if (x === undefined) return;` is often a real guard a render test reaches, and a pattern would
+  hide it; narrowing `files` by the import graph (#65, 5) — one standard-library file cannot walk
+  every language's modules, and `falsify.parallel` already answers a slow run.
 
 ## 24. Worktrees and progress
 

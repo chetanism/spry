@@ -2171,6 +2171,32 @@ class Falsify(unittest.TestCase):
         self.assertEqual(plan[1]["with"], "        pass", "deleting an `if`'s only statement would not parse")
         self.assertTrue(any(n.startswith("2 guards the branch only moved") for n in notes), notes)
 
+    def test_suggest_leaves_out_excluded_files_and_marked_invariants(self):
+        """CH-96: `falsify.exclude` and an `invariant` comment leave lines out of the draft and of merge-check."""
+        path = os.path.join(self.root, "spry", "spry.config.json")
+        with open(path) as handle:
+            config = json.load(handle)
+        config["falsify"]["exclude"] = ["src/testing/**"]
+        self.git("checkout", "-q", "-b", "trivial")
+        self.write({"spry/spry.config.json": json.dumps(config),
+                    "src/testing/build.py": "def member(n):\n    if n < 0:\n        raise ValueError(n)\n    return n\n",
+                    "src/loans.py": LOANS_AFTER.replace('    return "ok"\n',
+                                                        '    if count < 0:  # invariant: counted rows never go below zero\n'
+                                                        '        raise AssertionError(count)\n    return "ok"\n')})
+        self.commit("a fixture builder and an invariant")
+        notes = []
+        project = spry.Project(self.root)
+        plan = spry.falsify_suggest(project, "SL-1", "sl-1", notes=notes)
+        self.assertEqual([e["find"] for e in plan], ["        raise AssertionError(count)"],
+                         "the marked line is left out; the line under it is drafted on its own")
+        self.assertIn("1 guard marked `invariant` is left out: no test can reach it", notes)
+        self.assertIn("4 added lines in `falsify.exclude` left out — 4 by src/testing/**", notes)
+        config["falsify"]["exclude"] = "src/testing/**"
+        self.write({"spry/spry.config.json": json.dumps(config)})
+        with self.assertRaises(spry.PlanError) as caught:
+            spry.falsify_suggest(spry.Project(self.root), "SL-1", "sl-1")
+        self.assertIn("falsify.exclude must be a list", str(caught.exception))
+
     def test_suggest_drafts_no_line_that_only_builds_a_value(self):
         js = ("export function lend(input, member) {\n"
               "  const name = input.name || 'none';\n"
