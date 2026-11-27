@@ -2055,3 +2055,21 @@ Entry format:
   `hooks.long_checks: false`.
 - **Migrate:** `spry/spry.config.json` → add `"long_checks": true` under `hooks`;
   `spry/process/setup.md` → take the new name in step 5's list.
+
+## CH-96 · A project names the lines falsify leaves out
+
+- **Date:** 2026-11-27 · **Version:** 0.85.0
+- **Touches:** `tool/spry.py` (`falsify suggest`, and `merge-check`, which follows it), config
+  template (`falsify.exclude`), `process/slicing.md` (Close step 6)
+- **Why:** in one project (#65) a slice's draft held 171 controls; about 53 proved nothing and were
+  most of its 54 survivors, each costing a run and a row: 35 lines of test helpers and demo data,
+  about 10 throws guarding what cannot happen ("the row just written is not visible").
+  - `falsify.exclude`, a list of globs: `suggest` drafts no control for a line in a matching file,
+    so `merge-check` asks no row for it, and says how many lines each glob left out.
+  - A guard carrying a `// invariant` or `# invariant` comment is not drafted either. Opt-in per
+    line, never inferred from a `throw`; review sees the marker in the diff.
+- **Adapt:** the project's own globs — fixtures, seeds, demo data, measurement scripts. A glob too
+  wide hides real safeguards. Empty (the default) changes nothing.
+- **Migrate:** `spry/spry.config.json` → add `"exclude": []` under `falsify`, or the globs;
+  `spry/process/slicing.md` → take the new Close step 6 line. A local stopgap that records such
+  lines `skipped — test helper` or `skipped — invariant` can go.

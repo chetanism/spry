@@ -54,7 +54,10 @@ for the lines that matter — the safeguards the slice added — so it takes min
     <code>throw</code> or <code>raise</code>, an error return, an <code>assert</code>, a clause of a condition
     written over several lines, a comparison in a <code>WHERE</code>. A line that only builds a value — a
     default (<code>a || b</code>), a pass-through, a JSX condition — is not one, and neither is a guard the
-    branch only moved from another file: its tests belong to another slice. Each plan entry names the line with <code>find</code> and its replacement with
+    branch only moved from another file: its tests belong to another slice. Nor is a line in a file
+    <code>falsify.exclude</code> names (fixtures, seeds, demo data the product never ships), or a guard
+    carrying a <code>// invariant</code> or <code>#&nbsp;invariant</code> comment — one its author says no test
+    can reach; <code>suggest</code> says how many each left out. Each plan entry names the line with <code>find</code> and its replacement with
     <code>with</code> — writ's form. A person can edit the plan before it runs.</p></li>
   <li><strong>Each control names what should catch it.</strong>
     <p><code>expect</code> names acceptance criteria (<code>S-1/AC-2</code>) — or, for a bug's or a task's
@@ -101,7 +104,8 @@ So:</p>
 <ul>
   <li><strong><code>merge-check</code> runs <code>suggest</code> again</strong> at merge time and blocks when a
   control it lists has no row in the table. It follows the same draft, so a line that only builds a
-  value, or that the branch only moved, needs no row.</li>
+  value, that the branch only moved, or that <code>falsify.exclude</code> or an <code>invariant</code>
+  comment leaves out, needs no row.</li>
   <li><strong>The agent can add controls, never drop one.</strong> A control that cannot run — it needs a
   real clock, a network — is recorded <code>skipped — &lt;reason&gt;</code>, for a person to accept.</li>
   <li><strong>Rows are matched by a key</strong>, a hash of the file and the line found

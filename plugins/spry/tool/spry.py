@@ -94,7 +94,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.84.0"
+VERSION = "0.85.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -4381,14 +4381,24 @@ def mutations_for(line: str, before: str | None = None, after: str = "") -> list
     return out
 
 
-def diff_source(project: Project, base: str) -> tuple:
-    """([(path, line)] added outside tests, `spry/` and `checks.docs`; Counter of the lines the
-    branch removed, spaces squeezed) — from the diff against `base`."""
+def falsify_exclude(project: Project) -> list:
+    """`falsify.exclude`: globs of files whose lines are never falsified — fixtures, seeds, demo data."""
+    given = project.config.get("falsify", {}).get("exclude") or []
+    if not isinstance(given, list) or not all(isinstance(g, str) and g for g in given):
+        raise PlanError("falsify.exclude must be a list of globs, such as [\"src/testing/**\"]")
+    return given
+
+
+def diff_source(project: Project, base: str, dropped: collections.Counter | None = None) -> tuple:
+    """([(path, line)] added outside tests, `spry/`, `checks.docs` and `falsify.exclude`; Counter of
+    the lines the branch removed, spaces squeezed) — from the diff against `base`. `dropped`
+    counts the added lines each `falsify.exclude` glob left out."""
     diff = git(project.root, "diff", "--relative", "-U0", f"{base}...HEAD", "--", ".", ":(exclude)spry")
     if diff.returncode != 0:
         raise PlanError(f"git diff against {base} failed: {diff.stderr.strip()}")
     skip = project._test_globs() + [glob_regex(g) for g in project.config.get("checks", {}).get("docs") or DEFAULT_DOCS]
-    out, removed, current, body = [], collections.Counter(), None, False
+    exclude = [(g, glob_regex(g)) for g in falsify_exclude(project)]
+    out, removed, current, body, excluded = [], collections.Counter(), None, False, None
     for line in diff.stdout.split("\n"):
         if line.startswith("diff --git "):
             body = False
@@ -4397,10 +4407,15 @@ def diff_source(project: Project, base: str) -> tuple:
         elif not body and line.startswith("+++ "):
             path = line[6:] if line.startswith("+++ b/") else None
             current = path if path and not any(g.match(path) for g in skip) else None
+            excluded = next((g for g, rx in exclude if current and rx.match(current)), None)
+            if excluded:
+                current = None
         elif body and line.startswith("-"):
             removed[" ".join(line[1:].split())] += 1
         elif body and current and line.startswith("+"):
             out.append((current, line[1:]))
+        elif body and excluded and line.startswith("+") and line[1:].strip() and dropped is not None:
+            dropped[excluded] += 1
     return out, removed
 
 
@@ -4423,6 +4438,11 @@ def control_rule(project: Project) -> str:
     return rule
 
 
+# A guard its author says no test can reach — "the row just written is not visible": `// invariant`
+# or `# invariant` on the line. Opt-in, never inferred; review sees the marker in the diff.
+INVARIANT_MARK = re.compile(r"(?:#|//|/\*)\s*invariant\b", re.I)
+
+
 def falsify_suggest(project: Project, slice_id: str, base: str, fallback: bool = True, notes: list | None = None) -> list:
     """A draft plan from the source lines this branch added: the lines that refuse, stop or decide.
     A line the branch only moved — its text was removed elsewhere in the same diff — is left out: its
@@ -4437,7 +4457,8 @@ def falsify_suggest(project: Project, slice_id: str, base: str, fallback: bool =
     if item.parent and item.parent.type in ("bug", "task"):
         expect = [item.parent.id]  # no criteria: its tests cite the bug or the task
     rule = control_rule(project)
-    added, removed = diff_source(project, base)
+    dropped: collections.Counter = collections.Counter()
+    added, removed = diff_source(project, base, dropped)
     texts: dict = {}
 
     def text_of(path):
@@ -4460,7 +4481,7 @@ def falsify_suggest(project: Project, slice_id: str, base: str, fallback: bool =
             out["files"] = naming_tests(project, path, cited)
         return out
 
-    plan, moved = [], 0
+    plan, moved, marked = [], 0, 0
     for path, source in added:
         if once(path, source) and is_control(source, text_of(path), rule):
             squeezed = " ".join(source.split())
@@ -4468,12 +4489,21 @@ def falsify_suggest(project: Project, slice_id: str, base: str, fallback: bool =
                 removed[squeezed] -= 1
                 moved += 1
                 continue
+            if INVARIANT_MARK.search(source):
+                marked += 1
+                continue
             for with_, label in mutations_for(source, *neighbours(text_of(path), source))[:1]:
                 plan.append(entry(path, source, with_, label))
     if notes is not None:
         if moved:
             notes.append(f"{moved} guard{'s' if moved != 1 else ''} the branch only moved "
                          f"{'are' if moved != 1 else 'is'} left out: the text was removed elsewhere in the same diff")
+        if marked:
+            notes.append(f"{marked} guard{'s' if marked != 1 else ''} marked `invariant` "
+                         f"{'are' if marked != 1 else 'is'} left out: no test can reach {'them' if marked != 1 else 'it'}")
+        if dropped:
+            notes.append(f"{sum(dropped.values())} added line{'s' if sum(dropped.values()) != 1 else ''} in "
+                         "`falsify.exclude` left out — " + ", ".join(f"{n} by {g}" for g, n in dropped.most_common()))
         unwritten = sum(1 for e in plan if e["mutation"] == WRITE_ONE)
         if unwritten:
             notes.append(f"{unwritten} control{'s' if unwritten != 1 else ''} with `mutation: {WRITE_ONE}`: deleting the "
@@ -11833,7 +11863,8 @@ def main(argv=None) -> int:
                     print(note)
                 if plan:
                     print("keep every control — `merge-check` blocks one with no row; narrow each `expect` to the criteria "
-                          "it serves; one that cannot run (a clock, a network) gets the row `skipped — <reason>`")
+                          "it serves; one that cannot run (a clock, a network) gets the row `skipped — <reason>`; fixtures and demo "
+                          "data go in `falsify.exclude`, a guard no test can reach takes a `// invariant` comment")
                 print(f"then: falsify run {project.rel(out)} --dry-run, and with --record {args.slice}")
                 return 0
             started = time.time()
