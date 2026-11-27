@@ -94,7 +94,7 @@ import urllib.parse
 from datetime import date
 from dataclasses import dataclass, field, replace
 
-VERSION = "0.85.0"
+VERSION = "0.86.0"
 
 DEFAULT_LEVELS = ["milestone", "epic", "feature", "story"]
 DEFAULT_IDS = {"milestone": "M", "epic": "E", "feature": "F", "story": "S",
@@ -4389,9 +4389,14 @@ def falsify_exclude(project: Project) -> list:
     return given
 
 
+def unspaced(line: str) -> str:
+    """A line with every space taken out: a formatter's change to spacing alone leaves it the same."""
+    return "".join(line.split())
+
+
 def diff_source(project: Project, base: str, dropped: collections.Counter | None = None) -> tuple:
     """([(path, line)] added outside tests, `spry/`, `checks.docs` and `falsify.exclude`; Counter of
-    the lines the branch removed, spaces squeezed) — from the diff against `base`. `dropped`
+    the lines the branch removed, every space taken out) — from the diff against `base`. `dropped`
     counts the added lines each `falsify.exclude` glob left out."""
     diff = git(project.root, "diff", "--relative", "-U0", f"{base}...HEAD", "--", ".", ":(exclude)spry")
     if diff.returncode != 0:
@@ -4411,7 +4416,7 @@ def diff_source(project: Project, base: str, dropped: collections.Counter | None
             if excluded:
                 current = None
         elif body and line.startswith("-"):
-            removed[" ".join(line[1:].split())] += 1
+            removed[unspaced(line[1:])] += 1
         elif body and current and line.startswith("+"):
             out.append((current, line[1:]))
         elif body and excluded and line.startswith("+") and line[1:].strip() and dropped is not None:
@@ -4484,7 +4489,7 @@ def falsify_suggest(project: Project, slice_id: str, base: str, fallback: bool =
     plan, moved, marked = [], 0, 0
     for path, source in added:
         if once(path, source) and is_control(source, text_of(path), rule):
-            squeezed = " ".join(source.split())
+            squeezed = unspaced(source)
             if removed[squeezed] > 0:
                 removed[squeezed] -= 1
                 moved += 1
@@ -4497,7 +4502,8 @@ def falsify_suggest(project: Project, slice_id: str, base: str, fallback: bool =
     if notes is not None:
         if moved:
             notes.append(f"{moved} guard{'s' if moved != 1 else ''} the branch only moved "
-                         f"{'are' if moved != 1 else 'is'} left out: the text was removed elsewhere in the same diff")
+                         f"{'are' if moved != 1 else 'is'} left out: the text was removed elsewhere in the same diff, "
+                         "spaces aside")
         if marked:
             notes.append(f"{marked} guard{'s' if marked != 1 else ''} marked `invariant` "
                          f"{'are' if marked != 1 else 'is'} left out: no test can reach {'them' if marked != 1 else 'it'}")

@@ -575,7 +575,8 @@ Purpose: prove a slice's tests notice its safeguards — remove each, expect a f
   JSX condition — is not one: about a third of one slice's controls guarded nothing.
   `falsify.controls: operators` restores the old reach, any line holding `||`, `&&` or a comparison.
 - **A guard the branch only moved is not drafted:** an added line whose text the same diff removed
-  elsewhere, spaces aside, once per removed copy. Its tests cite another slice's criteria, so it
+  elsewhere, every space aside (so a formatter's `f(a,b)` → `f(a, b)` is moved too, CH-97), once
+  per removed copy. Its tests cite another slice's criteria, so it
   could only read `survived`. `suggest` says how many it left out.
 - **Lines a project says are not safeguards are not drafted** (CH-96): files matching
   `falsify.exclude` (fixtures, seeds, demo data — code the product never ships), and a guard
@@ -1624,6 +1625,9 @@ in `spry/history/writ.md`, then retires `canon/`.
   `if (x === undefined) return;` is often a real guard a render test reaches, and a pattern would
   hide it; narrowing `files` by the import graph (#65, 5) — one standard-library file cannot walk
   every language's modules, and `falsify.parallel` already answers a slow run.
+- 2026-11-27 — a line whose spacing alone changed counts as moved (CH-97, 0.86.0, §16), from #65
+  (4): the moved check squeezed runs of spaces but kept one, so a formatter's `x=1` → `x = 1` was
+  drafted — about 230 rows in one project. It now compares lines with every space taken out.
 
 ## 24. Worktrees and progress
 

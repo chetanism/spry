@@ -54,7 +54,7 @@ for the lines that matter — the safeguards the slice added — so it takes min
     <code>throw</code> or <code>raise</code>, an error return, an <code>assert</code>, a clause of a condition
     written over several lines, a comparison in a <code>WHERE</code>. A line that only builds a value — a
     default (<code>a || b</code>), a pass-through, a JSX condition — is not one, and neither is a guard the
-    branch only moved from another file: its tests belong to another slice. Nor is a line in a file
+    branch only moved from another file, or only re-spaced: its tests belong to another slice. Nor is a line in a file
     <code>falsify.exclude</code> names (fixtures, seeds, demo data the product never ships), or a guard
     carrying a <code>// invariant</code> or <code>#&nbsp;invariant</code> comment — one its author says no test
     can reach; <code>suggest</code> says how many each left out. Each plan entry names the line with <code>find</code> and its replacement with
