@@ -2197,6 +2197,17 @@ class Falsify(unittest.TestCase):
             spry.falsify_suggest(spry.Project(self.root), "SL-1", "sl-1")
         self.assertIn("falsify.exclude must be a list", str(caught.exception))
 
+    def test_a_line_whose_spacing_alone_changed_counts_as_moved(self):
+        """CH-97: a formatter's spacing change is not a new guard."""
+        self.write({"src/old.py": "def check(n):\n    if n>9:\n        raise ValueError(n)\n    return n\n"})
+        self.commit("a guard, before the slice")
+        self.git("checkout", "-q", "-b", "format")
+        self.write({"src/old.py": "def check(n):\n    if n > 9:\n        raise ValueError(n)\n    return n\n"})
+        self.commit("a formatter run")
+        notes = []
+        self.assertEqual(spry.falsify_suggest(spry.Project(self.root), "SL-1", "format~1", notes=notes), [])
+        self.assertTrue(any(n.startswith("1 guard the branch only moved is left out") for n in notes), notes)
+
     def test_suggest_drafts_no_line_that_only_builds_a_value(self):
         js = ("export function lend(input, member) {\n"
               "  const name = input.name || 'none';\n"

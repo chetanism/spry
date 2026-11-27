@@ -2073,3 +2073,14 @@ Entry format:
 - **Migrate:** `spry/spry.config.json` → add `"exclude": []` under `falsify`, or the globs;
   `spry/process/slicing.md` → take the new Close step 6 line. A local stopgap that records such
   lines `skipped — test helper` or `skipped — invariant` can go.
+
+## CH-97 · A line whose spacing alone changed counts as moved
+
+- **Date:** 2026-11-27 · **Version:** 0.86.0
+- **Touches:** `tool/spry.py` (`falsify suggest`, and `merge-check`, which follows it)
+- **Why:** `suggest` leaves out a guard the branch only moved, but compared lines with runs of
+  spaces squeezed to one, not taken out. A formatter's `f(a,b)` → `f(a, b)` or `x=1` → `x = 1` was
+  drafted as a new guard: about 230 rows in one project (#65). Lines are now compared with every
+  space taken out.
+- **Adapt:** nothing
+- **Migrate:** nothing
